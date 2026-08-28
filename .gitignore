@@ -84,3 +84,10 @@ desktop.ini
 # ---------- Logs ----------
 *.log
 logs/
+
+# SPA build output — vite writes the React bundle here so it ships inside
+# the single binary. Generated, never committed.
+# Keep the directory itself so a fresh clone can build and run before the
+# SPA has been built; ignore everything vite writes into it.
+src/HospitalPm.Api/wwwroot/*
+!src/HospitalPm.Api/wwwroot/.gitkeep

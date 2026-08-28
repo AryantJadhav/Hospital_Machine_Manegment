@@ -26,6 +26,7 @@ docker-compose*.yml text eol=lf
 *.cs            text diff=csharp
 *.csproj        text
 *.sln           text eol=crlf
+*.slnx          text eol=crlf
 *.props         text
 *.targets       text
 *.json          text
