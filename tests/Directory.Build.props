@@ -1,0 +1,18 @@
+<Project>
+
+  <!-- Inherit everything from the repo-root Directory.Build.props. -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove($(MSBuildThisFileName)$(MSBuildThisFileExtension), $(MSBuildThisFileDirectory)../))" />
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+
+    <!--
+      CA1707 forbids underscores in member names. Underscore-separated test
+      names (Health_returns_ok) are the readable convention and the whole
+      point is that a failing test name reads as a sentence in CI output.
+      Suppressed for test projects only; production code still enforces it.
+    -->
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
+  </PropertyGroup>
+
+</Project>

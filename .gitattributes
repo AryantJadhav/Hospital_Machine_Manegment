@@ -1,2 +1,56 @@
-# Auto detect text files and perform LF normalization
+# Normalise line endings in the repo; check out native on each platform.
 * text=auto
+
+# ---------- Must be LF ----------
+# These run on Linux (Docker build, CI, the linux-x64 target).
+# CRLF here produces "bad interpreter" / "\r command not found" failures.
+*.sh            text eol=lf
+*.bash          text eol=lf
+Dockerfile      text eol=lf
+Dockerfile.*    text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+docker-compose*.yml text eol=lf
+*.sql           text eol=lf
+
+# ---------- Must be CRLF ----------
+# Windows shells choke on LF-only batch files.
+*.bat           text eol=crlf
+*.cmd           text eol=crlf
+*.ps1           text eol=crlf
+*.psm1          text eol=crlf
+# Inno Setup scripts (Phase 2 installer)
+*.iss           text eol=crlf
+
+# ---------- Source ----------
+*.cs            text diff=csharp
+*.csproj        text
+*.sln           text eol=crlf
+*.slnx          text eol=crlf
+*.props         text
+*.targets       text
+*.json          text
+*.ts            text
+*.tsx           text
+*.js            text
+*.jsx           text
+*.css           text
+*.html          text
+*.md            text
+
+# ---------- Binary ----------
+*.png           binary
+*.jpg           binary
+*.jpeg          binary
+*.gif           binary
+*.ico           binary
+*.pdf           binary
+*.zip           binary
+*.gz            binary
+*.exe           binary
+*.dll           binary
+*.pfx           binary
+*.snk           binary
+*.ttf           binary
+*.woff          binary
+*.woff2         binary

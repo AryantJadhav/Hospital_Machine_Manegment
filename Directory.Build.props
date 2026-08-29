@@ -1,0 +1,34 @@
+<Project>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+
+    <!--
+      Deterministic, reproducible output. CI publishes the binary a hospital
+      installs; identical source must give identical bytes.
+    -->
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+
+    <!--
+      Invariant globalization: .NET on Linux normally loads ICU from the host
+      (libicu). A minimal or air-gapped server may not have it, and the app
+      then fails at startup with "Couldn't find a valid ICU package".
+      Constraint #1 says no runtime dependency on the target machine, so we
+      drop the ICU dependency entirely.
+
+      Consequence: culture-aware formatting and collation are unavailable.
+      Format dates with explicit patterns ("dd/MM/yyyy"), not culture
+      defaults. If Indic-language UI or culture-aware sorting is ever needed,
+      revisit this by bundling app-local ICU instead of flipping it blindly.
+    -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+</Project>
