@@ -118,6 +118,15 @@ jobs:
       # A binary that builds but will not start is not a passing build.
       # Both smoke tests boot the published artifact and require a 200 from
       # /health before the job is allowed to succeed.
+      # Deliberately launched from the repo root, NOT from the artifact
+      # directory. A Windows Service starts with CWD=C:\Windows\System32 and a
+      # systemd unit uses its own WorkingDirectory, so running from the
+      # artifact dir would only prove the app works in a layout production
+      # never uses.
+      #
+      # /health alone is NOT sufficient: it answers 200 even when wwwroot
+      # cannot be resolved, which once let a build ship with no UI at all.
+      # The SPA assertion below is the part that actually catches that.
       - name: Smoke test (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -125,12 +134,24 @@ jobs:
           ASPNETCORE_URLS=http://127.0.0.1:5199 ./artifacts/${{ matrix.rid }}/hospitalpm &
           PID=$!
           for i in $(seq 1 30); do
-            if curl -fsS -m 2 http://127.0.0.1:5199/health; then OK=1; break; fi
+            if curl -fsS -m 2 http://127.0.0.1:5199/health >/dev/null; then OK=1; break; fi
             sleep 1
           done
-          kill $PID 2>/dev/null || true
-          if [ "$OK" != "1" ]; then echo "::error::health check failed"; exit 1; fi
+          if [ "$OK" != "1" ]; then
+            kill $PID 2>/dev/null || true
+            echo "::error::health check failed"; exit 1
+          fi
+          echo "health: ok"
 
+          BODY=$(curl -fsS -m 5 http://127.0.0.1:5199/ || true)
+          kill $PID 2>/dev/null || true
+          case "$BODY" in
+            *"<script"*) echo "SPA served: ok" ;;
+            *) echo "::error::SPA not served from / - wwwroot did not resolve"; exit 1 ;;
+          esac
+
+      # See the Linux step above for why this runs from the repo root and why
+      # /health on its own is not a sufficient assertion.
       - name: Smoke test (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -141,11 +162,25 @@ jobs:
           foreach ($i in 1..30) {
             try {
               $r = Invoke-WebRequest -Uri "http://127.0.0.1:5199/health" -TimeoutSec 2 -UseBasicParsing
-              if ($r.StatusCode -eq 200) { $r.Content; $ok = $true; break }
+              if ($r.StatusCode -eq 200) { $ok = $true; break }
             } catch { Start-Sleep -Seconds 1 }
           }
+          if (-not $ok) {
+            if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force }
+            Write-Output "::error::health check failed"; exit 1
+          }
+          Write-Output "health: ok"
+
+          $spaOk = $false
+          try {
+            $spa = Invoke-WebRequest -Uri "http://127.0.0.1:5199/" -TimeoutSec 5 -UseBasicParsing
+            if ($spa.StatusCode -eq 200 -and $spa.Content -match '<script') { $spaOk = $true }
+          } catch { }
           if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force }
-          if (-not $ok) { Write-Output "::error::health check failed"; exit 1 }
+          if (-not $spaOk) {
+            Write-Output "::error::SPA not served from / - wwwroot did not resolve"; exit 1
+          }
+          Write-Output "SPA served: ok"
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
