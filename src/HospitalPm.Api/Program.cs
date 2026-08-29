@@ -1,6 +1,15 @@
 using System.Reflection;
 
-var builder = WebApplication.CreateBuilder(args);
+// ContentRoot must be the binary's own directory, not the current working
+// directory. A Windows Service starts with CWD = C:\Windows\System32 and a
+// systemd unit uses whatever WorkingDirectory says, so relying on the default
+// makes wwwroot unresolvable on exactly the deployments we ship to — while
+// /health keeps returning 200 and every health check looks fine.
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args,
+    ContentRootPath = AppContext.BaseDirectory,
+});
 
 builder.Services.AddOpenApi();
 
