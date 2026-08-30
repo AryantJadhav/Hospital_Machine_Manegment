@@ -16,6 +16,13 @@ namespace HospitalPm.Infrastructure.Labels;
 /// </summary>
 public sealed class LabelSheetService(QrCodeService qr, IOptions<LabelOptions> options)
 {
+    // Lato, not Calibri or Arial. QuestPDF ships Lato inside the package, so it
+    // renders identically on a Windows PC and a minimal Linux container with no
+    // system fonts installed at all. Naming a host font means the document looks
+    // different on the hospital's server than it did in testing, and on a
+    // stripped container there may be no font to fall back to.
+    private const string BundledFont = "Lato";
+
     private readonly LabelOptions _options = options.Value;
 
     private const int Columns = 3;
@@ -44,7 +51,7 @@ public sealed class LabelSheetService(QrCodeService qr, IOptions<LabelOptions> o
                 {
                     p.Size(PageSizes.A4);
                     p.Margin(6, Unit.Millimetre);
-                    p.DefaultTextStyle(t => t.FontFamily(Fonts.Arial).FontSize(8));
+                    p.DefaultTextStyle(t => t.FontFamily(BundledFont).FontSize(8));
 
                     p.Content().Column(sheet =>
                     {

@@ -16,6 +16,13 @@ namespace HospitalPm.Infrastructure.Reports;
 /// </summary>
 public sealed class PmCertificateDocument(PmCertificateData data, ReportOptions options) : IDocument
 {
+    // Lato, not Calibri or Arial. QuestPDF ships Lato inside the package, so it
+    // renders identically on a Windows PC and a minimal Linux container with no
+    // system fonts installed at all. Naming a host font means the document looks
+    // different on the hospital's server than it did in testing, and on a
+    // stripped container there may be no font to fall back to.
+    private const string BundledFont = "Lato";
+
     private static readonly string Accent = Colors.Blue.Darken2;
 
     public void Compose(IDocumentContainer container)
@@ -25,7 +32,7 @@ public sealed class PmCertificateDocument(PmCertificateData data, ReportOptions 
             // A4: this ships to Indian hospitals, where Letter is not sold.
             page.Size(PageSizes.A4);
             page.Margin(18, Unit.Millimetre);
-            page.DefaultTextStyle(t => t.FontFamily(Fonts.Calibri).FontSize(9.5f));
+            page.DefaultTextStyle(t => t.FontFamily(BundledFont).FontSize(9.5f));
 
             page.Header().Element(Header);
             page.Content().Element(Content);
@@ -218,32 +225,52 @@ public sealed class PmCertificateDocument(PmCertificateData data, ReportOptions 
 
     private void SignatureImage(IContainer container)
     {
-        if (data.Signature is null || data.Signature.Length == 0)
+        if (data.Signature is null || data.Signature.Length == 0 || !IsRenderableSignature())
         {
             container.AlignMiddle().AlignCenter()
                 .Text("Not signed").FontSize(8).FontColor(Colors.Grey.Medium);
             return;
         }
 
-        try
+        // Note: QuestPDF renders lazily, so a try/catch here would not catch
+        // a layout failure — that happens later inside GeneratePdf(). The
+        // signature is therefore validated before it reaches the document,
+        // and the container is bounded on both axes so an unexpected aspect
+        // ratio cannot produce conflicting size constraints.
+        if (string.Equals(data.SignatureFormat, "svg", StringComparison.OrdinalIgnoreCase))
         {
-            if (string.Equals(data.SignatureFormat, "svg", StringComparison.OrdinalIgnoreCase))
-            {
-                container.Svg(System.Text.Encoding.UTF8.GetString(data.Signature));
-            }
-            else
-            {
-                container.Image(data.Signature).FitArea();
-            }
-        }
-        catch (Exception)
-        {
-            // A malformed signature must not stop a hospital printing the
-            // certificate. The record still names who signed it.
             container.AlignMiddle().AlignCenter()
-                .Text("Signature could not be rendered").FontSize(7)
-                .FontColor(Colors.Grey.Medium);
+                .MaxHeight(22, Unit.Millimetre)
+                .MaxWidth(60, Unit.Millimetre)
+                .Svg(System.Text.Encoding.UTF8.GetString(data.Signature));
         }
+        else
+        {
+            container.AlignMiddle().AlignCenter().Image(data.Signature).FitArea();
+        }
+    }
+
+    /// <summary>
+    /// Cheap sanity check before the bytes reach the renderer.
+    ///
+    /// A corrupt signature must not stop a hospital printing the record — the
+    /// certificate still names who signed it — and because QuestPDF renders
+    /// lazily, the only place to intervene is before the element is added.
+    /// </summary>
+    private bool IsRenderableSignature()
+    {
+        var bytes = data.Signature!;
+
+        if (string.Equals(data.SignatureFormat, "svg", StringComparison.OrdinalIgnoreCase))
+        {
+            var text = System.Text.Encoding.UTF8.GetString(bytes);
+            return text.Contains("<svg", StringComparison.OrdinalIgnoreCase)
+                && text.Contains("</svg>", StringComparison.OrdinalIgnoreCase);
+        }
+
+        // PNG magic number.
+        return bytes.Length > 8
+            && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47;
     }
 
     private void Footer(IContainer container)

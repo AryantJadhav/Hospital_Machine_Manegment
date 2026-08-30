@@ -15,6 +15,13 @@ namespace HospitalPm.Infrastructure.Reports;
 /// </summary>
 public sealed class ServiceReportDocument(ServiceReportData data, ReportOptions options) : IDocument
 {
+    // Lato, not Calibri or Arial. QuestPDF ships Lato inside the package, so it
+    // renders identically on a Windows PC and a minimal Linux container with no
+    // system fonts installed at all. Naming a host font means the document looks
+    // different on the hospital's server than it did in testing, and on a
+    // stripped container there may be no font to fall back to.
+    private const string BundledFont = "Lato";
+
     private static readonly string Accent = Colors.Blue.Darken2;
 
     public void Compose(IDocumentContainer container)
@@ -23,7 +30,7 @@ public sealed class ServiceReportDocument(ServiceReportData data, ReportOptions 
         {
             page.Size(PageSizes.A4);
             page.Margin(18, Unit.Millimetre);
-            page.DefaultTextStyle(t => t.FontFamily(Fonts.Calibri).FontSize(9.5f));
+            page.DefaultTextStyle(t => t.FontFamily(BundledFont).FontSize(9.5f));
 
             page.Header().Element(Header);
             page.Content().Element(Content);
