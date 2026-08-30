@@ -1,4 +1,6 @@
 using System.Reflection;
+using HospitalPm.Api.Auth;
+using HospitalPm.Infrastructure.Identity;
 using HospitalPm.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -17,6 +19,13 @@ builder.Services.AddOpenApi();
 
 builder.Services.AddDbContext<HospitalPmDbContext>(o =>
     o.UseNpgsql(builder.Configuration.GetConnectionString("HospitalPm")));
+
+// The signing key lives beside the binary, not in the content root, so it
+// survives an upgrade that replaces the executable and stays out of any
+// directory the web server can serve.
+builder.Services.AddHospitalPmAuth(
+    builder.Configuration,
+    Path.Combine(AppContext.BaseDirectory, "data"));
 
 var app = builder.Build();
 
@@ -50,6 +59,11 @@ app.MapGet("/health", () => Results.Ok(new
 // The React bundle is built into wwwroot and embedded in the published
 // binary, so the UI ships with the app rather than as a second deployment.
 // This is what makes "one binary" literally true.
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapAuthEndpoints();
+
 app.UseDefaultFiles();
 app.UseStaticFiles();
 

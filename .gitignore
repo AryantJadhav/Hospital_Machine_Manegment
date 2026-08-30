@@ -58,6 +58,12 @@ secrets.json
 licence-private*.*
 license-private*.*
 
+# JWT signing key. Generated per install on first run. If this were ever
+# committed, every hospital would share one signing key and anyone holding
+# the installer could mint valid tokens for every install.
+signing.key
+**/data/signing.key
+
 # ---------- Installer / packaging (Phase 2) ----------
 installer/output/
 installer/staging/
