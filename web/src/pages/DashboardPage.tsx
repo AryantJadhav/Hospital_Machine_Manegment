@@ -1,0 +1,146 @@
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { api } from '../api/client';
+
+type Dashboard = {
+  equipment: { total: number; inService: number; underRepair: number };
+  pm: {
+    overdue: number;
+    dueToday: number;
+    dueThisWeek: number;
+    completedThisMonth: number;
+    complianceThisMonth: number | null;
+  };
+  workOrders: { open: number; critical: number; unassigned: number; machinesDown: number };
+};
+
+export function DashboardPage() {
+  const [data, setData] = useState<Dashboard | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const d = await api.get<Dashboard>('/api/dashboard');
+        if (!cancelled) setData(d);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Could not load the dashboard.');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <div className="page">
+      <header className="page-head">
+        <div>
+          <h1>Today</h1>
+          <p className="muted">Where the department stands right now.</p>
+        </div>
+      </header>
+
+      {error && <p className="alert alert-error" role="alert">{error}</p>}
+
+      {!data && !error && <p className="muted">Loading…</p>}
+
+      {data && (
+        <>
+          {/* Ordered by what should interrupt someone's morning. A machine
+              that is down and a PM that is overdue both have consequences
+              today; totals do not. */}
+          <div className="tiles">
+            <Tile
+              label="Machines down"
+              value={data.workOrders.machinesDown}
+              tone={data.workOrders.machinesDown > 0 ? 'danger' : 'ok'}
+              to="/work-orders"
+            />
+            <Tile
+              label="Critical faults"
+              value={data.workOrders.critical}
+              tone={data.workOrders.critical > 0 ? 'danger' : 'ok'}
+              to="/work-orders"
+            />
+            <Tile
+              label="PMs overdue"
+              value={data.pm.overdue}
+              tone={data.pm.overdue > 0 ? 'warn' : 'ok'}
+              to="/pm?status=30"
+            />
+            <Tile label="Due this week" value={data.pm.dueThisWeek} to="/pm" />
+          </div>
+
+          <div className="tiles">
+            <Tile
+              label="Unassigned faults"
+              value={data.workOrders.unassigned}
+              tone={data.workOrders.unassigned > 0 ? 'warn' : 'ok'}
+              to="/work-orders?status=10"
+            />
+            <Tile label="Open work orders" value={data.workOrders.open} to="/work-orders" />
+            <Tile label="PMs done this month" value={data.pm.completedThisMonth} to="/pm?status=40" />
+            <Tile
+              label="PM compliance"
+              /* Null until something has actually fallen due, which is every
+                 hospital in its first month. Showing 0% then would be a lie
+                 about their record. */
+              value={data.pm.complianceThisMonth === null ? '—' : `${data.pm.complianceThisMonth}%`}
+              tone={
+                data.pm.complianceThisMonth === null
+                  ? undefined
+                  : data.pm.complianceThisMonth >= 90
+                    ? 'ok'
+                    : data.pm.complianceThisMonth >= 70
+                      ? 'warn'
+                      : 'danger'
+              }
+              hint="Completed against due, this month"
+            />
+          </div>
+
+          <div className="card">
+            <h2 className="section-h">Register</h2>
+            <div className="tiles tiles-plain">
+              <Tile label="Assets" value={data.equipment.total} to="/equipment" />
+              <Tile label="In service" value={data.equipment.inService} to="/equipment?status=20" />
+              <Tile label="Under repair" value={data.equipment.underRepair} to="/equipment?status=30" />
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function Tile({
+  label,
+  value,
+  tone,
+  to,
+  hint,
+}: {
+  label: string;
+  value: number | string;
+  tone?: 'ok' | 'warn' | 'danger';
+  to?: string;
+  hint?: string;
+}) {
+  const body = (
+    <>
+      <span className="tile-value">{value}</span>
+      <span className="tile-label">{label}</span>
+      {hint && <span className="tile-hint">{hint}</span>}
+    </>
+  );
+
+  const className = ['tile', tone ? `tile-${tone}` : ''].join(' ').trim();
+
+  return to ? (
+    <Link className={className} to={to}>{body}</Link>
+  ) : (
+    <div className={className}>{body}</div>
+  );
+}

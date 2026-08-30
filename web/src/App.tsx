@@ -10,6 +10,9 @@ import { ImportPage } from './pages/ImportPage';
 import { SetupPage } from './pages/SetupPage';
 import { LocationsPage } from './pages/LocationsPage';
 import { ScanPage } from './pages/ScanPage';
+import { DashboardPage } from './pages/DashboardPage';
+import { PmTasksPage } from './pages/PmTasksPage';
+import { WorkOrdersPage } from './pages/WorkOrdersPage';
 import './App.css';
 
 function Shell() {
@@ -20,6 +23,18 @@ function Shell() {
     <div className="shell">
       <nav className="nav">
         <span className="brand">Hospital PM</span>
+
+        <NavLink to="/dashboard" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+          Today
+        </NavLink>
+
+        <NavLink to="/pm" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+          PM
+        </NavLink>
+
+        <NavLink to="/work-orders" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+          Work orders
+        </NavLink>
 
         <NavLink to="/equipment" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
           Equipment
@@ -49,14 +64,17 @@ function Shell() {
 
       <main>
         <Routes>
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/pm" element={<PmTasksPage />} />
+          <Route path="/work-orders" element={<WorkOrdersPage />} />
           <Route path="/equipment" element={<EquipmentListPage />} />
           <Route path="/locations" element={<LocationsPage />} />
           <Route path="/scan" element={<ScanPage />} />
           <Route
             path="/import"
-            element={canImport ? <ImportPage /> : <Navigate to="/equipment" replace />}
+            element={canImport ? <ImportPage /> : <Navigate to="/dashboard" replace />}
           />
-          <Route path="*" element={<Navigate to="/equipment" replace />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </main>
     </div>
