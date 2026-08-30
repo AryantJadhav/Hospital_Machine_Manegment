@@ -24,6 +24,8 @@ builder.Services.AddDbContext<HospitalPmDbContext>(o =>
 // The signing key lives beside the binary, not in the content root, so it
 // survives an upgrade that replaces the executable and stays out of any
 // directory the web server can serve.
+builder.Services.AddScoped<HospitalPm.Infrastructure.Import.EquipmentImportService>();
+
 builder.Services.AddHospitalPmAuth(
     builder.Configuration,
     Path.Combine(AppContext.BaseDirectory, "data"));
@@ -65,6 +67,7 @@ app.UseAuthorization();
 
 app.MapAuthEndpoints();
 app.MapEquipmentEndpoints();
+app.MapImportEndpoints();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
