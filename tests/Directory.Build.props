@@ -11,8 +11,12 @@
       names (Health_returns_ok) are the readable convention and the whole
       point is that a failing test name reads as a sentence in CI output.
       Suppressed for test projects only; production code still enforces it.
+
+      CA1711 objects to the type name PostgresCollection, but xUnit's
+      [CollectionDefinition] convention is to name the class after the
+      collection. Renaming to satisfy the analyzer would obscure its role.
     -->
-    <NoWarn>$(NoWarn);CA1707</NoWarn>
+    <NoWarn>$(NoWarn);CA1707;CA1711</NoWarn>
   </PropertyGroup>
 
 </Project>
