@@ -14,7 +14,9 @@ public sealed record AnswerInput(string Value, string? Note);
 public sealed record CompleteRequest(
     int ChecklistTemplateVersionId,
     Dictionary<string, AnswerInput> Answers,
-    string? SignaturePngBase64,
+    string? SignatureBase64,
+    /// <summary>"png" or "svg". Defaults to png for a browser canvas.</summary>
+    string? SignatureFormat,
     string? SignedByName,
     DateTime? PerformedAtUtc,
     Guid? ClientSubmissionId,
@@ -129,7 +131,8 @@ public static class PmExecutionEndpoints
             completion.PerformedAtUtc,
             completion.SignedByName,
             completion.Notes,
-            hasSignature = completion.SignaturePng is not null,
+            hasSignature = completion.Signature is not null,
+            signatureFormat = completion.SignatureFormat,
             outOfRangeCount = completion.OutOfRangeCount,
             versionNo = version.VersionNo,
             definition = version.Definition,
@@ -227,12 +230,19 @@ public static class PmExecutionEndpoints
         }
 
         byte[]? signature = null;
-        if (!string.IsNullOrWhiteSpace(request.SignaturePngBase64))
+        var signatureFormat = (request.SignatureFormat ?? "png").Trim().ToLowerInvariant();
+
+        if (signatureFormat is not ("png" or "svg"))
+        {
+            return Results.BadRequest(new { error = "Signature format must be png or svg." });
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.SignatureBase64))
         {
             // Data URL prefix stripped: a canvas toDataURL() includes it and
             // making every client remember to remove it invites a mangled
             // image stored as evidence.
-            var raw = request.SignaturePngBase64;
+            var raw = request.SignatureBase64;
             var comma = raw.IndexOf(',', StringComparison.Ordinal);
             if (raw.StartsWith("data:", StringComparison.OrdinalIgnoreCase) && comma > 0)
             {
@@ -270,7 +280,8 @@ public static class PmExecutionEndpoints
             TenantId = task.TenantId,
             ChecklistTemplateVersionId = version.Id,
             Answers = validation.Normalised.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal),
-            SignaturePng = signature,
+            Signature = signature,
+            SignatureFormat = signature is null ? null : signatureFormat,
             SignedByName = request.SignedByName?.Trim(),
             CompletedByUserId = userId,
             CompletedAtUtc = now,

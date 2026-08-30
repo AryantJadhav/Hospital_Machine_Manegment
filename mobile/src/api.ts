@@ -34,6 +34,58 @@ export type Equipment = {
   notes: string | null;
 };
 
+export type ChecklistItem = {
+  key: string;
+  label: string;
+  type: number;
+  required: boolean;
+  guidance?: string | null;
+  unit?: string | null;
+  min?: number | null;
+  max?: number | null;
+  options?: string[] | null;
+};
+
+export type ChecklistSection = { title: string; items: ChecklistItem[] };
+
+export type PmTask = {
+  id: number;
+  dueDate: string;
+  status: number;
+  assetTag: string;
+  checklistName: string;
+  daysLate: number;
+};
+
+export type PmForm = {
+  id: number;
+  dueDate: string;
+  assetTag: string;
+  equipmentTypeName: string;
+  locationName: string;
+  checklistName: string;
+  checklistTemplateVersionId: number;
+  versionNo: number;
+  definition: { sections: ChecklistSection[] };
+};
+
+/** Mirrors ChecklistItemType on the server. */
+export const ITEM_TYPE = {
+  passFail: 10,
+  yesNo: 20,
+  number: 30,
+  text: 40,
+  choice: 50,
+} as const;
+
+export const PM_STATUS_LABEL: Record<number, string> = {
+  10: 'Scheduled',
+  20: 'Due',
+  30: 'Overdue',
+  40: 'Completed',
+  50: 'Skipped',
+};
+
 export const STATUS_LABEL: Record<number, string> = {
   10: 'In store',
   20: 'In service',
@@ -187,6 +239,18 @@ export const api = {
 
   byTag: (assetTag: string) =>
     request<Equipment>(`/api/equipment/by-tag/${encodeURIComponent(assetTag)}`),
+
+  /** Open PM work for one machine. */
+  tasksForEquipment: (equipmentId: number) =>
+    request<{ items: PmTask[]; total: number }>(
+      `/api/pm/tasks?equipmentId=${equipmentId}&pageSize=50`),
+
+  taskForm: (taskId: number) => request<PmForm>(`/api/pm/tasks/${taskId}/form`),
+
+  completeTask: (taskId: number, body: unknown) =>
+    request<{ completionId: number; outOfRangeCount: number; replayed: boolean }>(
+      `/api/pm/tasks/${taskId}/complete`,
+      { method: 'POST', body: JSON.stringify(body) }),
 
   /** Cheap reachability probe that does not need a session. */
   health: async (url: string) => {

@@ -61,7 +61,7 @@ public sealed class PmCompletion
     public Dictionary<string, ChecklistAnswer> Answers { get; set; } = [];
 
     /// <summary>
-    /// PNG of the technician's signature, drawn on the device.
+    /// The technician's signature as drawn on the device.
     ///
     /// Stored in the database as bytes rather than in object storage: a
     /// client install is allowed two services, and adding MinIO or an S3
@@ -69,7 +69,18 @@ public sealed class PmCompletion
     /// also part of the evidence document and should not be able to go
     /// missing separately from it.
     /// </summary>
-    public byte[]? SignaturePng { get; set; }
+    public byte[]? Signature { get; set; }
+
+    /// <summary>
+    /// "png" or "svg".
+    ///
+    /// Two formats because the two clients capture differently. A browser
+    /// canvas produces a PNG in one call; a React Native pad produces stroke
+    /// paths, and rasterising them on the device would mean a WebView or a
+    /// native module for no gain — the strokes are the signature, and SVG
+    /// keeps them exact and small.
+    /// </summary>
+    public string? SignatureFormat { get; set; }
 
     /// <summary>Printed name captured alongside the signature.</summary>
     public string? SignedByName { get; set; }

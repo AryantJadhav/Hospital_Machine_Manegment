@@ -256,7 +256,8 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
             e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
             e.Property(x => x.PmTaskId).HasColumnName("pm_task_id");
             e.Property(x => x.ChecklistTemplateVersionId).HasColumnName("checklist_template_version_id");
-            e.Property(x => x.SignaturePng).HasColumnName("signature_png");
+            e.Property(x => x.Signature).HasColumnName("signature");
+            e.Property(x => x.SignatureFormat).HasColumnName("signature_format").HasMaxLength(8);
             e.Property(x => x.SignedByName).HasColumnName("signed_by_name").HasMaxLength(200);
             e.Property(x => x.CompletedByUserId).HasColumnName("completed_by_user_id");
             e.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc");

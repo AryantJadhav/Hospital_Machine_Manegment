@@ -12,9 +12,13 @@ import { theme } from '../theme';
 export function EquipmentDetailScreen({
   equipment,
   onBack,
+  onStartPm,
+  pmTasks,
 }: {
   equipment: Equipment;
   onBack: () => void;
+  onStartPm: (taskId: number) => void;
+  pmTasks: { id: number; dueDate: string; status: number; checklistName: string; daysLate: number }[];
 }) {
   const warranty = parseDate(equipment.warrantyExpiryDate);
   const inWarranty = warranty !== null && warranty.getTime() >= Date.now();
@@ -37,6 +41,26 @@ export function EquipmentDetailScreen({
             />
           ) : null}
         </View>
+
+        {pmTasks.length > 0 && (
+          <Section title="Maintenance due">
+            {pmTasks.map((t) => (
+              <TouchableOpacity key={t.id} style={styles.pmRow} onPress={() => onStartPm(t.id)}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.pmName}>{t.checklistName}</Text>
+                  <Text style={styles.pmDue}>
+                    Due {t.dueDate}
+                    {t.daysLate > 0 ? ` · ${t.daysLate} days late` : ''}
+                  </Text>
+                </View>
+                <Badge
+                  label={t.status === 30 ? 'Overdue' : t.status === 20 ? 'Due' : 'Scheduled'}
+                  tone={t.status === 30 ? 'danger' : t.status === 20 ? 'warn' : 'ok'}
+                />
+              </TouchableOpacity>
+            ))}
+          </Section>
+        )}
 
         <Section title="Location">
           <Field label="Where" value={equipment.locationName} strong />
@@ -166,6 +190,12 @@ const styles = StyleSheet.create({
   mono: { fontFamily: 'monospace' },
   empty: { color: theme.muted },
   notes: { fontSize: 15, color: theme.text, paddingVertical: 12, lineHeight: 21 },
+  pmRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border,
+  },
+  pmName: { fontSize: 16, color: theme.text },
+  pmDue: { fontSize: 13, color: theme.muted, marginTop: 2 },
   button: {
     backgroundColor: theme.accent,
     margin: 20,
