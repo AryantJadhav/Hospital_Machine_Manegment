@@ -24,6 +24,9 @@ public static class ImportEndpoints
             .RequireAuthorization(p => p.RequireRole(Roles.Admin, Roles.BiomedicalHead));
 
         group.MapGet("/template", GetTemplate);
+        group.MapGet("/locations/template", GetLocationTemplate);
+        group.MapPost("/locations/validate", ValidateLocationsAsync).DisableAntiforgery();
+        group.MapPost("/locations/commit", CommitLocationsAsync).DisableAntiforgery();
         group.MapPost("/validate", ValidateAsync).DisableAntiforgery();
         group.MapPost("/commit", CommitAsync).DisableAntiforgery();
     }
@@ -34,6 +37,20 @@ public static class ImportEndpoints
             XlsxContentType,
             "hospitalpm-equipment-template.xlsx");
 
+    private static IResult GetLocationTemplate()
+        => Results.File(
+            LocationImportService.BuildTemplate(),
+            XlsxContentType,
+            "hospitalpm-locations-template.xlsx");
+
+    private static Task<IResult> ValidateLocationsAsync(
+        IFormFile file, LocationImportService importer, CancellationToken ct)
+        => RunCoreAsync(file, (s, c) => importer.ValidateAsync(s, c), ct);
+
+    private static Task<IResult> CommitLocationsAsync(
+        IFormFile file, LocationImportService importer, CancellationToken ct)
+        => RunCoreAsync(file, (s, c) => importer.CommitAsync(s, c), ct);
+
     private static Task<IResult> ValidateAsync(
         IFormFile file, EquipmentImportService importer, CancellationToken ct)
         => RunAsync(file, importer, commit: false, ct);
@@ -42,8 +59,22 @@ public static class ImportEndpoints
         IFormFile file, EquipmentImportService importer, CancellationToken ct)
         => RunAsync(file, importer, commit: true, ct);
 
-    private static async Task<IResult> RunAsync(
+    private static Task<IResult> RunAsync(
         IFormFile file, EquipmentImportService importer, bool commit, CancellationToken ct)
+        => RunCoreAsync(
+            file,
+            (s, c) => commit ? importer.CommitAsync(s, c) : importer.ValidateAsync(s, c),
+            ct);
+
+    /// <summary>
+    /// Shared upload plumbing: the bounds, format check and error shape are
+    /// identical for both importers, and duplicating them would let the two
+    /// drift apart.
+    /// </summary>
+    private static async Task<IResult> RunCoreAsync(
+        IFormFile file,
+        Func<Stream, CancellationToken, Task<ImportResult>> run,
+        CancellationToken ct)
     {
         if (file is null || file.Length == 0)
         {
@@ -78,9 +109,7 @@ public static class ImportEndpoints
         ImportResult result;
         try
         {
-            result = commit
-                ? await importer.CommitAsync(buffer, ct)
-                : await importer.ValidateAsync(buffer, ct);
+            result = await run(buffer, ct);
         }
         catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException)
         {

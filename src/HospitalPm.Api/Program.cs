@@ -1,6 +1,7 @@
 using System.Reflection;
 using HospitalPm.Api.Auth;
 using HospitalPm.Api.Equipment;
+using HospitalPm.Api.Locations;
 using HospitalPm.Infrastructure.Identity;
 using HospitalPm.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -25,6 +26,7 @@ builder.Services.AddDbContext<HospitalPmDbContext>(o =>
 // survives an upgrade that replaces the executable and stays out of any
 // directory the web server can serve.
 builder.Services.AddScoped<HospitalPm.Infrastructure.Import.EquipmentImportService>();
+builder.Services.AddScoped<HospitalPm.Infrastructure.Import.LocationImportService>();
 
 builder.Services.AddHospitalPmAuth(
     builder.Configuration,
@@ -70,6 +72,7 @@ app.MapAuthEndpoints();
 app.MapEquipmentEndpoints();
 app.MapImportEndpoints();
 app.MapLookupEndpoints();
+app.MapLocationEndpoints();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
