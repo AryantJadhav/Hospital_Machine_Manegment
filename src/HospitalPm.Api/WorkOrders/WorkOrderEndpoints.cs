@@ -116,7 +116,8 @@ public static class WorkOrderEndpoints
     private static async Task<IResult> GetAsync(int id, HospitalPmDbContext db, CancellationToken ct)
     {
         var order = await db.WorkOrders.AsNoTracking()
-            .Include(w => w.Equipment)
+            .Include(w => w.Equipment)!.ThenInclude(e => e!.EquipmentType)
+            .Include(w => w.Equipment)!.ThenInclude(e => e!.Location)
             .SingleOrDefaultAsync(w => w.Id == id, ct);
 
         if (order is null)
@@ -139,6 +140,11 @@ public static class WorkOrderEndpoints
             order.FaultDescription,
             order.EquipmentId,
             assetTag = order.Equipment?.AssetTag,
+            // The list endpoint returns these and the detail panel shows the
+            // same header, so omitting them here left it rendering
+            // "BME-0001 · ·" with two empty separators.
+            equipmentTypeName = order.Equipment?.EquipmentType?.Name,
+            locationName = order.Equipment?.Location?.Name,
             order.ReportedByUserId,
             order.ReportedAtUtc,
             order.AssignedToUserId,
