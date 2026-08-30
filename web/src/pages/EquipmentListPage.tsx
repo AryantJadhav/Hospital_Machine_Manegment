@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
+import { useAuth } from '../auth/useAuth';
+import { ROLES } from '../auth/context';
 
 type Equipment = {
   id: number;
@@ -31,6 +33,10 @@ const STATUS: Record<number, string> = {
 const PAGE_SIZE = 25;
 
 export function EquipmentListPage() {
+  const { can } = useAuth();
+  const canPrint = can(ROLES.admin, ROLES.biomedicalHead, ROLES.seniorEngineer);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [printing, setPrinting] = useState(false);
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
   const [locationId, setLocationId] = useState('');
@@ -101,6 +107,49 @@ export function EquipmentListPage() {
 
   const hasFilters = Boolean(debounced || locationId || typeId || status);
 
+  function toggle(id: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    const ids = data?.items.map((e) => e.id) ?? [];
+    const allOn = ids.length > 0 && ids.every((id) => selected.has(id));
+    setSelected((prev) => {
+      const next = new Set(prev);
+      // Only the current page is affected. Clearing a selection the user
+      // built across several pages because they clicked the header checkbox
+      // would be its own small betrayal.
+      for (const id of ids) {
+        if (allOn) next.delete(id);
+        else next.add(id);
+      }
+      return next;
+    });
+  }
+
+  async function print(kind: 'sheet' | 'zpl') {
+    if (selected.size === 0) return;
+    setPrinting(true);
+    setError(null);
+    try {
+      const ids = [...selected];
+      if (kind === 'sheet') {
+        await api.downloadPost('/api/labels/sheet', { equipmentIds: ids }, 'asset-tags.pdf');
+      } else {
+        await api.downloadPost('/api/labels/zpl', { equipmentIds: ids }, 'asset-tags.zpl');
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not generate labels.');
+    } finally {
+      setPrinting(false);
+    }
+  }
+
   return (
     <div className="page">
       <header className="page-head">
@@ -113,6 +162,22 @@ export function EquipmentListPage() {
             </p>
           )}
         </div>
+        {canPrint && selected.size > 0 && (
+          <div className="row">
+            <span className="muted" style={{ alignSelf: 'center' }}>
+              {selected.size} selected
+            </span>
+            <button className="btn" disabled={printing} onClick={() => void print('sheet')}>
+              Print label sheet
+            </button>
+            <button className="btn" disabled={printing} onClick={() => void print('zpl')}>
+              Zebra (ZPL)
+            </button>
+            <button className="btn btn-quiet" onClick={() => setSelected(new Set())}>
+              Clear
+            </button>
+          </div>
+        )}
       </header>
 
       <div className="filters card">
@@ -155,6 +220,19 @@ export function EquipmentListPage() {
         <table className="table">
           <thead>
             <tr>
+              {canPrint && (
+                <th style={{ width: '1%' }}>
+                  <input
+                    type="checkbox"
+                    aria-label="Select all on this page"
+                    checked={
+                      (data?.items.length ?? 0) > 0 &&
+                      (data?.items ?? []).every((e) => selected.has(e.id))
+                    }
+                    onChange={toggleAll}
+                  />
+                </th>
+              )}
               <th>Asset tag</th>
               <th>Type</th>
               <th>Location</th>
@@ -165,12 +243,12 @@ export function EquipmentListPage() {
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={6} className="empty">Loading…</td></tr>
+              <tr><td colSpan={canPrint ? 7 : 6} className="empty">Loading…</td></tr>
             )}
 
             {!loading && data?.items.length === 0 && (
               <tr>
-                <td colSpan={6} className="empty">
+                <td colSpan={canPrint ? 7 : 6} className="empty">
                   {hasFilters
                     ? 'No equipment matches these filters.'
                     : 'The register is empty. Import a spreadsheet to get started.'}
@@ -180,6 +258,16 @@ export function EquipmentListPage() {
 
             {!loading && data?.items.map((e) => (
               <tr key={e.id}>
+                {canPrint && (
+                  <td>
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${e.assetTag}`}
+                      checked={selected.has(e.id)}
+                      onChange={() => toggle(e.id)}
+                    />
+                  </td>
+                )}
                 <td className="mono">{e.assetTag}</td>
                 <td>{e.equipmentTypeName}</td>
                 <td>{e.locationName}</td>

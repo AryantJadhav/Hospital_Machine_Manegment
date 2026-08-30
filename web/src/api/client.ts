@@ -148,27 +148,53 @@ export const api = {
     return request<T>(path, { method: 'POST', body: form });
   },
   /** Downloads a binary response, bypassing JSON parsing. */
-  download: async (path: string, filename: string) => {
+  download: (path: string, filename: string) => downloadCore(path, filename),
+
+  /** Downloads the result of a POST — label sheets take a body of ids. */
+  downloadPost: (path: string, body: unknown, filename: string) =>
+    downloadCore(path, filename, {
+      method: 'POST',
+      body: JSON.stringify(body),
+      contentType: 'application/json',
+    }),
+};
+
+async function downloadCore(
+  path: string,
+  filename: string,
+  init?: { method?: string; body?: string; contentType?: string },
+): Promise<void> {
+  const send = () => {
     const headers = new Headers();
     if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
+    if (init?.contentType) headers.set('Content-Type', init.contentType);
+    return fetch(path, { method: init?.method ?? 'GET', body: init?.body, headers });
+  };
 
-    let res = await fetch(path, { headers });
-    if (res.status === 401 && (await refresh())) {
-      const retryHeaders = new Headers();
-      if (accessToken) retryHeaders.set('Authorization', `Bearer ${accessToken}`);
-      res = await fetch(path, { headers: retryHeaders });
+  let res = await send();
+  if (res.status === 401 && (await refresh())) res = await send();
+
+  if (!res.ok) {
+    let message = `Download failed (${res.status})`;
+    try {
+      const body = (await res.json()) as Record<string, unknown>;
+      if (typeof body?.error === 'string') message = body.error;
+    } catch {
+      /* non-JSON error body */
     }
-    if (!res.ok) throw new ApiError(res.status, `Download failed (${res.status})`);
+    throw new ApiError(res.status, message);
+  }
 
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-  },
-};
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  // Revoked on the next tick: revoking synchronously can cancel the download
+  // in some browsers before it has started reading the blob.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 export async function restoreSession(): Promise<boolean> {
   if (accessToken) return true;
