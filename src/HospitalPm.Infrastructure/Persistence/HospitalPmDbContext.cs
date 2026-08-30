@@ -1,4 +1,5 @@
 using HospitalPm.Domain.Assets;
+using HospitalPm.Domain.Checklists;
 using HospitalPm.Domain.Equipment;
 using HospitalPm.Domain.Locations;
 using HospitalPm.Infrastructure.Identity;
@@ -20,6 +21,10 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
     public DbSet<Location> Locations => Set<Location>();
 
     public DbSet<Equipment> Equipment => Set<Equipment>();
+
+    public DbSet<ChecklistTemplate> ChecklistTemplates => Set<ChecklistTemplate>();
+
+    public DbSet<ChecklistTemplateVersion> ChecklistTemplateVersions => Set<ChecklistTemplateVersion>();
 
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
@@ -84,6 +89,61 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
                 .OnDelete(DeleteBehavior.Restrict);
 
             e.HasIndex(x => x.CategoryId).HasDatabaseName("ix_equipment_type_category_category");
+        });
+
+        builder.Entity<ChecklistTemplate>(e =>
+        {
+            e.ToTable("checklist_template");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.EquipmentTypeId).HasColumnName("equipment_type_id");
+            e.Property(x => x.Code).HasColumnName("code").HasMaxLength(64).IsRequired();
+            e.Property(x => x.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
+            e.Property(x => x.Description).HasColumnName("description");
+            e.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(true);
+            e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").HasDefaultValueSql("now()");
+            e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").HasDefaultValueSql("now()");
+
+            e.HasOne(x => x.EquipmentType)
+                .WithMany()
+                .HasForeignKey(x => x.EquipmentTypeId)
+                // Restrict: an equipment type still referenced by a checklist
+                // cannot be removed out from under completed work.
+                .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasDatabaseName("ux_checklist_template_tenant_code");
+            e.HasIndex(x => x.EquipmentTypeId).HasDatabaseName("ix_checklist_template_equipment_type");
+        });
+
+        builder.Entity<ChecklistTemplateVersion>(e =>
+        {
+            e.ToTable("checklist_template_version");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.ChecklistTemplateId).HasColumnName("checklist_template_id");
+            e.Property(x => x.VersionNo).HasColumnName("version_no");
+            e.Property(x => x.Status).HasColumnName("status").HasConversion<int>();
+            e.Property(x => x.ChangeNote).HasColumnName("change_note");
+            e.Property(x => x.PublishedAtUtc).HasColumnName("published_at_utc");
+            e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").HasDefaultValueSql("now()");
+            e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").HasDefaultValueSql("now()");
+
+            // jsonb, not json: it is indexable, and Postgres validates and
+            // normalises it on write rather than storing whatever arrived.
+            e.Property(x => x.Definition)
+                .HasColumnName("definition")
+                .HasColumnType("jsonb")
+                .IsRequired();
+
+            e.HasOne(x => x.Template)
+                .WithMany(x => x!.Versions)
+                .HasForeignKey(x => x.ChecklistTemplateId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(x => new { x.ChecklistTemplateId, x.VersionNo })
+                .HasDatabaseName("ix_checklist_version_template_no");
         });
 
         builder.Entity<Location>(e =>
