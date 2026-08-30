@@ -1,6 +1,7 @@
 using HospitalPm.Domain.Assets;
 using HospitalPm.Domain.Checklists;
 using HospitalPm.Domain.Equipment;
+using HospitalPm.Domain.Maintenance;
 using HospitalPm.Domain.Locations;
 using HospitalPm.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity;
@@ -33,6 +34,10 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
     public DbSet<ChecklistTemplate> ChecklistTemplates => Set<ChecklistTemplate>();
 
     public DbSet<ChecklistTemplateVersion> ChecklistTemplateVersions => Set<ChecklistTemplateVersion>();
+
+    public DbSet<PmSchedule> PmSchedules => Set<PmSchedule>();
+
+    public DbSet<PmTask> PmTasks => Set<PmTask>();
 
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
@@ -168,6 +173,77 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
 
             e.HasIndex(x => new { x.ChecklistTemplateId, x.VersionNo })
                 .HasDatabaseName("ix_checklist_version_template_no");
+        });
+
+        builder.Entity<PmSchedule>(e =>
+        {
+            e.ToTable("pm_schedule");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.EquipmentId).HasColumnName("equipment_id");
+            e.Property(x => x.ChecklistTemplateId).HasColumnName("checklist_template_id");
+            e.Property(x => x.Frequency).HasColumnName("frequency").HasConversion<int>();
+            e.Property(x => x.IntervalDays).HasColumnName("interval_days");
+            e.Property(x => x.AnchorDate).HasColumnName("anchor_date");
+            e.Property(x => x.GraceDays).HasColumnName("grace_days");
+            e.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(true);
+            e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").HasDefaultValueSql("now()");
+            e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").HasDefaultValueSql("now()");
+
+            e.HasOne(x => x.Equipment)
+                .WithMany()
+                .HasForeignKey(x => x.EquipmentId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(x => x.ChecklistTemplate)
+                .WithMany()
+                .HasForeignKey(x => x.ChecklistTemplateId)
+                // Restrict: a checklist still driving a live schedule cannot
+                // be pulled out from under it.
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // One schedule per checklist per machine. Two would generate
+            // duplicate work and double-count in compliance reporting.
+            e.HasIndex(x => new { x.EquipmentId, x.ChecklistTemplateId })
+                .IsUnique()
+                .HasDatabaseName("ux_pm_schedule_equipment_checklist");
+        });
+
+        builder.Entity<PmTask>(e =>
+        {
+            e.ToTable("pm_task");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.PmScheduleId).HasColumnName("pm_schedule_id");
+            e.Property(x => x.EquipmentId).HasColumnName("equipment_id");
+            e.Property(x => x.DueDate).HasColumnName("due_date");
+            e.Property(x => x.Status).HasColumnName("status").HasConversion<int>();
+            e.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc");
+            e.Property(x => x.CompletedByUserId).HasColumnName("completed_by_user_id");
+            e.Property(x => x.ChecklistTemplateVersionId).HasColumnName("checklist_template_version_id");
+            e.Property(x => x.SkipReason).HasColumnName("skip_reason").HasMaxLength(500);
+            e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").HasDefaultValueSql("now()");
+            e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").HasDefaultValueSql("now()");
+
+            e.HasOne(x => x.Schedule)
+                .WithMany(x => x!.Tasks)
+                .HasForeignKey(x => x.PmScheduleId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(x => x.Equipment)
+                .WithMany()
+                .HasForeignKey(x => x.EquipmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // The generator runs nightly and must be safe to run twice.
+            e.HasIndex(x => new { x.PmScheduleId, x.DueDate })
+                .IsUnique()
+                .HasDatabaseName("ux_pm_task_schedule_due");
+
+            e.HasIndex(x => new { x.Status, x.DueDate }).HasDatabaseName("ix_pm_task_status_due");
+            e.HasIndex(x => x.EquipmentId).HasDatabaseName("ix_pm_task_equipment");
         });
 
         builder.Entity<Location>(e =>
