@@ -12,7 +12,13 @@ type ImportResponse = {
   errorsTruncated: boolean;
 };
 
+type Kind = 'locations' | 'equipment';
+
 export function ImportPage() {
+  // Locations first by default: equipment import fails without them, and
+  // leading with equipment sends operators straight into an error they
+  // cannot fix from that screen.
+  const [kind, setKind] = useState<Kind>('locations');
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState<ImportResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -29,12 +35,15 @@ export function ImportPage() {
     setError(null);
   }
 
+  const base =
+    kind === 'locations' ? '/api/equipment/import/locations' : '/api/equipment/import';
+
   async function run(mode: 'validate' | 'commit') {
     if (!file) return;
     setBusy(true);
     setError(null);
     try {
-      setResult(await api.upload<ImportResponse>(`/api/equipment/import/${mode}`, file));
+      setResult(await api.upload<ImportResponse>(`${base}/${mode}`, file));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Import failed.');
     } finally {
@@ -46,18 +55,45 @@ export function ImportPage() {
     <div className="page">
       <header className="page-head">
         <div>
-          <h1>Import equipment</h1>
-          <p className="muted">Upload the hospital&rsquo;s asset spreadsheet.</p>
+          <h1>Import</h1>
+          <p className="muted">Load the hospital&rsquo;s locations, then its assets.</p>
         </div>
         <button
           className="btn"
-          onClick={() => api.download('/api/equipment/import/template', 'equipment-template.xlsx')}
+          onClick={() =>
+            api.download(
+              kind === 'locations'
+                ? '/api/equipment/import/locations/template'
+                : '/api/equipment/import/template',
+              `${kind}-template.xlsx`,
+            )
+          }
         >
           Download template
         </button>
       </header>
 
       <div className="card stack">
+        <div className="row" role="tablist">
+          {(['locations', 'equipment'] as Kind[]).map((k) => (
+            <button
+              key={k}
+              role="tab"
+              aria-selected={kind === k}
+              className={kind === k ? 'btn btn-primary' : 'btn'}
+              onClick={() => { setKind(k); setFile(null); setResult(null); setError(null); }}
+            >
+              {k === 'locations' ? '1. Locations' : '2. Equipment'}
+            </button>
+          ))}
+        </div>
+
+        {kind === 'equipment' && (
+          <p className="muted" style={{ margin: 0 }}>
+            Every asset must name a location that already exists. Import locations first.
+          </p>
+        )}
+
         <ol className="steps">
           <li>Download the template and paste your asset list into it.</li>
           <li>Check the file — nothing is saved at this stage.</li>

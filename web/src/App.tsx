@@ -8,6 +8,7 @@ import { LoginPage } from './pages/LoginPage';
 import { EquipmentListPage } from './pages/EquipmentListPage';
 import { ImportPage } from './pages/ImportPage';
 import { SetupPage } from './pages/SetupPage';
+import { LocationsPage } from './pages/LocationsPage';
 import './App.css';
 
 function Shell() {
@@ -25,6 +26,10 @@ function Shell() {
 
         {/* Hidden rather than shown-and-rejected. The server enforces the
             same rule, so this is presentation, not the access control. */}
+        <NavLink to="/locations" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+          Locations
+        </NavLink>
+
         {canImport && (
           <NavLink to="/import" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
             Import
@@ -40,6 +45,7 @@ function Shell() {
       <main>
         <Routes>
           <Route path="/equipment" element={<EquipmentListPage />} />
+          <Route path="/locations" element={<LocationsPage />} />
           <Route
             path="/import"
             element={canImport ? <ImportPage /> : <Navigate to="/equipment" replace />}
