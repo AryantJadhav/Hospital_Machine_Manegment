@@ -39,6 +39,8 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
 
     public DbSet<PmTask> PmTasks => Set<PmTask>();
 
+    public DbSet<PmCompletion> PmCompletions => Set<PmCompletion>();
+
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     protected override void OnModelCreating(ModelBuilder builder)
@@ -244,6 +246,54 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
 
             e.HasIndex(x => new { x.Status, x.DueDate }).HasDatabaseName("ix_pm_task_status_due");
             e.HasIndex(x => x.EquipmentId).HasDatabaseName("ix_pm_task_equipment");
+        });
+
+        builder.Entity<PmCompletion>(e =>
+        {
+            e.ToTable("pm_completion");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.PmTaskId).HasColumnName("pm_task_id");
+            e.Property(x => x.ChecklistTemplateVersionId).HasColumnName("checklist_template_version_id");
+            e.Property(x => x.SignaturePng).HasColumnName("signature_png");
+            e.Property(x => x.SignedByName).HasColumnName("signed_by_name").HasMaxLength(200);
+            e.Property(x => x.CompletedByUserId).HasColumnName("completed_by_user_id");
+            e.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc");
+            e.Property(x => x.PerformedAtUtc).HasColumnName("performed_at_utc");
+            e.Property(x => x.ClientSubmissionId).HasColumnName("client_submission_id");
+            e.Property(x => x.Notes).HasColumnName("notes");
+            e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").HasDefaultValueSql("now()");
+
+            e.Property(x => x.Answers)
+                .HasColumnName("answers")
+                .HasColumnType("jsonb")
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, ChecklistJson),
+                    v => JsonSerializer.Deserialize<Dictionary<string, ChecklistAnswer>>(v, ChecklistJson)
+                         ?? new Dictionary<string, ChecklistAnswer>(),
+                    new ValueComparer<Dictionary<string, ChecklistAnswer>>(
+                        (a, b) => JsonSerializer.Serialize(a, ChecklistJson) == JsonSerializer.Serialize(b, ChecklistJson),
+                        v => JsonSerializer.Serialize(v, ChecklistJson).GetHashCode(StringComparison.Ordinal),
+                        v => JsonSerializer.Deserialize<Dictionary<string, ChecklistAnswer>>(
+                                 JsonSerializer.Serialize(v, ChecklistJson), ChecklistJson)!))
+                .IsRequired();
+
+            e.HasOne(x => x.Task)
+                .WithOne()
+                .HasForeignKey<PmCompletion>(x => x.PmTaskId)
+                // Restrict: a completed task cannot be deleted anyway, and
+                // cascading would make erasing the evidence a side effect.
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // One completion per task.
+            e.HasIndex(x => x.PmTaskId).IsUnique().HasDatabaseName("ux_pm_completion_task");
+
+            // Replay safety for the offline write queue.
+            e.HasIndex(x => x.ClientSubmissionId)
+                .IsUnique()
+                .HasFilter("client_submission_id IS NOT NULL")
+                .HasDatabaseName("ux_pm_completion_client_submission");
         });
 
         builder.Entity<Location>(e =>
