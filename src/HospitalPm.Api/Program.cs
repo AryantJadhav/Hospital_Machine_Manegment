@@ -1,5 +1,6 @@
 using System.Reflection;
 using HospitalPm.Api.Auth;
+using HospitalPm.Api.Checklists;
 using HospitalPm.Api.Equipment;
 using HospitalPm.Api.Labels;
 using HospitalPm.Api.Locations;
@@ -86,6 +87,7 @@ app.MapImportEndpoints();
 app.MapLookupEndpoints();
 app.MapLocationEndpoints();
 app.MapLabelEndpoints();
+app.MapChecklistEndpoints();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();

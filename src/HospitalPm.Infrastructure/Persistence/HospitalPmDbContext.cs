@@ -6,12 +6,20 @@ using HospitalPm.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+using System.Text.Json;
 
 namespace HospitalPm.Infrastructure.Persistence;
 
 public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> options)
     : IdentityDbContext<ApplicationUser, ApplicationRole, int>(options)
 {
+    /// <summary>
+    /// Fixed on purpose. These documents outlive the code that wrote them, so
+    /// the property naming must not drift with a future default.
+    /// </summary>
+    private static readonly JsonSerializerOptions ChecklistJson = new(JsonSerializerDefaults.Web);
+
     public DbSet<Category> Categories => Set<Category>();
 
     public DbSet<EquipmentType> EquipmentTypes => Set<EquipmentType>();
@@ -132,9 +140,25 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
 
             // jsonb, not json: it is indexable, and Postgres validates and
             // normalises it on write rather than storing whatever arrived.
+            //
+            // Serialised explicitly rather than by enabling Npgsql's dynamic
+            // JSON. Dynamic JSON is a global, reflection-based opt-in; doing
+            // it here keeps the shape of stored definitions under this
+            // mapping's control, which matters for data that has to remain
+            // readable years after it was written.
             e.Property(x => x.Definition)
                 .HasColumnName("definition")
                 .HasColumnType("jsonb")
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, ChecklistJson),
+                    v => JsonSerializer.Deserialize<ChecklistDefinition>(v, ChecklistJson) ?? new ChecklistDefinition(),
+                    // EF cannot see edits inside a mutable object graph without
+                    // a comparer, so a changed question would not be saved.
+                    new ValueComparer<ChecklistDefinition>(
+                        (a, b) => JsonSerializer.Serialize(a, ChecklistJson) == JsonSerializer.Serialize(b, ChecklistJson),
+                        v => JsonSerializer.Serialize(v, ChecklistJson).GetHashCode(StringComparison.Ordinal),
+                        v => JsonSerializer.Deserialize<ChecklistDefinition>(
+                                 JsonSerializer.Serialize(v, ChecklistJson), ChecklistJson)!))
                 .IsRequired();
 
             e.HasOne(x => x.Template)
