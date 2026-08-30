@@ -2,15 +2,17 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native';
-import { api, clearSession, setServerUrl, type Equipment } from './src/api';
+import { api, clearSession, setServerUrl, type Equipment, type PmForm, type PmTask } from './src/api';
+import { queue } from './src/queue';
 import { storage } from './src/storage';
 import { theme } from './src/theme';
 import { ServerSetupScreen } from './src/screens/ServerSetupScreen';
 import { LoginScreen } from './src/screens/LoginScreen';
 import { ScanScreen } from './src/screens/ScanScreen';
 import { EquipmentDetailScreen } from './src/screens/EquipmentDetailScreen';
+import { PmChecklistScreen } from './src/screens/PmChecklistScreen';
 
-type Stage = 'loading' | 'server' | 'login' | 'scan' | 'detail';
+type Stage = 'loading' | 'server' | 'login' | 'scan' | 'detail' | 'checklist';
 
 /**
  * Four screens, switched by state rather than a navigation library.
@@ -24,6 +26,8 @@ export default function App() {
   const [stage, setStage] = useState<Stage>('loading');
   const [server, setServer] = useState<string | null>(null);
   const [equipment, setEquipment] = useState<Equipment | null>(null);
+  const [pmTasks, setPmTasks] = useState<PmTask[]>([]);
+  const [form, setForm] = useState<PmForm | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -43,6 +47,11 @@ export default function App() {
       // technician reopening the app between wards should land on the
       // scanner, not a password prompt.
       const restored = await api.restoreSession();
+
+      // Anything queued while offline goes out as soon as there is a session
+      // again, without the technician having to remember.
+      if (restored) void queue.flush();
+
       if (!cancelled) setStage(restored ? 'scan' : 'login');
     })();
 
@@ -94,8 +103,16 @@ export default function App() {
 
       {stage === 'scan' && (
         <ScanScreen
-          onFound={(found) => {
+          onFound={async (found) => {
             setEquipment(found);
+            // Fetched alongside the machine so the technician sees what is
+            // due without a second deliberate step.
+            try {
+              const tasks = await api.tasksForEquipment(found.id);
+              setPmTasks(tasks.items);
+            } catch {
+              setPmTasks([]);
+            }
             setStage('detail');
           }}
           onSignOut={() => void signOut()}
@@ -105,8 +122,36 @@ export default function App() {
       {stage === 'detail' && equipment && (
         <EquipmentDetailScreen
           equipment={equipment}
+          pmTasks={pmTasks}
+          onStartPm={async (taskId) => {
+            try {
+              setForm(await api.taskForm(taskId));
+              setStage('checklist');
+            } catch {
+              // Opening a PM needs connectivity by design: the checklist
+              // version has to come from the server so the completion is
+              // pinned to what was actually published.
+            }
+          }}
           onBack={() => {
             setEquipment(null);
+            setPmTasks([]);
+            setStage('scan');
+          }}
+        />
+      )}
+
+      {stage === 'checklist' && form && (
+        <PmChecklistScreen
+          form={form}
+          onCancel={() => {
+            setForm(null);
+            setStage('detail');
+          }}
+          onDone={() => {
+            setForm(null);
+            setEquipment(null);
+            setPmTasks([]);
             setStage('scan');
           }}
         />

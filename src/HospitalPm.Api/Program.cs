@@ -134,6 +134,7 @@ app.MapLocationEndpoints();
 app.MapLabelEndpoints();
 app.MapChecklistEndpoints();
 app.MapPmEndpoints();
+app.MapPmExecutionEndpoints();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
