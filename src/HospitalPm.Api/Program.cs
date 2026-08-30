@@ -1,8 +1,10 @@
 using System.Reflection;
 using HospitalPm.Api.Auth;
 using HospitalPm.Api.Equipment;
+using HospitalPm.Api.Labels;
 using HospitalPm.Api.Locations;
 using HospitalPm.Infrastructure.Identity;
+using HospitalPm.Infrastructure.Labels;
 using HospitalPm.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -27,6 +29,16 @@ builder.Services.AddDbContext<HospitalPmDbContext>(o =>
 // directory the web server can serve.
 builder.Services.AddScoped<HospitalPm.Infrastructure.Import.EquipmentImportService>();
 builder.Services.AddScoped<HospitalPm.Infrastructure.Import.LocationImportService>();
+
+builder.Services.Configure<LabelOptions>(builder.Configuration.GetSection(LabelOptions.SectionName));
+builder.Services.AddSingleton<QrCodeService>();
+builder.Services.AddScoped<LabelSheetService>();
+builder.Services.AddScoped<ZplLabelService>();
+
+// QuestPDF refuses to render until a licence type is declared. Community is
+// free for organisations under $1M USD annual revenue; past that it needs a
+// paid licence, which is a commercial decision rather than a code one.
+QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 
 builder.Services.AddHospitalPmAuth(
     builder.Configuration,
@@ -73,6 +85,7 @@ app.MapEquipmentEndpoints();
 app.MapImportEndpoints();
 app.MapLookupEndpoints();
 app.MapLocationEndpoints();
+app.MapLabelEndpoints();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
