@@ -4,6 +4,7 @@ using HospitalPm.Domain.Checklists;
 using HospitalPm.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace HospitalPm.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(HospitalPmDbContext))]
-    partial class HospitalPmDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260830195445_ChecklistImmutability")]
+    partial class ChecklistImmutability
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

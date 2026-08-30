@@ -1,16 +1,25 @@
 using HospitalPm.Domain.Assets;
+using HospitalPm.Domain.Checklists;
 using HospitalPm.Domain.Equipment;
 using HospitalPm.Domain.Locations;
 using HospitalPm.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+using System.Text.Json;
 
 namespace HospitalPm.Infrastructure.Persistence;
 
 public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> options)
     : IdentityDbContext<ApplicationUser, ApplicationRole, int>(options)
 {
+    /// <summary>
+    /// Fixed on purpose. These documents outlive the code that wrote them, so
+    /// the property naming must not drift with a future default.
+    /// </summary>
+    private static readonly JsonSerializerOptions ChecklistJson = new(JsonSerializerDefaults.Web);
+
     public DbSet<Category> Categories => Set<Category>();
 
     public DbSet<EquipmentType> EquipmentTypes => Set<EquipmentType>();
@@ -20,6 +29,10 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
     public DbSet<Location> Locations => Set<Location>();
 
     public DbSet<Equipment> Equipment => Set<Equipment>();
+
+    public DbSet<ChecklistTemplate> ChecklistTemplates => Set<ChecklistTemplate>();
+
+    public DbSet<ChecklistTemplateVersion> ChecklistTemplateVersions => Set<ChecklistTemplateVersion>();
 
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
@@ -84,6 +97,77 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
                 .OnDelete(DeleteBehavior.Restrict);
 
             e.HasIndex(x => x.CategoryId).HasDatabaseName("ix_equipment_type_category_category");
+        });
+
+        builder.Entity<ChecklistTemplate>(e =>
+        {
+            e.ToTable("checklist_template");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.EquipmentTypeId).HasColumnName("equipment_type_id");
+            e.Property(x => x.Code).HasColumnName("code").HasMaxLength(64).IsRequired();
+            e.Property(x => x.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
+            e.Property(x => x.Description).HasColumnName("description");
+            e.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(true);
+            e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").HasDefaultValueSql("now()");
+            e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").HasDefaultValueSql("now()");
+
+            e.HasOne(x => x.EquipmentType)
+                .WithMany()
+                .HasForeignKey(x => x.EquipmentTypeId)
+                // Restrict: an equipment type still referenced by a checklist
+                // cannot be removed out from under completed work.
+                .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasDatabaseName("ux_checklist_template_tenant_code");
+            e.HasIndex(x => x.EquipmentTypeId).HasDatabaseName("ix_checklist_template_equipment_type");
+        });
+
+        builder.Entity<ChecklistTemplateVersion>(e =>
+        {
+            e.ToTable("checklist_template_version");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.ChecklistTemplateId).HasColumnName("checklist_template_id");
+            e.Property(x => x.VersionNo).HasColumnName("version_no");
+            e.Property(x => x.Status).HasColumnName("status").HasConversion<int>();
+            e.Property(x => x.ChangeNote).HasColumnName("change_note");
+            e.Property(x => x.PublishedAtUtc).HasColumnName("published_at_utc");
+            e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").HasDefaultValueSql("now()");
+            e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").HasDefaultValueSql("now()");
+
+            // jsonb, not json: it is indexable, and Postgres validates and
+            // normalises it on write rather than storing whatever arrived.
+            //
+            // Serialised explicitly rather than by enabling Npgsql's dynamic
+            // JSON. Dynamic JSON is a global, reflection-based opt-in; doing
+            // it here keeps the shape of stored definitions under this
+            // mapping's control, which matters for data that has to remain
+            // readable years after it was written.
+            e.Property(x => x.Definition)
+                .HasColumnName("definition")
+                .HasColumnType("jsonb")
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, ChecklistJson),
+                    v => JsonSerializer.Deserialize<ChecklistDefinition>(v, ChecklistJson) ?? new ChecklistDefinition(),
+                    // EF cannot see edits inside a mutable object graph without
+                    // a comparer, so a changed question would not be saved.
+                    new ValueComparer<ChecklistDefinition>(
+                        (a, b) => JsonSerializer.Serialize(a, ChecklistJson) == JsonSerializer.Serialize(b, ChecklistJson),
+                        v => JsonSerializer.Serialize(v, ChecklistJson).GetHashCode(StringComparison.Ordinal),
+                        v => JsonSerializer.Deserialize<ChecklistDefinition>(
+                                 JsonSerializer.Serialize(v, ChecklistJson), ChecklistJson)!))
+                .IsRequired();
+
+            e.HasOne(x => x.Template)
+                .WithMany(x => x!.Versions)
+                .HasForeignKey(x => x.ChecklistTemplateId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(x => new { x.ChecklistTemplateId, x.VersionNo })
+                .HasDatabaseName("ix_checklist_version_template_no");
         });
 
         builder.Entity<Location>(e =>
