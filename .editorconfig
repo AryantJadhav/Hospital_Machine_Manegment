@@ -1,0 +1,27 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+indent_style = space
+trim_trailing_whitespace = true
+
+[*.{cs,csproj,props,targets}]
+indent_size = 4
+
+[*.{ts,tsx,js,jsx,json,yml,yaml,css,html}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+# EF Core writes these files. They are generated output that must stay
+# byte-identical to what `dotnet ef migrations add` produces, so hand-editing
+# them to satisfy style analyzers would be undone by the next scaffold.
+# Correctness rules still apply; only style/perf suggestions are silenced.
+[**/Persistence/Migrations/*.cs]
+dotnet_diagnostic.CA1861.severity = none
+dotnet_diagnostic.CA1062.severity = none
+dotnet_diagnostic.IDE0300.severity = none
+generated_code = true

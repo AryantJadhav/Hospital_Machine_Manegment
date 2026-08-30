@@ -1,4 +1,6 @@
 using System.Reflection;
+using HospitalPm.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 // ContentRoot must be the binary's own directory, not the current working
 // directory. A Windows Service starts with CWD = C:\Windows\System32 and a
@@ -13,7 +15,21 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 
 builder.Services.AddOpenApi();
 
+builder.Services.AddDbContext<HospitalPmDbContext>(o =>
+    o.UseNpgsql(builder.Configuration.GetConnectionString("HospitalPm")));
+
 var app = builder.Build();
+
+// Migrations run on start, forward-only. A hospital has no DBA and no
+// migration step in the install; the service brings its own schema up to
+// date or refuses to serve. Skipped when no connection string is configured
+// so the app still starts for a UI-only smoke test.
+if (!string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("HospitalPm")))
+{
+    using var scope = app.Services.CreateScope();
+    await scope.ServiceProvider.GetRequiredService<HospitalPmDbContext>()
+        .Database.MigrateAsync();
+}
 
 if (app.Environment.IsDevelopment())
 {
