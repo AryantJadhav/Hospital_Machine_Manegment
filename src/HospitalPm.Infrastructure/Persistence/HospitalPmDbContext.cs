@@ -1,4 +1,6 @@
+using HospitalPm.Domain.Assets;
 using HospitalPm.Domain.Equipment;
+using HospitalPm.Domain.Locations;
 using HospitalPm.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
@@ -14,6 +16,10 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
     public DbSet<EquipmentType> EquipmentTypes => Set<EquipmentType>();
 
     public DbSet<EquipmentTypeCategory> EquipmentTypeCategories => Set<EquipmentTypeCategory>();
+
+    public DbSet<Location> Locations => Set<Location>();
+
+    public DbSet<Equipment> Equipment => Set<Equipment>();
 
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
@@ -78,6 +84,76 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
                 .OnDelete(DeleteBehavior.Restrict);
 
             e.HasIndex(x => x.CategoryId).HasDatabaseName("ix_equipment_type_category_category");
+        });
+
+        builder.Entity<Location>(e =>
+        {
+            e.ToTable("location");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.ParentId).HasColumnName("parent_id");
+            e.Property(x => x.Level).HasColumnName("level").HasConversion<int>();
+            e.Property(x => x.Code).HasColumnName("code").HasMaxLength(64).IsRequired();
+            e.Property(x => x.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
+            e.Property(x => x.Path).HasColumnName("path").HasMaxLength(1000);
+            e.Property(x => x.Depth).HasColumnName("depth");
+            e.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(true);
+            e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").HasDefaultValueSql("now()");
+            e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").HasDefaultValueSql("now()");
+
+            e.HasOne(x => x.Parent)
+                .WithMany(x => x!.Children)
+                .HasForeignKey(x => x.ParentId)
+                // Restrict, not Cascade. Deleting a site must not silently
+                // take every department, room and their equipment with it.
+                .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasDatabaseName("ux_location_tenant_code");
+            e.HasIndex(x => x.ParentId).HasDatabaseName("ix_location_parent");
+            e.HasIndex(x => x.Path).HasDatabaseName("ix_location_path");
+        });
+
+        builder.Entity<Equipment>(e =>
+        {
+            e.ToTable("equipment");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.AssetTag).HasColumnName("asset_tag").HasMaxLength(64).IsRequired();
+            e.Property(x => x.SerialNumber).HasColumnName("serial_number").HasMaxLength(128);
+            e.Property(x => x.EquipmentTypeId).HasColumnName("equipment_type_id");
+            e.Property(x => x.LocationId).HasColumnName("location_id");
+            e.Property(x => x.Manufacturer).HasColumnName("manufacturer").HasMaxLength(200);
+            e.Property(x => x.Model).HasColumnName("model").HasMaxLength(200);
+            e.Property(x => x.Status).HasColumnName("status").HasConversion<int>();
+            e.Property(x => x.PurchaseDate).HasColumnName("purchase_date");
+            e.Property(x => x.InstallationDate).HasColumnName("installation_date");
+            e.Property(x => x.WarrantyExpiryDate).HasColumnName("warranty_expiry_date");
+            e.Property(x => x.Notes).HasColumnName("notes");
+            e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").HasDefaultValueSql("now()");
+            e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").HasDefaultValueSql("now()");
+
+            e.HasOne(x => x.EquipmentType)
+                .WithMany()
+                .HasForeignKey(x => x.EquipmentTypeId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Location)
+                .WithMany()
+                .HasForeignKey(x => x.LocationId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // The asset tag is what a QR scan resolves. It must be unique or
+            // a scan is ambiguous at the bedside.
+            e.HasIndex(x => new { x.TenantId, x.AssetTag }).IsUnique().HasDatabaseName("ux_equipment_tenant_asset_tag");
+
+            // Serial is not unique (hospitals hand over blanks and
+            // duplicates) but is searched constantly.
+            e.HasIndex(x => x.SerialNumber).HasDatabaseName("ix_equipment_serial");
+            e.HasIndex(x => x.LocationId).HasDatabaseName("ix_equipment_location");
+            e.HasIndex(x => x.EquipmentTypeId).HasDatabaseName("ix_equipment_type");
+            e.HasIndex(x => x.Status).HasDatabaseName("ix_equipment_status");
         });
     }
 
