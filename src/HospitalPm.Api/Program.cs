@@ -5,11 +5,13 @@ using HospitalPm.Api.Equipment;
 using HospitalPm.Api.Labels;
 using HospitalPm.Api.Locations;
 using HospitalPm.Api.Maintenance;
+using HospitalPm.Api.Reports;
 using HospitalPm.Api.WorkOrders;
 using HospitalPm.Infrastructure.Identity;
 using Hangfire;
 using Hangfire.PostgreSql;
 using HospitalPm.Infrastructure.Labels;
+using HospitalPm.Infrastructure.Reports;
 using HospitalPm.Infrastructure.Maintenance;
 using HospitalPm.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -38,6 +40,7 @@ builder.Services.AddScoped<HospitalPm.Infrastructure.Import.LocationImportServic
 
 builder.Services.Configure<LabelOptions>(builder.Configuration.GetSection(LabelOptions.SectionName));
 builder.Services.Configure<ScheduleOptions>(builder.Configuration.GetSection(ScheduleOptions.SectionName));
+builder.Services.Configure<ReportOptions>(builder.Configuration.GetSection(ReportOptions.SectionName));
 builder.Services.AddSingleton<HospitalClock>();
 builder.Services.AddScoped<PmScheduleGenerator>();
 builder.Services.AddSingleton<QrCodeService>();
@@ -137,6 +140,7 @@ app.MapChecklistEndpoints();
 app.MapPmEndpoints();
 app.MapPmExecutionEndpoints();
 app.MapWorkOrderEndpoints();
+app.MapReportEndpoints();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
