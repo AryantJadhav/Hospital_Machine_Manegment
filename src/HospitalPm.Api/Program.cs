@@ -1,5 +1,6 @@
 using System.Reflection;
 using HospitalPm.Api.Auth;
+using HospitalPm.Api.Equipment;
 using HospitalPm.Infrastructure.Identity;
 using HospitalPm.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -63,6 +64,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapAuthEndpoints();
+app.MapEquipmentEndpoints();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
