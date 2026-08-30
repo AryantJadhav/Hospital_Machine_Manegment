@@ -2,6 +2,7 @@ using HospitalPm.Domain.Assets;
 using HospitalPm.Domain.Checklists;
 using HospitalPm.Domain.Equipment;
 using HospitalPm.Domain.Maintenance;
+using HospitalPm.Domain.WorkOrders;
 using HospitalPm.Domain.Locations;
 using HospitalPm.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity;
@@ -40,6 +41,10 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
     public DbSet<PmTask> PmTasks => Set<PmTask>();
 
     public DbSet<PmCompletion> PmCompletions => Set<PmCompletion>();
+
+    public DbSet<WorkOrder> WorkOrders => Set<WorkOrder>();
+
+    public DbSet<WorkOrderNote> WorkOrderNotes => Set<WorkOrderNote>();
 
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
@@ -295,6 +300,68 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
                 .IsUnique()
                 .HasFilter("client_submission_id IS NOT NULL")
                 .HasDatabaseName("ux_pm_completion_client_submission");
+        });
+
+        builder.Entity<WorkOrder>(e =>
+        {
+            e.ToTable("work_order");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            // Assigned by a database default from a sequence, so concurrent
+            // reports cannot collide on a number.
+            e.Property(x => x.Number).HasColumnName("number").HasMaxLength(32)
+                .ValueGeneratedOnAdd().HasDefaultValueSql("''");
+            e.Property(x => x.EquipmentId).HasColumnName("equipment_id");
+            e.Property(x => x.Status).HasColumnName("status").HasConversion<int>();
+            e.Property(x => x.Priority).HasColumnName("priority").HasConversion<int>();
+            e.Property(x => x.FaultDescription).HasColumnName("fault_description").IsRequired();
+            e.Property(x => x.ReportedByUserId).HasColumnName("reported_by_user_id");
+            e.Property(x => x.ReportedAtUtc).HasColumnName("reported_at_utc");
+            e.Property(x => x.AssignedToUserId).HasColumnName("assigned_to_user_id");
+            e.Property(x => x.AssignedAtUtc).HasColumnName("assigned_at_utc");
+            e.Property(x => x.StartedAtUtc).HasColumnName("started_at_utc");
+            e.Property(x => x.ResolutionNotes).HasColumnName("resolution_notes");
+            e.Property(x => x.ResolvedByUserId).HasColumnName("resolved_by_user_id");
+            e.Property(x => x.ResolvedAtUtc).HasColumnName("resolved_at_utc");
+            e.Property(x => x.ClosedAtUtc).HasColumnName("closed_at_utc");
+            e.Property(x => x.OutOfServiceAtUtc).HasColumnName("out_of_service_at_utc");
+            e.Property(x => x.BackInServiceAtUtc).HasColumnName("back_in_service_at_utc");
+            e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").HasDefaultValueSql("now()");
+            e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").HasDefaultValueSql("now()");
+            e.Ignore(x => x.DowntimeMinutes);
+
+            e.HasOne(x => x.Equipment)
+                .WithMany()
+                .HasForeignKey(x => x.EquipmentId)
+                // Restrict: a machine's fault history is part of its record.
+                .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasIndex(x => new { x.TenantId, x.Number }).IsUnique().HasDatabaseName("ux_work_order_number");
+            e.HasIndex(x => x.EquipmentId).HasDatabaseName("ix_work_order_equipment");
+            e.HasIndex(x => new { x.Status, x.Priority }).HasDatabaseName("ix_work_order_status_priority");
+            e.HasIndex(x => x.AssignedToUserId).HasDatabaseName("ix_work_order_assignee");
+        });
+
+        builder.Entity<WorkOrderNote>(e =>
+        {
+            e.ToTable("work_order_note");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.WorkOrderId).HasColumnName("work_order_id");
+            e.Property(x => x.Body).HasColumnName("body").IsRequired();
+            e.Property(x => x.StatusAfter).HasColumnName("status_after").HasConversion<int?>();
+            e.Property(x => x.AuthorUserId).HasColumnName("author_user_id");
+            e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").HasDefaultValueSql("now()");
+
+            e.HasOne(x => x.WorkOrder)
+                .WithMany(x => x!.Notes)
+                .HasForeignKey(x => x.WorkOrderId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(x => new { x.WorkOrderId, x.CreatedAtUtc })
+                .HasDatabaseName("ix_work_order_note_timeline");
         });
 
         builder.Entity<Location>(e =>
