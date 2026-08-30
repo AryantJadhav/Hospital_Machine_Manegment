@@ -4,8 +4,12 @@ using HospitalPm.Api.Checklists;
 using HospitalPm.Api.Equipment;
 using HospitalPm.Api.Labels;
 using HospitalPm.Api.Locations;
+using HospitalPm.Api.Maintenance;
 using HospitalPm.Infrastructure.Identity;
+using Hangfire;
+using Hangfire.PostgreSql;
 using HospitalPm.Infrastructure.Labels;
+using HospitalPm.Infrastructure.Maintenance;
 using HospitalPm.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -32,6 +36,9 @@ builder.Services.AddScoped<HospitalPm.Infrastructure.Import.EquipmentImportServi
 builder.Services.AddScoped<HospitalPm.Infrastructure.Import.LocationImportService>();
 
 builder.Services.Configure<LabelOptions>(builder.Configuration.GetSection(LabelOptions.SectionName));
+builder.Services.Configure<ScheduleOptions>(builder.Configuration.GetSection(ScheduleOptions.SectionName));
+builder.Services.AddSingleton<HospitalClock>();
+builder.Services.AddScoped<PmScheduleGenerator>();
 builder.Services.AddSingleton<QrCodeService>();
 builder.Services.AddScoped<LabelSheetService>();
 builder.Services.AddScoped<ZplLabelService>();
@@ -45,17 +52,55 @@ builder.Services.AddHospitalPmAuth(
     builder.Configuration,
     Path.Combine(AppContext.BaseDirectory, "data"));
 
+// Hangfire in-process against the same PostgreSQL, per the packaging
+// constraint: no Redis, no separate worker service, still two services on a
+// client install. Skipped when no connection string is configured so the
+// binary still starts for a UI-only smoke test.
+var connectionString = builder.Configuration.GetConnectionString("HospitalPm");
+var hasDatabase = !string.IsNullOrWhiteSpace(connectionString);
+
+if (hasDatabase)
+{
+    builder.Services.AddHangfire(cfg => cfg
+        .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+        .UseSimpleAssemblyNameTypeSerializer()
+        .UseRecommendedSerializerSettings()
+        .UsePostgreSqlStorage(o => o.UseNpgsqlConnection(connectionString)));
+
+    // One worker. PM generation is a nightly batch, not a throughput
+    // problem, and a hospital PC is also running Postgres and a ward's
+    // worth of browsers.
+    builder.Services.AddHangfireServer(o => o.WorkerCount = 1);
+}
+
 var app = builder.Build();
 
 // Migrations run on start, forward-only. A hospital has no DBA and no
 // migration step in the install; the service brings its own schema up to
 // date or refuses to serve. Skipped when no connection string is configured
 // so the app still starts for a UI-only smoke test.
-if (!string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("HospitalPm")))
+if (hasDatabase)
 {
     using var scope = app.Services.CreateScope();
     await scope.ServiceProvider.GetRequiredService<HospitalPmDbContext>()
         .Database.MigrateAsync();
+
+    // Registered through IRecurringJobManager, not the static RecurringJob
+    // helper. The static one reads a global JobStorage.Current, which is not
+    // set when the host is built by WebApplicationFactory - so the static
+    // call throws in tests and depends on initialisation order in production.
+    //
+    // Recurring by id, so restarting the service re-registers rather than
+    // accumulating duplicate jobs.
+    scope.ServiceProvider.GetRequiredService<IRecurringJobManager>()
+        .AddOrUpdate<PmScheduleGenerator>(
+            "pm-generate-due-dates",
+            job => job.RunAsync(CancellationToken.None),
+            // 00:15 UTC. Cron runs in UTC because the app deliberately avoids
+            // depending on OS time zone data; the generator itself applies the
+            // hospital's offset when deciding what "today" is.
+            "15 0 * * *",
+            new RecurringJobOptions { TimeZone = TimeZoneInfo.Utc });
 }
 
 if (app.Environment.IsDevelopment())
@@ -88,6 +133,7 @@ app.MapLookupEndpoints();
 app.MapLocationEndpoints();
 app.MapLabelEndpoints();
 app.MapChecklistEndpoints();
+app.MapPmEndpoints();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
