@@ -65,9 +65,11 @@ app.MapGet("/health", () => Results.Ok(new
 app.UseAuthentication();
 app.UseAuthorization();
 
+app.MapSetupEndpoints();
 app.MapAuthEndpoints();
 app.MapEquipmentEndpoints();
 app.MapImportEndpoints();
+app.MapLookupEndpoints();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();

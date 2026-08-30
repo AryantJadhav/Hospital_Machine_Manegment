@@ -1,0 +1,210 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { api } from '../api/client';
+
+type Equipment = {
+  id: number;
+  assetTag: string;
+  serialNumber: string | null;
+  equipmentTypeId: number;
+  equipmentTypeName: string;
+  locationId: number;
+  locationName: string;
+  manufacturer: string | null;
+  model: string | null;
+  status: number;
+  purchaseDate: string | null;
+  warrantyExpiryDate: string | null;
+};
+
+type Paged<T> = { items: T[]; total: number; page: number; pageSize: number };
+type Lookup = { id: number; code: string; name: string };
+type LocationLookup = Lookup & { depth: number; level: number };
+
+const STATUS: Record<number, string> = {
+  10: 'In store',
+  20: 'In service',
+  30: 'Under repair',
+  40: 'Condemned',
+  50: 'Disposed',
+};
+
+const PAGE_SIZE = 25;
+
+export function EquipmentListPage() {
+  const [query, setQuery] = useState('');
+  const [debounced, setDebounced] = useState('');
+  const [locationId, setLocationId] = useState('');
+  const [typeId, setTypeId] = useState('');
+  const [status, setStatus] = useState('');
+  const [page, setPage] = useState(1);
+
+  const [data, setData] = useState<Paged<Equipment> | null>(null);
+  const [types, setTypes] = useState<Lookup[]>([]);
+  const [locations, setLocations] = useState<LocationLookup[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Debounced so typing an asset tag does not fire a request per keystroke
+  // against a hospital PC also running Postgres.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebounced(query);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [t, l] = await Promise.all([
+          api.get<Lookup[]>('/api/lookups/equipment-types'),
+          api.get<LocationLookup[]>('/api/lookups/locations'),
+        ]);
+        setTypes(t);
+        setLocations(l);
+      } catch {
+        /* filters degrade to text search only */
+      }
+    })();
+  }, []);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
+      if (debounced.trim()) params.set('q', debounced.trim());
+      if (locationId) params.set('locationId', locationId);
+      if (typeId) params.set('equipmentTypeId', typeId);
+      if (status) params.set('status', status);
+
+      setData(await api.get<Paged<Equipment>>(`/api/equipment?${params}`));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not load equipment.');
+    } finally {
+      setLoading(false);
+    }
+  }, [debounced, locationId, typeId, status, page]);
+
+  // Fetching from the server is precisely the "synchronising with an
+  // external system" case this rule exempts; the setState calls inside load
+  // are loading and result transitions, not derived render state.
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const totalPages = useMemo(
+    () => (data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1),
+    [data],
+  );
+
+  const hasFilters = Boolean(debounced || locationId || typeId || status);
+
+  return (
+    <div className="page">
+      <header className="page-head">
+        <div>
+          <h1>Equipment register</h1>
+          {data && (
+            <p className="muted">
+              {data.total.toLocaleString()} {data.total === 1 ? 'asset' : 'assets'}
+              {hasFilters ? ' matching' : ''}
+            </p>
+          )}
+        </div>
+      </header>
+
+      <div className="filters card">
+        <input
+          className="grow"
+          placeholder="Search asset tag, serial, manufacturer or model…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+
+        <select value={locationId} onChange={(e) => { setLocationId(e.target.value); setPage(1); }}>
+          <option value="">All locations</option>
+          {locations.map((l) => (
+            <option key={l.id} value={l.id}>
+              {/* Indent by depth so the tree shape survives a flat select. */}
+              {' '.repeat(l.depth * 3)}
+              {l.name}
+            </option>
+          ))}
+        </select>
+
+        <select value={typeId} onChange={(e) => { setTypeId(e.target.value); setPage(1); }}>
+          <option value="">All types</option>
+          {types.map((t) => (
+            <option key={t.id} value={t.id}>{t.name}</option>
+          ))}
+        </select>
+
+        <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}>
+          <option value="">Any status</option>
+          {Object.entries(STATUS).map(([v, label]) => (
+            <option key={v} value={v}>{label}</option>
+          ))}
+        </select>
+      </div>
+
+      {error && <p className="alert alert-error" role="alert">{error}</p>}
+
+      <div className="card table-wrap">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Asset tag</th>
+              <th>Type</th>
+              <th>Location</th>
+              <th>Manufacturer</th>
+              <th>Serial</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading && (
+              <tr><td colSpan={6} className="empty">Loading…</td></tr>
+            )}
+
+            {!loading && data?.items.length === 0 && (
+              <tr>
+                <td colSpan={6} className="empty">
+                  {hasFilters
+                    ? 'No equipment matches these filters.'
+                    : 'The register is empty. Import a spreadsheet to get started.'}
+                </td>
+              </tr>
+            )}
+
+            {!loading && data?.items.map((e) => (
+              <tr key={e.id}>
+                <td className="mono">{e.assetTag}</td>
+                <td>{e.equipmentTypeName}</td>
+                <td>{e.locationName}</td>
+                <td>{e.manufacturer ?? <span className="muted">—</span>}</td>
+                <td className="mono">{e.serialNumber ?? <span className="muted">—</span>}</td>
+                <td>
+                  <span className={`pill pill-${e.status}`}>{STATUS[e.status] ?? 'Unknown'}</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {data && data.total > data.pageSize && (
+        <div className="pager">
+          <button className="btn" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+            Previous
+          </button>
+          <span className="muted">Page {page} of {totalPages}</span>
+          <button className="btn" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
+            Next
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
