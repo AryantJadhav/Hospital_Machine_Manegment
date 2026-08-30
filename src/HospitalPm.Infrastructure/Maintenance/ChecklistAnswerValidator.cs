@@ -101,10 +101,16 @@ public static class ChecklistAnswerValidator
 
             case ChecklistItemType.Number:
             {
-                // Invariant parsing. The device may be set to any locale, and
-                // a reading that means 42.5 must not be stored as 425 because
-                // a comma was used as the decimal separator.
-                if (!decimal.TryParse(given, NumberStyles.Number, CultureInfo.InvariantCulture, out var value))
+                // Invariant parsing, and deliberately NOT NumberStyles.Number.
+                //
+                // Number includes AllowThousands, which makes invariant
+                // culture read "42,5" from a comma-decimal device as 425 —
+                // an order of magnitude wrong, and entirely plausible-looking
+                // in a report. Float allows a decimal point, a sign and
+                // exponent but no group separator, so an ambiguous reading is
+                // rejected and asked again rather than silently corrupted.
+                // A measurement never needs thousands separators.
+                if (!decimal.TryParse(given, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
                 {
                     problems.Add(new ValidationProblem(item.Key, $"'{item.Label}' must be a number."));
                     return null;

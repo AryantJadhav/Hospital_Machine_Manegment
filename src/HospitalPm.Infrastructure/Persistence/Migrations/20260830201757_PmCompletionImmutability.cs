@@ -26,7 +26,8 @@ public partial class PmCompletionImmutability : Migration
             BEGIN
                 RAISE EXCEPTION
                     'PM completion % is a signed record and cannot be %; repeat the PM instead',
-                    OLD.id, lower(TG_OP)
+                    OLD.id,
+                    CASE TG_OP WHEN 'UPDATE' THEN 'changed' ELSE 'deleted' END
                     USING ERRCODE = 'check_violation';
             END;
             $fn$;");
