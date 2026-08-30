@@ -138,7 +138,21 @@ public static class EquipmentEndpoints
             .OrderBy(e => e.AssetTag)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(e => Project(e))
+            .Select(e => new EquipmentResponse(
+                e.Id,
+                e.AssetTag,
+                e.SerialNumber,
+                e.EquipmentTypeId,
+                e.EquipmentType!.Name,
+                e.LocationId,
+                e.Location!.Name,
+                e.Manufacturer,
+                e.Model,
+                e.Status,
+                e.PurchaseDate,
+                e.InstallationDate,
+                e.WarrantyExpiryDate,
+                e.Notes))
             .ToListAsync(ct);
 
         return Results.Ok(new PagedResult<EquipmentResponse>(items, total, page, pageSize));
@@ -148,7 +162,21 @@ public static class EquipmentEndpoints
     {
         var item = await db.Equipment.AsNoTracking()
             .Where(e => e.Id == id)
-            .Select(e => Project(e))
+            .Select(e => new EquipmentResponse(
+                e.Id,
+                e.AssetTag,
+                e.SerialNumber,
+                e.EquipmentTypeId,
+                e.EquipmentType!.Name,
+                e.LocationId,
+                e.Location!.Name,
+                e.Manufacturer,
+                e.Model,
+                e.Status,
+                e.PurchaseDate,
+                e.InstallationDate,
+                e.WarrantyExpiryDate,
+                e.Notes))
             .SingleOrDefaultAsync(ct);
 
         return item is null ? Results.NotFound() : Results.Ok(item);
@@ -165,7 +193,21 @@ public static class EquipmentEndpoints
 
         var item = await db.Equipment.AsNoTracking()
             .Where(e => e.AssetTag.ToLower() == normalised)
-            .Select(e => Project(e))
+            .Select(e => new EquipmentResponse(
+                e.Id,
+                e.AssetTag,
+                e.SerialNumber,
+                e.EquipmentTypeId,
+                e.EquipmentType!.Name,
+                e.LocationId,
+                e.Location!.Name,
+                e.Manufacturer,
+                e.Model,
+                e.Status,
+                e.PurchaseDate,
+                e.InstallationDate,
+                e.WarrantyExpiryDate,
+                e.Notes))
             .SingleOrDefaultAsync(ct);
 
         return item is null ? Results.NotFound() : Results.Ok(item);
@@ -302,20 +344,4 @@ public static class EquipmentEndpoints
 
         return null;
     }
-
-    private static EquipmentResponse Project(Domain.Assets.Equipment e) => new(
-        e.Id,
-        e.AssetTag,
-        e.SerialNumber,
-        e.EquipmentTypeId,
-        e.EquipmentType!.Name,
-        e.LocationId,
-        e.Location!.Name,
-        e.Manufacturer,
-        e.Model,
-        e.Status,
-        e.PurchaseDate,
-        e.InstallationDate,
-        e.WarrantyExpiryDate,
-        e.Notes);
 }
