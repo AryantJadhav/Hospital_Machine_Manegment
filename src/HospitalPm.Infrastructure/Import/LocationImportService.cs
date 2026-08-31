@@ -205,7 +205,7 @@ public sealed class LocationImportService(HospitalPmDbContext db)
         var rows = new List<LocationRow>();
 
         using var wb = new XLWorkbook(stream);
-        var ws = wb.Worksheets.FirstOrDefault();
+        var ws = FindDataSheet(wb, RequiredHeaders);
 
         if (ws?.RangeUsed() is not { } used)
         {
@@ -226,8 +226,9 @@ public sealed class LocationImportService(HospitalPmDbContext db)
         var missing = RequiredHeaders.Where(h => !index.ContainsKey(h)).ToList();
         if (missing.Count > 0)
         {
+            // See EquipmentImportService: header problems are file-level.
             errors.Add(new ImportError(
-                1, "Header", $"Missing required column(s): {string.Join(", ", missing)}."));
+                0, "Header", $"Missing required column(s): {string.Join(", ", missing)}."));
             return rows;
         }
 
@@ -278,6 +279,42 @@ public sealed class LocationImportService(HospitalPmDbContext db)
         }
 
         return Enum.TryParse<LocationLevel>(cleaned, ignoreCase: true, out var parsed) ? parsed : null;
+    }
+
+
+    /// <summary>
+    /// The first worksheet that actually carries the required headers.
+    ///
+    /// Taking worksheet one on faith breaks the moment a file grows a second
+    /// sheet — a summary, an operator's working notes, or the "How to fix"
+    /// sheet this app itself appends to a rejected file. Matching on headers
+    /// means a re-upload works whatever order the sheets end up in.
+    /// </summary>
+    private static IXLWorksheet? FindDataSheet(XLWorkbook wb, string[] required)
+    {
+        foreach (var sheet in wb.Worksheets)
+        {
+            var used = sheet.RangeUsed();
+            if (used is null)
+            {
+                continue;
+            }
+
+            var headers = used.FirstRow().Cells()
+                .Select(c => c.GetString().Trim())
+                .Where(h => h.Length > 0)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            if (required.All(headers.Contains))
+            {
+                return sheet;
+            }
+        }
+
+        // Nothing matched: fall back to the first sheet so the caller reports
+        // the missing headers against real content rather than saying the
+        // file is empty.
+        return wb.Worksheets.FirstOrDefault();
     }
 
     private static string Get(IXLRangeRow row, Dictionary<string, int> index, string column)

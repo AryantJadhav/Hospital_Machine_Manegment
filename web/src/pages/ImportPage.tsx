@@ -23,6 +23,7 @@ export function ImportPage() {
   const [result, setResult] = useState<ImportResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   // Validate must succeed with zero errors before commit is offered. The
   // server enforces all-or-nothing anyway; this makes the two-step shape
@@ -37,6 +38,26 @@ export function ImportPage() {
 
   const base =
     kind === 'locations' ? '/api/equipment/import/locations' : '/api/equipment/import';
+
+  /**
+   * Sends the same file back to be annotated and downloads the result.
+   *
+   * The file is still in memory from the picker, so this costs the operator
+   * nothing extra — and a list of forty problems in a web page is close to
+   * useless against a two thousand row sheet.
+   */
+  async function downloadReport() {
+    if (!file) return;
+    setDownloading(true);
+    setError(null);
+    try {
+      await api.uploadDownload(`${base}/report`, file, `${kind}-problems.xlsx`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not build the problem report.');
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   async function run(mode: 'validate' | 'commit') {
     if (!file) return;
@@ -139,10 +160,21 @@ export function ImportPage() {
 
         {result && result.errorCount > 0 && (
           <>
+            <div className="row" style={{ marginBottom: '0.75rem' }}>
+              <button className="btn btn-primary" disabled={downloading} onClick={() => void downloadReport()}>
+                {downloading ? 'Preparing…' : 'Download your file with the problems marked'}
+              </button>
+            </div>
+
             <p className="alert alert-error" role="alert">
               {result.errorCount.toLocaleString()} problem
               {result.errorCount === 1 ? '' : 's'} found in {result.totalRows.toLocaleString()} rows.
               Nothing has been saved. Fix the file and check it again.
+            </p>
+
+            <p className="muted" style={{ margin: '0 0 0.5rem' }}>
+              The download marks each bad row in your own spreadsheet. Fix them there and upload the
+              same file again — the added <code>Problems</code> column is ignored on import.
             </p>
 
             <div className="table-wrap">

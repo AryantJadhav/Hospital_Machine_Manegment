@@ -150,6 +150,13 @@ export const api = {
   /** Downloads a binary response, bypassing JSON parsing. */
   download: (path: string, filename: string) => downloadCore(path, filename),
 
+  /** Uploads a file and downloads whatever comes back — the annotated import report. */
+  uploadDownload: (path: string, file: File, filename: string) => {
+    const form = new FormData();
+    form.append('file', file);
+    return downloadCore(path, filename, { method: 'POST', form });
+  },
+
   /** Downloads the result of a POST — label sheets take a body of ids. */
   downloadPost: (path: string, body: unknown, filename: string) =>
     downloadCore(path, filename, {
@@ -162,13 +169,19 @@ export const api = {
 async function downloadCore(
   path: string,
   filename: string,
-  init?: { method?: string; body?: string; contentType?: string },
+  init?: { method?: string; body?: string; contentType?: string; form?: FormData },
 ): Promise<void> {
   const send = () => {
     const headers = new Headers();
     if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
-    if (init?.contentType) headers.set('Content-Type', init.contentType);
-    return fetch(path, { method: init?.method ?? 'GET', body: init?.body, headers });
+    // Deliberately not set for FormData: the browser has to add its own
+    // multipart boundary, and setting it by hand breaks the upload.
+    if (init?.contentType && !init.form) headers.set('Content-Type', init.contentType);
+    return fetch(path, {
+      method: init?.method ?? 'GET',
+      body: init?.form ?? init?.body,
+      headers,
+    });
   };
 
   let res = await send();
@@ -184,6 +197,9 @@ async function downloadCore(
     }
     throw new ApiError(res.status, message);
   }
+
+  // 204 means there was nothing to hand back — a clean file has no report.
+  if (res.status === 204) return;
 
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
