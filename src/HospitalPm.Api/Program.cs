@@ -60,9 +60,6 @@ builder.Services.AddOpenApi();
 builder.Services.AddDbContext<HospitalPmDbContext>(o =>
     o.UseNpgsql(builder.Configuration.GetConnectionString("HospitalPm")));
 
-// The signing key lives beside the binary, not in the content root, so it
-// survives an upgrade that replaces the executable and stays out of any
-// directory the web server can serve.
 builder.Services.AddScoped<HospitalPm.Infrastructure.Import.EquipmentImportService>();
 builder.Services.AddScoped<HospitalPm.Infrastructure.Import.LocationImportService>();
 
@@ -168,6 +165,15 @@ if (hasDatabase)
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+}
+
+// Said out loud rather than left to be discovered. On a developer's machine
+// this is expected; on an installed service it means the signing key sits
+// beside the binary, where Program Files grants every local user read access.
+if (InstallPaths.UsingFallback)
+{
+    StartupLog.DataDirectoryFallback(
+        app.Logger, InstallPaths.DataDirectory(), InstallPaths.EnvironmentVariable);
 }
 
 // Liveness probe. The Phase 2 diagnostics page and the Windows Service
