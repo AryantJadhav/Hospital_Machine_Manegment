@@ -386,3 +386,12 @@ textarea {
 .bk-10 { background: #2a2a16; color: #d8cf7a; }
 .bk-20 { background: #16291c; color: #7fd39b; }
 .bk-30 { background: #2e1a1a; color: #f0918b; }
+
+/* ---------- diagnostics ---------- */
+
+.dg-10 { background: #16291c; color: #7fd39b; }
+.dg-20 { background: #2a2a16; color: #d8cf7a; }
+.dg-30 { background: #2e1a1a; color: #f0918b; }
+
+.addr-list { margin: 0; padding-left: 1.1rem; }
+.addr-list li { padding: 0.15rem 0; }
