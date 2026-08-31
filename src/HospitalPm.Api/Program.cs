@@ -1,5 +1,6 @@
 using System.Reflection;
 using HospitalPm.Api.Auth;
+using HospitalPm.Api.Hosting;
 using HospitalPm.Api.Checklists;
 using HospitalPm.Api.Equipment;
 using HospitalPm.Api.Labels;
@@ -16,6 +17,7 @@ using HospitalPm.Infrastructure.Reports;
 using HospitalPm.Infrastructure.Maintenance;
 using HospitalPm.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting.WindowsServices;
 
 // ContentRoot must be the binary's own directory, not the current working
 // directory. A Windows Service starts with CWD = C:\Windows\System32 and a
@@ -27,6 +29,31 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
     Args = args,
     ContentRootPath = AppContext.BaseDirectory,
 });
+
+// Run as a Windows Service when the Service Control Manager started us, and
+// as an ordinary console app otherwise. UseWindowsService() detects which and
+// no-ops off Windows, so one binary covers the hospital's service install,
+// a developer pressing F5, and the Linux target.
+//
+// Without this the process never answers the SCM's control messages: it looks
+// like it starts, then Windows reports it as unresponsive and a Stop leaves a
+// half-dead service holding the port and the database connections.
+builder.Host.UseWindowsService(o => o.ServiceName = "HospitalPM");
+
+// The Windows Event Log is where a hospital's IT contact — or whoever they
+// call — will actually look, because a service that failed to start has no
+// console to have printed to.
+if (OperatingSystem.IsWindows() && WindowsServiceHelpers.IsWindowsService())
+{
+    WindowsServiceSetup.AddEventLog(builder);
+}
+
+// Machine-specific settings the installer wrote, layered over the defaults
+// shipped in appsettings.json. Kept outside the install directory so the
+// database password is not readable by every local user and so uninstalling
+// the program does not delete the hospital's configuration.
+builder.Configuration.AddJsonFile(
+    InstallPaths.SettingsFile(), optional: true, reloadOnChange: false);
 
 builder.Services.AddOpenApi();
 
