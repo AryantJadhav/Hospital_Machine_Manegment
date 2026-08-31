@@ -57,7 +57,83 @@ finally {
     Pop-Location
 }
 
-# --- 2. Publish, into an empty directory ----------------------------------
+# --- 2. PostgreSQL binaries -----------------------------------------------
+# Downloaded rather than committed: 340 MB has no business in a git history,
+# and the hash pin makes the result reproducible without it. Cached, so this
+# costs nothing after the first run.
+#
+# Only bin, lib and share are kept. The archive also carries pgAdmin (683 MB),
+# StackBuilder, docs and headers - none of which a hospital PC needs, and all
+# of which would triple the installer.
+$pgVersion = "17.11-1"
+$pgSha256 = "6EABDF00D2893713B75DB4336A23C3FDF505F056E217EC6E2E95D901750CFEA3"
+$pgUrl = "https://get.enterprisedb.com/postgresql/postgresql-$pgVersion-windows-x64-binaries.zip"
+
+$cacheDir = Join-Path $repoRoot "artifacts\cache"
+$pgZip = Join-Path $cacheDir "postgresql-$pgVersion-windows-x64-binaries.zip"
+$pgOut = Join-Path $repoRoot "artifacts\pgsql"
+
+New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
+
+if (-not (Test-Path $pgZip)) {
+    Write-Host "==> Downloading PostgreSQL $pgVersion (about 340 MB, once)"
+    $previous = $ProgressPreference
+    $ProgressPreference = "SilentlyContinue"   # the progress bar makes this many times slower
+    try {
+        Invoke-WebRequest -Uri $pgUrl -OutFile $pgZip -UseBasicParsing
+    }
+    finally {
+        $ProgressPreference = $previous
+    }
+}
+
+$actual = (Get-FileHash $pgZip -Algorithm SHA256).Hash
+if ($actual -ne $pgSha256) {
+    # Refuse rather than repair. A mismatch is either a corrupted download or
+    # a different archive than the one this was tested against, and shipping
+    # a database engine nobody verified is not a risk worth taking.
+    throw "PostgreSQL archive hash mismatch.`
+  expected $pgSha256`
+  actual   $actual`
+Delete $pgZip and retry."
+}
+Write-Host "    PostgreSQL archive verified"
+
+if (Test-Path $pgOut) { Remove-Item -Recurse -Force $pgOut }
+New-Item -ItemType Directory -Force -Path $pgOut | Out-Null
+
+Write-Host "==> Extracting PostgreSQL (bin, lib, share)"
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$zip = [System.IO.Compression.ZipFile]::OpenRead($pgZip)
+try {
+    foreach ($entry in $zip.Entries) {
+        if ($entry.FullName -notmatch '^pgsql/(bin|lib|share)/' -and
+            $entry.FullName -notmatch '^pgsql/(server_license|commandlinetools_3rd_party_licenses)\.txt$') {
+            continue
+        }
+        if ($entry.FullName.EndsWith("/")) { continue }
+
+        $relative = $entry.FullName -replace '^pgsql/', ''
+        $target = Join-Path $pgOut ($relative -replace '/', '\')
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
+        [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $target, $true)
+    }
+}
+finally {
+    $zip.Dispose()
+}
+
+foreach ($required in @("bin\postgres.exe", "bin\initdb.exe", "bin\pg_ctl.exe",
+                        "bin\psql.exe", "bin\pg_dump.exe", "bin\pg_restore.exe")) {
+    if (-not (Test-Path (Join-Path $pgOut $required))) {
+        throw "PostgreSQL extraction is missing $required"
+    }
+}
+
+$pgMb = [math]::Round((Get-ChildItem $pgOut -Recurse -File | Measure-Object Length -Sum).Sum / 1MB, 1)
+Write-Host "    PostgreSQL payload: $pgMb MB"
+
+# --- 3. Publish, into an empty directory ----------------------------------
 if (Test-Path $publishDir) {
     Write-Host "==> Clearing $publishDir"
     Remove-Item -Recurse -Force $publishDir
@@ -78,7 +154,7 @@ if (-not (Test-Path $indexPath)) {
 $assetCount = @(Get-ChildItem (Join-Path $publishDir "wwwroot\assets") -File).Count
 Write-Host "    wwwroot assets: $assetCount file(s)"
 
-# --- 3. Compile the installer ---------------------------------------------
+# --- 4. Compile the installer ---------------------------------------------
 $iscc = @(
     "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
     "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
