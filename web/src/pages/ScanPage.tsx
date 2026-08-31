@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import type { FormEvent } from 'react';
 import { api, ApiError } from '../api/client';
 import { useQrScanner } from '../scan/useQrScanner';
@@ -223,6 +224,10 @@ function Detail({ equipment }: { equipment: Equipment }) {
           {STATUS[equipment.status] ?? 'Unknown'}
         </span>
       </div>
+
+      <Link className="btn" to={`/equipment/${equipment.id}`}>
+        Open full record
+      </Link>
 
       <dl className="detail">
         <Row label="Location" value={equipment.locationName} strong />
