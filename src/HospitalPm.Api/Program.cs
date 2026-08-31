@@ -1,5 +1,6 @@
 using System.Reflection;
 using HospitalPm.Api.Auth;
+using HospitalPm.Api.Hosting;
 using HospitalPm.Api.Checklists;
 using HospitalPm.Api.Equipment;
 using HospitalPm.Api.Labels;
@@ -16,6 +17,7 @@ using HospitalPm.Infrastructure.Reports;
 using HospitalPm.Infrastructure.Maintenance;
 using HospitalPm.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting.WindowsServices;
 
 // ContentRoot must be the binary's own directory, not the current working
 // directory. A Windows Service starts with CWD = C:\Windows\System32 and a
@@ -28,14 +30,36 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
     ContentRootPath = AppContext.BaseDirectory,
 });
 
+// Run as a Windows Service when the Service Control Manager started us, and
+// as an ordinary console app otherwise. UseWindowsService() detects which and
+// no-ops off Windows, so one binary covers the hospital's service install,
+// a developer pressing F5, and the Linux target.
+//
+// Without this the process never answers the SCM's control messages: it looks
+// like it starts, then Windows reports it as unresponsive and a Stop leaves a
+// half-dead service holding the port and the database connections.
+builder.Host.UseWindowsService(o => o.ServiceName = "HospitalPM");
+
+// The Windows Event Log is where a hospital's IT contact — or whoever they
+// call — will actually look, because a service that failed to start has no
+// console to have printed to.
+if (OperatingSystem.IsWindows() && WindowsServiceHelpers.IsWindowsService())
+{
+    WindowsServiceSetup.AddEventLog(builder);
+}
+
+// Machine-specific settings the installer wrote, layered over the defaults
+// shipped in appsettings.json. Kept outside the install directory so the
+// database password is not readable by every local user and so uninstalling
+// the program does not delete the hospital's configuration.
+builder.Configuration.AddJsonFile(
+    InstallPaths.SettingsFile(), optional: true, reloadOnChange: false);
+
 builder.Services.AddOpenApi();
 
 builder.Services.AddDbContext<HospitalPmDbContext>(o =>
     o.UseNpgsql(builder.Configuration.GetConnectionString("HospitalPm")));
 
-// The signing key lives beside the binary, not in the content root, so it
-// survives an upgrade that replaces the executable and stays out of any
-// directory the web server can serve.
 builder.Services.AddScoped<HospitalPm.Infrastructure.Import.EquipmentImportService>();
 builder.Services.AddScoped<HospitalPm.Infrastructure.Import.LocationImportService>();
 
@@ -61,9 +85,22 @@ builder.Services.AddScoped<ZplLabelService>();
 // paid licence, which is a commercial decision rather than a code one.
 QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 
+// The JWT signing key goes in the locked-down data directory, NOT beside the
+// binary.
+//
+// An install test found it sitting in C:\Program Files\Hospital PM\data with
+// BUILTIN\Users:(RX) inherited - every local user on the machine could read
+// the key that signs authentication tokens, and anyone who can read it can
+// mint a token for any user, including an administrator. A ward PC is a
+// shared machine with many Windows logins, which is exactly the case where
+// that matters.
+//
+// Keeping it with the settings, licence and backups also means the app writes
+// nothing into Program Files at runtime, so an uninstall removes the install
+// directory cleanly instead of leaving it behind.
 builder.Services.AddHospitalPmAuth(
     builder.Configuration,
-    Path.Combine(AppContext.BaseDirectory, "data"));
+    Path.Combine(InstallPaths.DataDirectory(), "keys"));
 
 // Hangfire in-process against the same PostgreSQL, per the packaging
 // constraint: no Redis, no separate worker service, still two services on a
@@ -128,6 +165,15 @@ if (hasDatabase)
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+}
+
+// Said out loud rather than left to be discovered. On a developer's machine
+// this is expected; on an installed service it means the signing key sits
+// beside the binary, where Program Files grants every local user read access.
+if (InstallPaths.UsingFallback)
+{
+    StartupLog.DataDirectoryFallback(
+        app.Logger, InstallPaths.DataDirectory(), InstallPaths.EnvironmentVariable);
 }
 
 // Liveness probe. The Phase 2 diagnostics page and the Windows Service
