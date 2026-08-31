@@ -230,4 +230,39 @@ public sealed class BackupTests(PostgresFixture fixture) : IDisposable
         Assert.False(tool.IsUsable);
         Assert.Contains("configured", tool.Problem!, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void An_unusable_pg_dump_earlier_on_PATH_does_not_hide_a_working_one()
+    {
+        var options = new BackupOptions();
+        if (!ToolsUsable(options)) return;
+
+        // The bug this guards. CI runs on a machine with PostgreSQL 16 and 17
+        // clients both installed, where /usr/bin/pg_dump resolves to 16. The
+        // locator stopped at the first binary it found and reported "too old",
+        // never reaching the working 17 in a version-numbered directory. A
+        // hospital that upgraded 16 to 17 would have silently stopped backing up.
+        var junkDir = NewDirectory();
+        Directory.CreateDirectory(junkDir);
+
+        var junkName = OperatingSystem.IsWindows() ? "pg_dump.exe" : "pg_dump";
+        File.WriteAllText(Path.Combine(junkDir, junkName), "not a real executable");
+
+        var originalPath = Environment.GetEnvironmentVariable("PATH");
+        try
+        {
+            Environment.SetEnvironmentVariable(
+                "PATH", junkDir + Path.PathSeparator + originalPath);
+
+            var tool = new PgToolLocator(Options.Create(options)).FindPgDump(new Version(17, 0));
+
+            Assert.True(tool.IsUsable,
+                $"the junk pg_dump masked the real one: {tool.Problem}");
+            Assert.NotEqual(junkDir, Path.GetDirectoryName(tool.Path));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PATH", originalPath);
+        }
+    }
 }

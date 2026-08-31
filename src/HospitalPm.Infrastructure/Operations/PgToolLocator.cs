@@ -31,6 +31,12 @@ public sealed partial class PgToolLocator(IOptions<BackupOptions> options)
 {
     private readonly BackupOptions _options = options.Value;
 
+    /// <summary>
+    /// Upper bound on how many candidate binaries are launched to read a
+    /// version. A long PATH on a hospital PC should not make this slow.
+    /// </summary>
+    private const int MaxCandidatesExamined = 12;
+
     [GeneratedRegex(@"(\d+)\.(\d+)", RegexOptions.CultureInvariant)]
     private static partial Regex VersionPattern();
 
@@ -55,20 +61,39 @@ public sealed partial class PgToolLocator(IOptions<BackupOptions> options)
                     $"{toolName} was configured as '{configured}' but no file is there.");
         }
 
+        // Every candidate is examined, not just the first one found. A machine
+        // upgraded from PostgreSQL 16 to 17 typically keeps the old client
+        // first on PATH while the new one sits in a version-numbered
+        // directory; stopping at the first hit would refuse to back up a
+        // server that has a perfectly good client installed.
+        PgTool? bestProblem = null;
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var examined = 0;
+
         foreach (var candidate in CandidatePaths(exe))
         {
-            if (File.Exists(candidate))
+            if (!File.Exists(candidate) || !seen.Add(Path.GetFullPath(candidate)))
             {
-                var tool = Check(candidate, serverVersion, toolName);
-                if (tool.IsUsable) return tool;
+                continue;
+            }
 
-                // A found-but-too-old tool is the most useful thing to report:
-                // it names the actual problem rather than "not found".
-                return tool;
+            // Each check starts a process. A pathological PATH must not turn
+            // finding pg_dump into a minute of process launches.
+            if (++examined > MaxCandidatesExamined) break;
+
+            var tool = Check(candidate, serverVersion, toolName);
+            if (tool.IsUsable) return tool;
+
+            // Keep the most informative failure. "Version 16, server is 17"
+            // tells an administrator what to install; "did not report a
+            // version" does not.
+            if (bestProblem is null || (bestProblem.Version is null && tool.Version is not null))
+            {
+                bestProblem = tool;
             }
         }
 
-        return new PgTool(null, null,
+        return bestProblem ?? new PgTool(null, null,
             $"{toolName} could not be found. It is installed with PostgreSQL; " +
             $"set Backup:{(toolName == "pg_dump" ? "PgDumpPath" : "PgRestorePath")} " +
             "to its full path.");
