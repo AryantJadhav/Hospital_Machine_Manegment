@@ -57,6 +57,10 @@ secrets.json
 # Licence signing — the private key must never enter the repo.
 licence-private*.*
 license-private*.*
+signing-key*.pem
+
+# Issued licences belong to the hospital they were issued to, not in here.
+*.licence
 
 # JWT signing key. Generated per install on first run. If this were ever
 # committed, every hospital would share one signing key and anyone holding

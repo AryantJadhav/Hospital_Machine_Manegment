@@ -38,6 +38,9 @@ public sealed class DiagnosticsTests(PostgresFixture fixture)
             new BackupService(db, locator, configuration, wrapped, TimeProvider.System,
                 NullLogger<BackupService>.Instance),
             locator,
+            new HospitalPm.Infrastructure.Licensing.LicenceService(
+                Options.Create(new HospitalPm.Infrastructure.Licensing.LicenceOptions()),
+                TimeProvider.System),
             wrapped,
             TimeProvider.System);
     }

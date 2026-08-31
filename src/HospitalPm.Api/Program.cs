@@ -49,6 +49,9 @@ builder.Services.Configure<HospitalPm.Infrastructure.Operations.BackupOptions>(
 builder.Services.AddSingleton<HospitalPm.Infrastructure.Operations.PgToolLocator>();
 builder.Services.AddScoped<HospitalPm.Infrastructure.Operations.BackupService>();
 builder.Services.AddScoped<HospitalPm.Infrastructure.Operations.DiagnosticsService>();
+builder.Services.Configure<HospitalPm.Infrastructure.Licensing.LicenceOptions>(
+    builder.Configuration.GetSection(HospitalPm.Infrastructure.Licensing.LicenceOptions.Section));
+builder.Services.AddSingleton<HospitalPm.Infrastructure.Licensing.LicenceService>();
 builder.Services.AddSingleton<QrCodeService>();
 builder.Services.AddScoped<LabelSheetService>();
 builder.Services.AddScoped<ZplLabelService>();
@@ -159,6 +162,7 @@ app.MapWorkOrderEndpoints();
 app.MapReportEndpoints();
 app.MapBackupEndpoints();
 app.MapDiagnosticsEndpoints();
+app.MapLicenceEndpoints();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();

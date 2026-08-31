@@ -395,3 +395,17 @@ textarea {
 
 .addr-list { margin: 0; padding-left: 1.1rem; }
 .addr-list li { padding: 0.15rem 0; }
+
+/* ---------- licence ---------- */
+
+.licence-box {
+  width: 100%;
+  resize: vertical;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  background: var(--input-bg, #0f1520);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.6rem;
+}

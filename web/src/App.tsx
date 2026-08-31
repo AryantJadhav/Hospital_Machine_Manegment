@@ -12,6 +12,7 @@ import { SetupPage } from './pages/SetupPage';
 import { LocationsPage } from './pages/LocationsPage';
 import { BackupsPage } from './pages/BackupsPage';
 import { DiagnosticsPage } from './pages/DiagnosticsPage';
+import { LicencePage } from './pages/LicencePage';
 import { ScanPage } from './pages/ScanPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { PmTasksPage } from './pages/PmTasksPage';
@@ -72,6 +73,12 @@ function Shell() {
           </NavLink>
         )}
 
+        {isAdmin && (
+          <NavLink to="/licence" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+            Licence
+          </NavLink>
+        )}
+
         <div className="nav-right">
           <span className="muted">{user?.fullName ?? user?.userName}</span>
           <button className="btn btn-quiet" onClick={() => void logout()}>Sign out</button>
@@ -98,6 +105,10 @@ function Shell() {
           <Route
             path="/diagnostics"
             element={isAdmin ? <DiagnosticsPage /> : <Navigate to="/dashboard" replace />}
+          />
+          <Route
+            path="/licence"
+            element={isAdmin ? <LicencePage /> : <Navigate to="/dashboard" replace />}
           />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>

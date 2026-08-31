@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Vendor-side only. This project is never shipped to a hospital and is not
+    part of the two-service client install: it exists so the private signing
+    key and the signing code stay out of the binary customers run.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>hospitalpm-licence</AssemblyName>
+    <RootNamespace>HospitalPm.LicenceTool</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\HospitalPm.Domain\HospitalPm.Domain.csproj" />
+  </ItemGroup>
+
+</Project>
