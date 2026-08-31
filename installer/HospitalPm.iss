@@ -60,29 +60,42 @@ Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs 
 ; delete the hospital's backups, licence or configuration.
 Name: "{commonappdata}\{#AppName}"
 Name: "{commonappdata}\{#AppName}\backups"
+; The JWT signing key. It belongs inside the locked folder rather than beside
+; the binary: anyone who can read it can forge a token for any user, and
+; Program Files grants BUILTIN\Users read by default.
+Name: "{commonappdata}\{#AppName}\keys"
 
 [Icons]
 Name: "{group}\Open {#AppName}"; Filename: "http://localhost:{code:GetPort}/"
 Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
 
 [Run]
-; --- 1. Machine settings, written before the service starts ---------------
-Filename: "{cmd}"; Parameters: "/c ""echo."" > nul"; Flags: runhidden; \
-  BeforeInstall: WriteSettings; Description: "Writing settings"
-
-; --- 2. Lock the settings file down ---------------------------------------
-; It holds the database password. Program Files is world-readable and so is
-; ProgramData by default, so inheritance is broken and Users removed.
+; --- 1. Lock the data folder down, BEFORE anything is written into it ------
+; It holds the database password, and ProgramData is world-readable by
+; default, so inheritance is broken and Users removed.
+;
+; The order matters and is not obvious. Doing this after writing the settings
+; file, with /T, strips that file's inherited ACEs while the (OI)(CI) grants -
+; container inheritance flags - apply nothing to a file. The result is a file
+; with an empty ACL that not even LocalSystem can read: the service installs,
+; fails to start, and says why only in the Event Log. Locking the folder first
+; lets the file inherit the right ACEs when it is created.
+;
+; No /T, for the same reason: on an upgrade it would blank the existing file.
 Filename: "{sys}\icacls.exe"; \
-  Parameters: """{commonappdata}\{#AppName}"" /inheritance:r /grant ""*S-1-5-18:(OI)(CI)F"" /grant ""*S-1-5-32-544:(OI)(CI)F"" /T /C"; \
+  Parameters: """{commonappdata}\{#AppName}"" /inheritance:r /grant ""*S-1-5-18:(OI)(CI)F"" /grant ""*S-1-5-32-544:(OI)(CI)F"" /C"; \
   Flags: runhidden waituntilterminated; StatusMsg: "Securing the settings folder..."
 
-; --- 3. Register the service ----------------------------------------------
+; --- 2. Register the service ----------------------------------------------
+; Settings are written immediately before this, so they land inside the
+; already-locked folder and inherit its permissions.
+;
 ; Delayed start: PostgreSQL must be accepting connections before we try to
 ; migrate against it, and on a slow hospital PC that is not instant.
 Filename: "{sys}\sc.exe"; \
   Parameters: "create {#ServiceName} binPath= ""{app}\{#ExeName}"" DisplayName= ""{#ServiceDisplay}"" start= delayed-auto"; \
-  Flags: runhidden waituntilterminated; StatusMsg: "Registering the service..."
+  Flags: runhidden waituntilterminated; BeforeInstall: WriteSettings; \
+  StatusMsg: "Registering the service..."
 
 Filename: "{sys}\sc.exe"; \
   Parameters: "description {#ServiceName} ""Biomedical equipment preventive maintenance. Serves the Hospital PM web application."""; \
@@ -133,16 +146,23 @@ begin
   DbPage.Add('Database name', False);
   DbPage.Add('Username', False);
   DbPage.Add('Password', True);
-  DbPage.Values[0] := 'localhost';
-  DbPage.Values[1] := '5432';
-  DbPage.Values[2] := 'hospitalpm';
-  DbPage.Values[3] := 'postgres';
+  // Defaults come from the command line so an unattended install works.
+  // /VERYSILENT skips these pages entirely, which means whatever is set here
+  // is what gets written - so this is also how SCCM and Intune drive it:
+  //
+  //   HospitalPM-Setup.exe /VERYSILENT /DBHOST=localhost /DBNAME=hospitalpm
+  //     /DBUSER=postgres /DBPASSWORD=secret /PORT=5000
+  DbPage.Values[0] := ExpandConstant('{param:DBHOST|localhost}');
+  DbPage.Values[1] := ExpandConstant('{param:DBPORT|5432}');
+  DbPage.Values[2] := ExpandConstant('{param:DBNAME|hospitalpm}');
+  DbPage.Values[3] := ExpandConstant('{param:DBUSER|postgres}');
+  DbPage.Values[4] := ExpandConstant('{param:DBPASSWORD|}');
 
   PortPage := CreateInputQueryPage(DbPage.ID,
     'Network', 'Which port should Hospital PM use?',
     'Staff will reach the system at http://<this computer>:<port>/ from a browser or a phone.');
   PortPage.Add('Port', False);
-  PortPage.Values[0] := '5000';
+  PortPage.Values[0] := ExpandConstant('{param:PORT|5000}');
 end;
 
 function GetPort(Param: String): String;
@@ -208,6 +228,16 @@ var
   DataDir: String;
   ConnectionString: String;
 begin
+  // Validated here as well as in the wizard: a silent install never shows the
+  // pages, so NextButtonClick never runs. Failing loudly beats registering a
+  // service that cannot start and leaving an administrator to guess why.
+  if Trim(DbPage.Values[4]) = '' then
+    RaiseException('No database password was supplied. For an unattended install pass /DBPASSWORD=...');
+  if Trim(DbPage.Values[2]) = '' then
+    RaiseException('No database name was supplied. For an unattended install pass /DBNAME=...');
+  if StrToIntDef(Trim(PortPage.Values[0]), -1) < 1 then
+    RaiseException('The port must be a number between 1 and 65535. Pass /PORT=...');
+
   DataDir := ExpandConstant('{commonappdata}\{#AppName}');
   ForceDirectories(DataDir);
 
@@ -217,6 +247,12 @@ begin
     ';Database=' + JsonEscape(Trim(DbPage.Values[2])) +
     ';Username=' + JsonEscape(Trim(DbPage.Values[3])) +
     ';Password=' + JsonEscape(DbPage.Values[4]);
+
+  // Deleted rather than overwritten. A file created fresh inside the locked
+  // folder inherits the correct ACEs; an existing one keeps whatever it had,
+  // which on a machine upgraded from a broken build is nothing at all.
+  if FileExists(DataDir + '\appsettings.json') then
+    DeleteFile(DataDir + '\appsettings.json');
 
   Settings := TStringList.Create;
   try
@@ -248,24 +284,40 @@ end;
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   DataDir: String;
+  RemoveData: Boolean;
 begin
   if CurUninstallStep = usPostUninstall then
   begin
     DataDir := ExpandConstant('{commonappdata}\{#AppName}');
 
-    // Data is kept by default and removed only if asked. Someone uninstalling
-    // to fix a problem is not asking to lose the equipment register, and this
-    // is the one mistake in an uninstaller that cannot be undone.
+    // Data is kept unless removal is asked for explicitly. Someone
+    // uninstalling to fix a problem is not asking to lose the equipment
+    // register, and this is the one mistake in an uninstaller that cannot be
+    // undone.
+    //
+    // Deletion is opt-in through /REMOVEDATA=1 rather than a prompt, because
+    // an unattended uninstall never answers a prompt. An earlier version
+    // asked with MsgBox and a No default, and a /VERYSILENT uninstall deleted
+    // the folder anyway - which on a real install is the hospital's backups
+    // and its licence. A destructive default that only shows up when nobody
+    // is watching is the worst kind.
     if DirExists(DataDir) then
     begin
-      if MsgBox('Remove Hospital PM''s data as well?' + #13#10#13#10 +
-                'This deletes the settings, the licence and every database backup in:' + #13#10 +
-                DataDir + #13#10#13#10 +
-                'The PostgreSQL database itself is not touched.' + #13#10#13#10 +
-                'Choose No to keep them.', mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
+      RemoveData := ExpandConstant('{param:REMOVEDATA|0}') = '1';
+
+      if (not RemoveData) and (not UninstallSilent) then
       begin
-        DelTree(DataDir, True, True, True);
+        RemoveData := SuppressibleMsgBox(
+          'Remove Hospital PM''s data as well?' + #13#10#13#10 +
+          'This deletes the settings, the licence and every database backup in:' + #13#10 +
+          DataDir + #13#10#13#10 +
+          'The PostgreSQL database itself is not touched.' + #13#10#13#10 +
+          'Choose No to keep them.',
+          mbConfirmation, MB_YESNO or MB_DEFBUTTON2, IDNO) = IDYES;
       end;
+
+      if RemoveData then
+        DelTree(DataDir, True, True, True);
     end;
   end;
 end;

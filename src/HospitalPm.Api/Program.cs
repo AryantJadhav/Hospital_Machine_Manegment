@@ -88,9 +88,22 @@ builder.Services.AddScoped<ZplLabelService>();
 // paid licence, which is a commercial decision rather than a code one.
 QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 
+// The JWT signing key goes in the locked-down data directory, NOT beside the
+// binary.
+//
+// An install test found it sitting in C:\Program Files\Hospital PM\data with
+// BUILTIN\Users:(RX) inherited - every local user on the machine could read
+// the key that signs authentication tokens, and anyone who can read it can
+// mint a token for any user, including an administrator. A ward PC is a
+// shared machine with many Windows logins, which is exactly the case where
+// that matters.
+//
+// Keeping it with the settings, licence and backups also means the app writes
+// nothing into Program Files at runtime, so an uninstall removes the install
+// directory cleanly instead of leaving it behind.
 builder.Services.AddHospitalPmAuth(
     builder.Configuration,
-    Path.Combine(AppContext.BaseDirectory, "data"));
+    Path.Combine(InstallPaths.DataDirectory(), "keys"));
 
 // Hangfire in-process against the same PostgreSQL, per the packaging
 // constraint: no Redis, no separate worker service, still two services on a
