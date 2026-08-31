@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Reflection;
+using HospitalPm.Domain.Licensing;
 using HospitalPm.Domain.Operations;
 using HospitalPm.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -45,6 +46,7 @@ public sealed class DiagnosticsService(
     HospitalPmDbContext db,
     BackupService backups,
     PgToolLocator locator,
+    HospitalPm.Infrastructure.Licensing.LicenceService licences,
     IOptions<BackupOptions> backupOptions,
     TimeProvider clock)
 {
@@ -68,6 +70,7 @@ public sealed class DiagnosticsService(
             BackupTool(),
             Disk(),
             Clock(),
+            Licence(),
         };
 
         return new Diagnostics(
@@ -259,6 +262,31 @@ public sealed class DiagnosticsService(
             return new Check("Disk space", CheckState.Warning,
                 $"Could not be read for {directory}.");
         }
+    }
+
+    /// <summary>
+    /// Licence state, reported and never enforced. This row exists so nobody
+    /// is surprised at renewal, not so the software can refuse to work.
+    /// </summary>
+    private Check Licence()
+    {
+        var status = licences.Current();
+
+        return status.State switch
+        {
+            LicenceState.Valid => new Check("Licence", CheckState.Ok, status.Message),
+
+            // A lapsed licence is a billing conversation. The software keeps
+            // running, so this is a warning rather than a problem.
+            LicenceState.Expired => new Check("Licence", CheckState.Warning, status.Message,
+                "Contact your supplier to renew. Nothing stops working in the meantime."),
+
+            LicenceState.Invalid => new Check("Licence", CheckState.Warning, status.Message,
+                "Install the original file you were sent, or ask for it again."),
+
+            _ => new Check("Licence", CheckState.Warning, status.Message,
+                "Install a licence file from the Licence page when you have one."),
+        };
     }
 
     /// <summary>

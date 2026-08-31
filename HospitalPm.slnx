@@ -4,6 +4,9 @@
     <Project Path="src/HospitalPm.Domain/HospitalPm.Domain.csproj" />
     <Project Path="src/HospitalPm.Infrastructure/HospitalPm.Infrastructure.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/HospitalPm.LicenceTool/HospitalPm.LicenceTool.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/HospitalPm.IntegrationTests/HospitalPm.IntegrationTests.csproj" />
   </Folder>
