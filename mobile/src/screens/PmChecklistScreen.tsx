@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -41,6 +41,12 @@ export function PmChecklistScreen({
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
   const [problems, setProblems] = useState<Record<string, string>>({});
+
+  // Scroll positions, so a rejected submission can put the first offending
+  // item on screen instead of leaving the technician to hunt for it down a
+  // forty-item checklist.
+  const scrollRef = useRef<ScrollView | null>(null);
+  const itemOffsets = useRef<Record<string, number>>({});
 
   const items = useMemo(
     () => form.definition.sections.flatMap((s) => s.items),
@@ -121,7 +127,22 @@ export function PmChecklistScreen({
         const mapped: Record<string, string> = {};
         for (const p of detail.body?.problems ?? []) mapped[p.item] = p.message;
         setProblems(mapped);
-        Alert.alert('Not complete', 'Some items still need an answer.');
+
+        // Take them to the first problem rather than announcing that one
+        // exists somewhere. On a long checklist the alert alone is useless.
+        const firstKey = Object.keys(mapped)[0];
+        const offset = firstKey ? itemOffsets.current[firstKey] : undefined;
+        if (offset !== undefined) {
+          scrollRef.current?.scrollTo({ y: Math.max(0, offset - 80), animated: true });
+        }
+
+        const count = Object.keys(mapped).length;
+        Alert.alert(
+          'Not finished',
+          count === 1
+            ? 'One item still needs an answer.'
+            : `${count} items still need an answer.`,
+        );
         return;
       }
 
@@ -136,7 +157,11 @@ export function PmChecklistScreen({
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+      >
         <Text style={styles.tag}>{form.assetTag}</Text>
         <Text style={styles.sub}>
           {form.equipmentTypeName} · {form.locationName}
@@ -150,7 +175,13 @@ export function PmChecklistScreen({
             <Text style={styles.sectionTitle}>{section.title}</Text>
 
             {section.items.map((item) => (
-              <View key={item.key} style={styles.item}>
+              <View
+                key={item.key}
+                style={[styles.item, problems[item.key] ? styles.itemProblem : null]}
+                onLayout={(e) => {
+                  itemOffsets.current[item.key] = e.nativeEvent.layout.y;
+                }}
+              >
                 <Text style={styles.label}>
                   {item.label}
                   {item.required ? <Text style={styles.required}> *</Text> : null}
@@ -212,9 +243,19 @@ export function PmChecklistScreen({
       </ScrollView>
 
       <View style={styles.footer}>
-        <Text style={styles.progress}>
-          {answeredRequired} of {totalRequired} required answered
-        </Text>
+        <View style={styles.progressRow}>
+          <View style={styles.progressTrack}>
+            <View
+              style={[
+                styles.progressFill,
+                { width: `${totalRequired === 0 ? 100 : (answeredRequired / totalRequired) * 100}%` },
+              ]}
+            />
+          </View>
+          <Text style={styles.progress}>
+            {answeredRequired}/{totalRequired}
+          </Text>
+        </View>
 
         <View style={styles.row}>
           <TouchableOpacity style={styles.secondary} onPress={onCancel} disabled={busy}>
@@ -359,6 +400,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.surface, borderRadius: 10, borderWidth: 1,
     borderColor: theme.border, padding: 14, marginBottom: 10,
   },
+  itemProblem: { borderColor: theme.danger },
   label: { fontSize: 16, color: theme.text, marginBottom: 4 },
   required: { color: theme.danger },
   guidance: { fontSize: 13, color: theme.muted, marginBottom: 8 },
@@ -386,7 +428,12 @@ const styles = StyleSheet.create({
     borderTopWidth: 1, borderTopColor: theme.border,
     padding: 16, backgroundColor: theme.surface, gap: 10,
   },
-  progress: { color: theme.muted, fontSize: 13 },
+  progressRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  progressTrack: {
+    flex: 1, height: 6, borderRadius: 3, backgroundColor: theme.border, overflow: 'hidden',
+  },
+  progressFill: { height: 6, backgroundColor: theme.accent },
+  progress: { color: theme.muted, fontSize: 13, minWidth: 44, textAlign: 'right' },
   row: { flexDirection: 'row', gap: 10 },
   primary: {
     flex: 2, backgroundColor: theme.accent, borderRadius: 8,

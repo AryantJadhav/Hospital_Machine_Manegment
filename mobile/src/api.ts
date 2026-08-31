@@ -247,6 +247,9 @@ export const api = {
 
   taskForm: (taskId: number) => request<PmForm>(`/api/pm/tasks/${taskId}/form`),
 
+  /** Everything open, soonest first — the shift's work list. */
+  openTasks: () => request<{ items: PmTask[]; total: number }>('/api/pm/tasks?pageSize=100'),
+
   completeTask: (taskId: number, body: unknown) =>
     request<{ completionId: number; outOfRangeCount: number; replayed: boolean }>(
       `/api/pm/tasks/${taskId}/complete`,
