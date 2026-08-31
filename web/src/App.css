@@ -380,3 +380,9 @@ textarea {
 .hist-flag { margin-left: 0.5rem; font-size: 0.72rem; }
 
 .page-head h1.mono { letter-spacing: -0.01em; }
+
+/* ---------- backups ---------- */
+
+.bk-10 { background: #2a2a16; color: #d8cf7a; }
+.bk-20 { background: #16291c; color: #7fd39b; }
+.bk-30 { background: #2e1a1a; color: #f0918b; }

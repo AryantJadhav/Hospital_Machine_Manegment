@@ -10,6 +10,7 @@ import { EquipmentDetailPage } from './pages/EquipmentDetailPage';
 import { ImportPage } from './pages/ImportPage';
 import { SetupPage } from './pages/SetupPage';
 import { LocationsPage } from './pages/LocationsPage';
+import { BackupsPage } from './pages/BackupsPage';
 import { ScanPage } from './pages/ScanPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { PmTasksPage } from './pages/PmTasksPage';
@@ -19,6 +20,7 @@ import './App.css';
 function Shell() {
   const { user, logout, can } = useAuth();
   const canImport = can(ROLES.admin, ROLES.biomedicalHead);
+  const isAdmin = can(ROLES.admin);
 
   return (
     <div className="shell">
@@ -57,6 +59,12 @@ function Shell() {
           </NavLink>
         )}
 
+        {isAdmin && (
+          <NavLink to="/backups" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+            Backups
+          </NavLink>
+        )}
+
         <div className="nav-right">
           <span className="muted">{user?.fullName ?? user?.userName}</span>
           <button className="btn btn-quiet" onClick={() => void logout()}>Sign out</button>
@@ -75,6 +83,10 @@ function Shell() {
           <Route
             path="/import"
             element={canImport ? <ImportPage /> : <Navigate to="/dashboard" replace />}
+          />
+          <Route
+            path="/backups"
+            element={isAdmin ? <BackupsPage /> : <Navigate to="/dashboard" replace />}
           />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>

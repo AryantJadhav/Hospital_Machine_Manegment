@@ -5,6 +5,7 @@ using HospitalPm.Api.Equipment;
 using HospitalPm.Api.Labels;
 using HospitalPm.Api.Locations;
 using HospitalPm.Api.Maintenance;
+using HospitalPm.Api.Operations;
 using HospitalPm.Api.Reports;
 using HospitalPm.Api.WorkOrders;
 using HospitalPm.Infrastructure.Identity;
@@ -43,6 +44,10 @@ builder.Services.Configure<ScheduleOptions>(builder.Configuration.GetSection(Sch
 builder.Services.Configure<ReportOptions>(builder.Configuration.GetSection(ReportOptions.SectionName));
 builder.Services.AddSingleton<HospitalClock>();
 builder.Services.AddScoped<PmScheduleGenerator>();
+builder.Services.Configure<HospitalPm.Infrastructure.Operations.BackupOptions>(
+    builder.Configuration.GetSection(HospitalPm.Infrastructure.Operations.BackupOptions.Section));
+builder.Services.AddSingleton<HospitalPm.Infrastructure.Operations.PgToolLocator>();
+builder.Services.AddScoped<HospitalPm.Infrastructure.Operations.BackupService>();
 builder.Services.AddSingleton<QrCodeService>();
 builder.Services.AddScoped<LabelSheetService>();
 builder.Services.AddScoped<ZplLabelService>();
@@ -105,6 +110,15 @@ if (hasDatabase)
             // hospital's offset when deciding what "today" is.
             "15 0 * * *",
             new RecurringJobOptions { TimeZone = TimeZoneInfo.Utc });
+
+    // 02:30 UTC — 08:00 in India, after the night's PM generation and before
+    // the day shift starts writing. A hospital PC is not busy at either.
+    scope.ServiceProvider.GetRequiredService<IRecurringJobManager>()
+        .AddOrUpdate<HospitalPm.Infrastructure.Operations.BackupService>(
+            "nightly-backup",
+            job => job.RunScheduledAsync(CancellationToken.None),
+            "30 2 * * *",
+            new RecurringJobOptions { TimeZone = TimeZoneInfo.Utc });
 }
 
 if (app.Environment.IsDevelopment())
@@ -142,6 +156,7 @@ app.MapPmEndpoints();
 app.MapPmExecutionEndpoints();
 app.MapWorkOrderEndpoints();
 app.MapReportEndpoints();
+app.MapBackupEndpoints();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
