@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../auth/useAuth';
 import { ROLES } from '../auth/context';
@@ -268,7 +269,9 @@ export function EquipmentListPage() {
                     />
                   </td>
                 )}
-                <td className="mono">{e.assetTag}</td>
+                <td className="mono">
+                  <Link to={`/equipment/${e.id}`}>{e.assetTag}</Link>
+                </td>
                 <td>{e.equipmentTypeName}</td>
                 <td>{e.locationName}</td>
                 <td>{e.manufacturer ?? <span className="muted">—</span>}</td>

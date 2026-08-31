@@ -134,6 +134,7 @@ app.MapAuthEndpoints();
 app.MapEquipmentEndpoints();
 app.MapImportEndpoints();
 app.MapLookupEndpoints();
+app.MapEquipmentHistoryEndpoints();
 app.MapLocationEndpoints();
 app.MapLabelEndpoints();
 app.MapChecklistEndpoints();

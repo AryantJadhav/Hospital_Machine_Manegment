@@ -6,6 +6,7 @@ import { useAuth } from './auth/useAuth';
 import { ROLES } from './auth/context';
 import { LoginPage } from './pages/LoginPage';
 import { EquipmentListPage } from './pages/EquipmentListPage';
+import { EquipmentDetailPage } from './pages/EquipmentDetailPage';
 import { ImportPage } from './pages/ImportPage';
 import { SetupPage } from './pages/SetupPage';
 import { LocationsPage } from './pages/LocationsPage';
@@ -68,6 +69,7 @@ function Shell() {
           <Route path="/pm" element={<PmTasksPage />} />
           <Route path="/work-orders" element={<WorkOrdersPage />} />
           <Route path="/equipment" element={<EquipmentListPage />} />
+          <Route path="/equipment/:id" element={<EquipmentDetailPage />} />
           <Route path="/locations" element={<LocationsPage />} />
           <Route path="/scan" element={<ScanPage />} />
           <Route
