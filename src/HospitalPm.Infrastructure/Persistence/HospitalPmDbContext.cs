@@ -3,6 +3,7 @@ using HospitalPm.Domain.Checklists;
 using HospitalPm.Domain.Equipment;
 using HospitalPm.Domain.Maintenance;
 using HospitalPm.Domain.WorkOrders;
+using HospitalPm.Domain.Operations;
 using HospitalPm.Domain.Locations;
 using HospitalPm.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity;
@@ -47,6 +48,8 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
     public DbSet<WorkOrderNote> WorkOrderNotes => Set<WorkOrderNote>();
 
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+
+    public DbSet<BackupRun> BackupRuns => Set<BackupRun>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -362,6 +365,28 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
 
             e.HasIndex(x => new { x.WorkOrderId, x.CreatedAtUtc })
                 .HasDatabaseName("ix_work_order_note_timeline");
+        });
+
+        builder.Entity<BackupRun>(e =>
+        {
+            e.ToTable("backup_run");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.StartedAtUtc).HasColumnName("started_at_utc").HasDefaultValueSql("now()");
+            e.Property(x => x.FinishedAtUtc).HasColumnName("finished_at_utc");
+            e.Property(x => x.Status).HasColumnName("status").HasConversion<int>();
+            e.Property(x => x.Trigger).HasColumnName("trigger").HasConversion<int>();
+            e.Property(x => x.FileName).HasColumnName("file_name").HasMaxLength(200);
+            e.Property(x => x.SizeBytes).HasColumnName("size_bytes");
+            e.Property(x => x.Error).HasColumnName("error");
+            e.Property(x => x.ServerVersion).HasColumnName("server_version").HasMaxLength(50);
+            e.Property(x => x.DurationMs).HasColumnName("duration_ms");
+
+            // The dashboard's only question is "what happened most recently",
+            // asked on every page load.
+            e.HasIndex(x => x.StartedAtUtc).HasDatabaseName("ix_backup_run_recent")
+                .IsDescending();
         });
 
         builder.Entity<Location>(e =>
