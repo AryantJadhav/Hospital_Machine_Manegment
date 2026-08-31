@@ -329,3 +329,25 @@ textarea {
   .pm-20, .prio-30, .wo-10 { background: #33240f; color: #e0b071; }
   .wo-20, .wo-30, .wo-40 { background: #16233a; color: #85b3f0; }
 }
+
+/* ---------- location tree ---------- */
+
+.tree-toggle {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0 0.35rem 0 0;
+  /* Fixed width so names line up whether or not a row has children. */
+  width: 1.4rem;
+  text-align: left;
+}
+
+.tree-toggle:hover { color: var(--text); }
+.tree-spacer { display: inline-block; width: 1.4rem; }
+
+.tree-note {
+  margin-left: 0.5rem;
+  font-size: 0.78rem;
+}
