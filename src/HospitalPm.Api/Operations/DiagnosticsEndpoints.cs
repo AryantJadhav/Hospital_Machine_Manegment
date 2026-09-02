@@ -27,12 +27,16 @@ public static class DiagnosticsEndpoints
     private static async Task<IResult> RunAsync(
         DiagnosticsService diagnostics,
         IServer server,
+        IConfiguration configuration,
         CancellationToken ct)
     {
         var result = await diagnostics.RunAsync(Addresses(server), ct);
 
         return Results.Ok(new
         {
+            // Collected by the installer. Shown here so support can confirm
+            // which site they are looking at without asking.
+            hospitalName = configuration["FirstRun:HospitalName"],
             overall = result.Overall,
             version = result.Version,
             uptimeSeconds = (long)result.Uptime.TotalSeconds,

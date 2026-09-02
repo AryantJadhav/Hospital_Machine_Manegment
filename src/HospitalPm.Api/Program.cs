@@ -76,6 +76,7 @@ builder.Services.AddScoped<HospitalPm.Infrastructure.Operations.DiagnosticsServi
 builder.Services.Configure<HospitalPm.Infrastructure.Licensing.LicenceOptions>(
     builder.Configuration.GetSection(HospitalPm.Infrastructure.Licensing.LicenceOptions.Section));
 builder.Services.AddSingleton<HospitalPm.Infrastructure.Licensing.LicenceService>();
+builder.Services.Configure<FirstRunOptions>(builder.Configuration.GetSection(FirstRunOptions.Section));
 builder.Services.AddSingleton<QrCodeService>();
 builder.Services.AddScoped<LabelSheetService>();
 builder.Services.AddScoped<ZplLabelService>();
@@ -165,6 +166,14 @@ if (hasDatabase)
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+}
+
+// The installer collected a hospital name and an administrator account, so
+// a hospital finishes the installer with a working login rather than a web
+// page asking them to invent one. Does nothing if a user already exists.
+if (hasDatabase)
+{
+    await FirstRunSeed.ApplyAsync(app, InstallPaths.SettingsFile());
 }
 
 // Said out loud rather than left to be discovered. On a developer's machine

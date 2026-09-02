@@ -9,6 +9,7 @@ type Check = {
 };
 
 type Diagnostics = {
+  hospitalName: string | null;
   overall: number;
   version: string;
   uptimeSeconds: number;
@@ -123,6 +124,12 @@ export function DiagnosticsPage() {
       <div className="card">
         <h2 className="section-h">This installation</h2>
         <dl className="detail">
+          {data.hospitalName && (
+            <>
+              <dt>Hospital</dt>
+              <dd className="strong">{data.hospitalName}</dd>
+            </>
+          )}
           <dt>Version</dt>
           <dd className="mono">{data.version}</dd>
           <dt>Running for</dt>
