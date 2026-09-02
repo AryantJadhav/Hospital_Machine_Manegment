@@ -173,26 +173,146 @@ Filename: "{sys}\sc.exe"; Parameters: "delete {#ServiceName}"; Flags: runhidden 
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""{#AppName}"""; Flags: runhidden waituntilterminated; RunOnceId: "DeleteFirewallRule"
 
 [Code]
+type
+  // Layout must match MEMORYSTATUSEX exactly. Two DWORDs then eight 64-bit
+  // fields, which happens to need no padding on x64.
+  TMemoryStatusEx = record
+    dwLength: Cardinal;
+    dwMemoryLoad: Cardinal;
+    ullTotalPhys: Int64;
+    ullAvailPhys: Int64;
+    ullTotalPageFile: Int64;
+    ullAvailPageFile: Int64;
+    ullTotalVirtual: Int64;
+    ullAvailVirtual: Int64;
+    ullAvailExtendedVirtual: Int64;
+  end;
+
+function GlobalMemoryStatusEx(var Buffer: TMemoryStatusEx): Boolean;
+  external 'GlobalMemoryStatusEx@kernel32.dll stdcall';
+
 var
+  HospitalPage: TInputQueryWizardPage;
+  AdminPage: TInputQueryWizardPage;
+  LicencePage: TInputFileWizardPage;
   PortPage: TInputQueryWizardPage;
 
 procedure InitializeWizard;
 begin
-  // One question, because there is only one the hospital can usefully answer.
-  // The database is created by the installer, on a port nobody needs to know,
-  // with credentials nobody needs to see - so there is nothing to ask about it.
-  PortPage := CreateInputQueryPage(wpSelectDir,
+  // Nothing is asked about the database. It is created by the installer, on a
+  // port nobody needs to know, with credentials nobody needs to see.
+  HospitalPage := CreateInputQueryPage(wpSelectDir,
+    'Hospital', 'Which hospital is this?',
+    'The name appears in the application and on printed reports.');
+  HospitalPage.Add('Hospital name', False);
+  HospitalPage.Values[0] := ExpandConstant('{param:HOSPITAL|}');
+
+  AdminPage := CreateInputQueryPage(HospitalPage.ID,
+    'Administrator', 'Who will manage the system?',
+    'This account can add staff, import equipment and see everything.' + #13#10 +
+    'Write the password down before continuing - it cannot be recovered from here.');
+  AdminPage.Add('Full name', False);
+  AdminPage.Add('Username', False);
+  AdminPage.Add('Password', True);
+  AdminPage.Add('Confirm password', True);
+  AdminPage.Values[0] := ExpandConstant('{param:ADMINNAME|}');
+  AdminPage.Values[1] := ExpandConstant('{param:ADMINUSER|admin}');
+  AdminPage.Values[2] := ExpandConstant('{param:ADMINPASSWORD|}');
+  AdminPage.Values[3] := ExpandConstant('{param:ADMINPASSWORD|}');
+
+  // Optional, because a pilot install runs before anyone has issued one.
+  LicencePage := CreateInputFilePage(AdminPage.ID,
+    'Licence', 'Do you have a licence file?',
+    'If one was emailed to you, select it. You can skip this and install it later' + #13#10 +
+    'from the Licence page - nothing stops working without it.');
+  LicencePage.Add('Licence file (optional):', 'Licence files|*.licence|All files|*.*', '.licence');
+  LicencePage.Values[0] := ExpandConstant('{param:LICENCE|}');
+
+  PortPage := CreateInputQueryPage(LicencePage.ID,
     'Network', 'Which port should Hospital PM use?',
     'Staff will reach the system at http://<this computer>:<port>/ from a browser or a phone.' + #13#10 +
     'The default suits almost every installation.');
   PortPage.Add('Port', False);
 
   // Defaults come from the command line so an unattended install works.
-  // /VERYSILENT skips this page, which means whatever is set here is what
+  // /VERYSILENT skips these pages, which means whatever is set here is what
   // gets used - so this is also how SCCM and Intune drive it:
   //
   //   HospitalPM-Setup.exe /VERYSILENT /PORT=5000 /DBPORT=5433
+  //     /HOSPITAL="Sahyadri Hospital, Pune" /ADMINUSER=admin
+  //     /ADMINNAME="Dr S Deshmukh" /ADMINPASSWORD=... /LICENCE=<file>
+  //
+  // Values containing spaces MUST be quoted. Inno reads {param:} up to the
+  // next space, so /HOSPITAL=Sahyadri Hospital silently becomes "Sahyadri" -
+  // and a hospital name and a person's name almost always contain spaces.
+  // The wizard is unaffected; this only bites an unattended install.
   PortPage.Values[0] := ExpandConstant('{param:PORT|5000}');
+end;
+
+/// Refuses to install on a machine that cannot run this.
+///
+/// Checked before anything is written, because the alternative is a hospital
+/// discovering it during a ward round. The numbers are what PostgreSQL and a
+/// .NET service actually need with room for the database to grow, not
+/// aspirational minimums.
+function InitializeSetup: Boolean;
+var
+  FreeMb, TotalMb: Int64;
+  MemoryMb: Int64;
+  Memory: TMemoryStatusEx;
+  Problem: String;
+begin
+  Result := True;
+  Problem := '';
+
+  // Windows 10 1809 is where the APIs this is built against are reliable, and
+  // is also the oldest thing still receiving updates on hospital hardware.
+  if not IsWin64 then
+    Problem := 'Hospital PM needs 64-bit Windows. This machine is running a 32-bit version.'
+  else if (GetWindowsVersion shr 24) < 10 then
+    Problem := 'Hospital PM needs Windows 10 or newer, or Windows Server 2016 or newer.';
+
+  if Problem = '' then
+  begin
+    Memory.dwLength := SizeOf(Memory);
+
+    // A reading we could not take is not a reason to refuse. Blocking an
+    // install over a failed API call would be worse than not checking: the
+    // machine is probably fine, and the operator has no way to argue with it.
+    if GlobalMemoryStatusEx(Memory) and (Memory.ullTotalPhys > 0) then
+    begin
+      MemoryMb := Memory.ullTotalPhys div (1024 * 1024);
+
+      // 3500 rather than 4096: a 4 GB machine reports slightly less once
+      // firmware and integrated graphics have taken their share, and refusing
+      // one of those would be pedantry.
+      if MemoryMb < 3500 then
+        Problem := 'Hospital PM needs at least 4 GB of memory. This machine has about ' +
+                   IntToStr(MemoryMb) + ' MB.';
+    end;
+  end;
+
+  if Problem = '' then
+  begin
+    // PostgreSQL, the application and room for a hospital's database and a
+    // fortnight of backups.
+    // GetSpaceOnDisk64 reports bytes and takes no units flag - that is the
+    // older GetSpaceOnDisk, whose Cardinal results overflow on a modern disk.
+    if GetSpaceOnDisk64(ExpandConstant('{sd}\'), FreeMb, TotalMb) then
+    begin
+      FreeMb := FreeMb div (1024 * 1024);
+      if FreeMb < 5000 then
+        Problem := 'Hospital PM needs about 5 GB of free space. Drive ' +
+                   ExpandConstant('{sd}') + ' has ' + IntToStr(FreeMb) + ' MB free.';
+    end;
+  end;
+
+  if Problem <> '' then
+  begin
+    SuppressibleMsgBox(Problem + #13#10#13#10 + 'Setup cannot continue.',
+                       mbCriticalError, MB_OK, IDOK);
+    Result := False;
+  end;
 end;
 
 /// Stops both services before any file is replaced.
@@ -236,6 +356,42 @@ var
   PortNumber: Integer;
 begin
   Result := True;
+
+  if CurPageID = HospitalPage.ID then
+  begin
+    if Trim(HospitalPage.Values[0]) = '' then
+    begin
+      MsgBox('Enter the hospital name. It appears on printed reports.', mbError, MB_OK);
+      Result := False;
+      Exit;
+    end;
+  end;
+
+  if CurPageID = AdminPage.ID then
+  begin
+    if Trim(AdminPage.Values[1]) = '' then
+    begin
+      MsgBox('Enter a username for the administrator.', mbError, MB_OK);
+      Result := False;
+      Exit;
+    end;
+
+    // Matches the application's own rule. Discovering it after the install,
+    // from a log, is not a discovery anyone should have to make.
+    if Length(AdminPage.Values[2]) < 10 then
+    begin
+      MsgBox('The password must be at least 10 characters.', mbError, MB_OK);
+      Result := False;
+      Exit;
+    end;
+
+    if AdminPage.Values[2] <> AdminPage.Values[3] then
+    begin
+      MsgBox('The two passwords do not match.', mbError, MB_OK);
+      Result := False;
+      Exit;
+    end;
+  end;
 
   if CurPageID = PortPage.ID then
   begin
@@ -348,6 +504,14 @@ begin
   if FileExists(DataDir + '\appsettings.json') then
     DeleteFile(DataDir + '\appsettings.json');
 
+  // A licence the operator selected. Copied rather than validated here: the
+  // application checks the signature when it reads it, and a bad file should
+  // surface on the Licence page rather than stop an install.
+  if (Trim(LicencePage.Values[0]) <> '') and FileExists(Trim(LicencePage.Values[0])) then
+  begin
+    CopyFile(Trim(LicencePage.Values[0]), DataDir + '\hospitalpm.licence', False);
+  end;
+
   Settings := TStringList.Create;
   try
     Settings.Add('{');
@@ -355,6 +519,15 @@ begin
     Settings.Add('    "HospitalPm": "' + ConnectionString + '"');
     Settings.Add('  },');
     Settings.Add('  "Urls": "http://0.0.0.0:' + Trim(PortPage.Values[0]) + '",');
+    // Applied on the first start and then removed from this file, so a
+    // hospital finishes the installer with a working login instead of a web
+    // page asking them to invent one.
+    Settings.Add('  "FirstRun": {');
+    Settings.Add('    "HospitalName": "' + JsonEscape(Trim(HospitalPage.Values[0])) + '",');
+    Settings.Add('    "AdminUserName": "' + JsonEscape(Trim(AdminPage.Values[1])) + '",');
+    Settings.Add('    "AdminFullName": "' + JsonEscape(Trim(AdminPage.Values[0])) + '",');
+    Settings.Add('    "AdminPassword": "' + JsonEscape(AdminPage.Values[2]) + '"');
+    Settings.Add('  },');
     Settings.Add('  "Backup": {');
     Settings.Add('    "Directory": "' + JsonEscape(DataDir + '\backups') + '",');
     // The bundled pg_dump, so backups never depend on what else is installed
@@ -377,16 +550,22 @@ var
 begin
   if CurUninstallStep = usUninstall then
   begin
-    // The bundled PostgreSQL service, stopped and unregistered before its
-    // files go. Left registered, it would point at a directory that no longer
-    // holds an executable and fail noisily on every boot.
+    // Both services stopped here, before [UninstallRun] and before any file
+    // is deleted.
+    //
+    // sc stop returns as soon as it has signalled the service, not when the
+    // process has exited. Without the wait below, Inno starts deleting while
+    // hospitalpm.exe is still running and leaves the binary behind - an
+    // uninstall that appears to succeed and does not.
+    Exec(ExpandConstant('{sys}\sc.exe'), 'stop {#ServiceName}', '',
+         SW_HIDE, ewWaitUntilTerminated, ResultCode);
     Exec(ExpandConstant('{sys}\sc.exe'), 'stop {#PgServiceName}', '',
          SW_HIDE, ewWaitUntilTerminated, ResultCode);
 
-    // pg_ctl needs a moment to shut the cluster down cleanly; deleting the
-    // service out from under a running postgres.exe is how a data directory
-    // gets left needing recovery.
-    Sleep(5000);
+    // Long enough for an ASP.NET Core host to drain and for pg_ctl to shut
+    // the cluster down cleanly. Deleting a service out from under a running
+    // postgres.exe is how a data directory ends up needing recovery.
+    Sleep(10000);
 
     Exec(ExpandConstant('{sys}\sc.exe'), 'delete {#PgServiceName}', '',
          SW_HIDE, ewWaitUntilTerminated, ResultCode);
