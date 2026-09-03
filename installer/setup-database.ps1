@@ -31,10 +31,32 @@ param(
     [int]$Port = 5433,
     [string]$ServiceName = "HospitalPM_Postgres",
     [string]$AppDatabase = "hospitalpm",
-    [string]$AppUser = "hospitalpm"
+    [string]$AppUser = "hospitalpm",
+
+    # Written to unconditionally. Inno discards this script's output, so
+    # without a log a failure during an install leaves no record at all -
+    # which is exactly the situation where someone needs one.
+    [string]$LogFile
 )
 
 $ErrorActionPreference = "Stop"
+
+if (-not $LogFile) {
+    $LogFile = Join-Path (Split-Path -Parent $OutFile) "setup-database.log"
+}
+
+function Write-Log {
+    param([string]$Message)
+    $line = "{0}  {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $Message
+    Write-Host $line
+    try {
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $LogFile) | Out-Null
+        Add-Content -Path $LogFile -Value $line -Encoding ascii
+    }
+    catch {
+        # Never let logging be the thing that fails an install.
+    }
+}
 
 <#
     Runs a native executable and judges it by its exit code.
@@ -106,11 +128,18 @@ function New-Secret {
     -join ($bytes | ForEach-Object { $alphabet[$_ % $alphabet.Length] })
 }
 
+Write-Log "=== Database setup started (port $Port) ==="
+
+trap {
+    Write-Log "SETUP FAILED: $($_.Exception.Message)"
+    break
+}
+
 # --- 1. The cluster --------------------------------------------------------
 $freshCluster = -not (Test-Path (Join-Path $DataDir "PG_VERSION"))
 
 if ($freshCluster) {
-    Write-Host "Creating the database cluster..."
+    Write-Log "Creating the database cluster..."
     New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
 
     # PostgreSQL refuses to run with administrator rights on Windows: initdb
@@ -149,7 +178,7 @@ if ($freshCluster) {
     }
 }
 else {
-    Write-Host "Existing cluster found - keeping it."
+    Write-Log "Existing cluster found - keeping it."
 }
 
 # --- 2. Listen only on loopback, on our own port ---------------------------
@@ -172,7 +201,7 @@ Set-Content -Path $conf -Value ($existing + $settings) -Encoding ascii
 # --- 3. The service --------------------------------------------------------
 $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if (-not $service) {
-    Write-Host "Registering the database service..."
+    Write-Log "Registering the database service..."
     Invoke-Native -Exe $pgctl -What "pg_ctl register" -Arguments @(
         "register", "-N", $ServiceName, "-D", $DataDir, "-S", "auto") | Out-Null
 
@@ -184,7 +213,7 @@ if (-not $service) {
 }
 
 Start-Service -Name $ServiceName
-Write-Host "Waiting for PostgreSQL to accept connections..."
+Write-Log "Waiting for PostgreSQL to accept connections..."
 
 $ready = $false
 $previousPreference = $ErrorActionPreference
@@ -267,13 +296,13 @@ END
         superpass   = $superPassword
     } | ConvertTo-Json | Set-Content -Path $OutFile -Encoding ascii
 
-    Write-Host "Database created."
+    Write-Log "Database created."
 }
 else {
     if (-not (Test-Path $OutFile)) {
         throw "An existing cluster was found but $OutFile is missing, so the application's database password is unknown. Restore that file, or remove $DataDir to start over - which discards the existing database."
     }
-    Write-Host "Reusing the existing database credentials."
+    Write-Log "Reusing the existing database credentials."
 }
 
-Write-Host "PostgreSQL is ready on port $Port."
+Write-Log "PostgreSQL is ready on port $Port."

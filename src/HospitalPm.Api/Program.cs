@@ -174,6 +174,15 @@ if (app.Environment.IsDevelopment())
 if (hasDatabase)
 {
     await FirstRunSeed.ApplyAsync(app, InstallPaths.SettingsFile());
+
+    // A backup row left Running means the process went away mid-dump - or
+    // that a restore inherited one, which happens every single time.
+    using (var backupScope = app.Services.CreateScope())
+    {
+        await InterruptedBackups.CloseAsync(
+            backupScope.ServiceProvider.GetRequiredService<HospitalPmDbContext>(),
+            app.Logger);
+    }
 }
 
 // Said out loud rather than left to be discovered. On a developer's machine
@@ -217,6 +226,7 @@ app.MapWorkOrderEndpoints();
 app.MapReportEndpoints();
 app.MapBackupEndpoints();
 app.MapDiagnosticsEndpoints();
+app.MapRestoreEndpoints();
 app.MapLicenceEndpoints();
 
 app.UseDefaultFiles();

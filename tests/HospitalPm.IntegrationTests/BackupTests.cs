@@ -265,4 +265,36 @@ public sealed class BackupTests(PostgresFixture fixture) : IDisposable
             Environment.SetEnvironmentVariable("PATH", originalPath);
         }
     }
+
+    [Fact]
+    public async Task A_run_left_running_is_closed_off_rather_than_hanging_for_ever()
+    {
+        await using var db = fixture.CreateContext();
+
+        // Exactly what a restore leaves behind. A backup writes its row as
+        // Running before pg_dump starts, so the dump captures that row
+        // mid-flight - every restored database inherits one, and without
+        // this it sits on the Backups page as a backup running for weeks.
+        var stranded = new BackupRun
+        {
+            StartedAtUtc = DateTime.UtcNow.AddDays(-3),
+            Status = BackupStatus.Running,
+            Trigger = BackupTrigger.Scheduled,
+        };
+        db.BackupRuns.Add(stranded);
+        await db.SaveChangesAsync();
+
+        var closedCount = await Api.Hosting.InterruptedBackups.CloseAsync(
+            db, NullLogger.Instance);
+
+        Assert.True(closedCount >= 1);
+
+        await using var reread = fixture.CreateContext();
+        var closed = await reread.BackupRuns.AsNoTracking()
+            .SingleAsync(r => r.Id == stranded.Id);
+
+        Assert.Equal(BackupStatus.Failed, closed.Status);
+        Assert.NotNull(closed.FinishedAtUtc);
+        Assert.Contains("Interrupted", closed.Error!, StringComparison.Ordinal);
+    }
 }
