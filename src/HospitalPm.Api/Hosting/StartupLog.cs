@@ -29,4 +29,14 @@ public static partial class StartupLog
         Message = "The installer's administrator password could not be removed from {File}. " +
                   "Delete the FirstRun section from that file by hand.")]
     public static partial void FirstRunPasswordNotCleared(ILogger logger, string file);
+
+    [LoggerMessage(
+        Level = LogLevel.Error,
+        Message = "Could not launch the restore script.")]
+    public static partial void RestoreLaunchFailed(ILogger logger, Exception e);
+
+    [LoggerMessage(
+        Level = LogLevel.Information,
+        Message = "Closed {Count} backup run(s) left Running by an interrupted backup or a restore.")]
+    public static partial void ClosedInterruptedBackups(ILogger logger, int count);
 }

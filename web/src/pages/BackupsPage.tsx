@@ -32,6 +32,8 @@ export function BackupsPage() {
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [restoring, setRestoring] = useState<number | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -59,6 +61,39 @@ export function BackupsPage() {
       setError(e instanceof Error ? e.message : 'The backup could not be started.');
     } finally {
       setRunning(false);
+    }
+  }
+
+  async function restore(run: Run) {
+    // Typed, not clicked. This replaces every record in the system with
+    // whatever is in that file, and a confirm dialog is one stray Enter away
+    // from being dismissed.
+    const typed = prompt(
+      [
+        `Restore from ${run.fileName}?`,
+        '',
+        'This REPLACES the current database with the contents of that backup.',
+        'Anything recorded since it was taken will be lost.',
+        '',
+        'A copy of the current database is saved first, so this can be undone.',
+        '',
+        'Type RESTORE to continue:',
+      ].join('\n'),
+    );
+
+    if (typed !== 'RESTORE') return;
+
+    setRestoring(run.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await api.post<{ message: string }>(
+        `/api/admin/backups/${run.id}/restore`, { confirm: 'RESTORE' });
+      setNotice(result.message);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'The restore could not be started.');
+    } finally {
+      setRestoring(null);
     }
   }
 
@@ -93,6 +128,7 @@ export function BackupsPage() {
       </header>
 
       {error && <p className="alert alert-error" role="alert">{error}</p>}
+      {notice && <p className="alert alert-ok" role="status">{notice}</p>}
 
       {/* The banner a hospital actually needs. Silence is the failure mode:
           nobody notices backups stopped until the day they are wanted. */}
@@ -142,11 +178,12 @@ export function BackupsPage() {
               <th>File</th>
               <th>Size</th>
               <th>Took</th>
+              <th />
             </tr>
           </thead>
           <tbody>
             {data.runs.length === 0 && (
-              <tr><td colSpan={6} className="empty">No backup has run yet.</td></tr>
+              <tr><td colSpan={7} className="empty">No backup has run yet.</td></tr>
             )}
 
             {data.runs.map((r) => (
@@ -160,6 +197,17 @@ export function BackupsPage() {
                 <td className="mono">{r.fileName ?? <span className="muted">—</span>}</td>
                 <td>{r.sizeBytes !== null ? formatSize(r.sizeBytes) : <span className="muted">—</span>}</td>
                 <td>{r.durationMs !== null ? formatDuration(r.durationMs) : <span className="muted">—</span>}</td>
+                <td>
+                  {r.status === 20 && r.fileName && (
+                    <button
+                      className="btn btn-quiet"
+                      disabled={restoring !== null}
+                      onClick={() => void restore(r)}
+                    >
+                      {restoring === r.id ? 'Starting…' : 'Restore'}
+                    </button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

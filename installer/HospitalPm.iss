@@ -57,6 +57,14 @@ UninstallDisplayName={#AppName}
 ; installer is older than what is there.
 AppVerName={#AppName} {#AppVersion}
 
+; No RestartManager. Its scan runs before PrepareToInstall gets a chance to
+; stop our services, so it finds them holding our own files, cannot close a
+; Windows Service, and asks what to do - a question a silent install answers
+; with Abort. That is an upgrade failing on exactly the machine that most
+; needs one. PrepareToInstall stops both services itself, which is the only
+; thing the scan would have been for.
+CloseApplications=no
+
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
@@ -71,6 +79,10 @@ Source: "{#PgSourceDir}\*"; DestDir: "{app}\pgsql"; Flags: ignoreversion recurse
 ; it is the most failure-prone part of the install, and a script can be run
 ; and debugged on its own.
 Source: "setup-database.ps1"; DestDir: "{app}"; Flags: ignoreversion
+
+; Restore. Shipped alongside, and runs outside the application because
+; a process connected to the database cannot drop and recreate it.
+Source: "restore-database.ps1"; DestDir: "{app}"; Flags: ignoreversion
 
 [Dirs]
 ; Data lives outside the install directory so uninstalling the program cannot
@@ -125,7 +137,7 @@ Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
 ; The script is idempotent: reinstalling over an existing cluster keeps it,
 ; because that cluster holds the equipment register.
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
-  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\setup-database.ps1"" -PgRoot ""{app}\pgsql"" -DataDir ""{commonappdata}\{#AppName}\pgdata"" -OutFile ""{commonappdata}\{#AppName}\db.json"" -Port {code:GetDbPort} -ServiceName {#PgServiceName}"; \
+  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\setup-database.ps1"" -PgRoot ""{app}\pgsql"" -DataDir ""{commonappdata}\{#AppName}\pgdata"" -OutFile ""{commonappdata}\{#AppName}\db.json"" -Port {code:GetDbPort} -ServiceName {#PgServiceName} -LogFile ""{commonappdata}\{#AppName}\setup-database.log"""; \
   Flags: runhidden waituntilterminated; StatusMsg: "Setting up the database (this takes a minute)...";
 
 ; --- 4. Register the application service -----------------------------------
