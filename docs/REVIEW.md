@@ -53,7 +53,7 @@ version of these rules.
 | `web` | React + TypeScript. Built into `wwwroot` and embedded in the binary. |
 | `tests/HospitalPm.IntegrationTests` | xUnit against real PostgreSQL via Testcontainers. |
 | `tools/HospitalPm.LicenceTool` | Vendor-only key generation and signing. Never shipped. |
-| `installer` | Inno Setup script and the PowerShell it drives. |
+| `installer` | Inno Setup script, the PowerShell it drives, and the smoke test that installs it for real on a CI runner. |
 
 136 C# files (37 of them migrations and their designer files), 18 migrations,
 21 TypeScript files. `dotnet test` reports 253 tests from 229 `[Fact]` and
@@ -388,14 +388,23 @@ Ranked by how much I would like to be wrong about them.
 9. **The signing-key path** (§5) — one security bug was already found there by
    accident, which is weak evidence that it was the only one.
 
-10. **Nothing about the installer is covered by an automated test.** The 253
-    tests stop at the API boundary. Every installer claim in §9 — the exit
-    codes, the preflight refusals, the failure file, the health poll — was
-    established by installing on a real machine by hand and reading what came
-    back. That is better evidence than a mock would give, and it is also
-    evidence that expires: nothing will tell me when one of those stops being
-    true. I do not have a good answer for how to test an installer in CI
-    without a Windows VM per run.
+10. **The installer's coverage is new and shallow.** The 253 tests stop at the
+    API boundary. Every installer claim in §9 was originally established by
+    installing on a real machine by hand — better evidence than a mock, and
+    evidence that expires the moment someone edits the `.iss`.
+
+    `installer/smoke-test.ps1` now runs those scenarios on a `windows-latest`
+    runner on every push: port refusals, orphaned cluster, clean install,
+    two consecutive upgrades, a deliberately corrupted cluster, and both
+    uninstall paths. A GitHub Windows runner is a throwaway VM whose default
+    account is an administrator, which is exactly what registering services
+    and locking ACLs needs.
+
+    What it still does not cover: the wizard itself. Every scenario is
+    `/VERYSILENT`, so nothing exercises the pages a hospital actually sees,
+    the Ready-page memo, or the Finished-page checkbox suppression after a
+    failure. It also runs on one Windows version with no third-party
+    antivirus, which is the gap in item 3, not this one.
 
 11. **The licence signing key does not exist yet** (§7), so the verification
     path has never run against a real key, and the release step that would
@@ -426,6 +435,17 @@ powershell -ExecutionPolicy Bypass -File installer\build.ps1
 
 Downloads PostgreSQL against a pinned SHA-256, publishes both binaries, and
 compiles the installer.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File installer\smoke-test.ps1
+```
+
+Installs the compiled installer, breaks it deliberately, and uninstalls it —
+eight scenarios, asserting exit codes, `/health`, the SPA, the failure report
+and what survives an uninstall. **Destructive.** It registers services, writes
+to Program Files and deletes its own data directory, so it is meant for a
+throwaway CI runner; it refuses to run at all if Hospital PM is already
+installed, rather than eating a real installation.
 
 Verified toolchain on the author's machine: .NET SDK 10.0.400, PostgreSQL
 17.11, Node 24.18.0, Docker 29.7.2, Inno Setup 6.7.3.
