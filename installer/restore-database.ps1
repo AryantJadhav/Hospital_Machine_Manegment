@@ -91,6 +91,32 @@ New-Item -ItemType Directory -Force -Path (Split-Path -Parent $LogFile) | Out-Nu
 Write-Log "=== Restore started ==="
 Write-Log "Backup file: $DumpFile"
 
+# Same reasoning as setup-database.ps1: PGPASSWORD in the environment takes
+# precedence over the PGPASSFILE this script writes, so a machine that has one
+# set authenticates with someone else's password no matter what is passed
+# below.
+#
+# The rest are cleared as hygiene rather than because they override us -
+# --host, --port, --username and --dbname are explicit connection parameters
+# and libpq ranks those above the environment. PGSERVICE, PGOPTIONS and
+# PGSSLMODE can still colour the session, and this script drops and recreates
+# a database, so it is worth leaving nothing to chance.
+$inheritedPg = @()
+foreach ($name in @('PGPASSWORD', 'PGPASSFILE', 'PGUSER', 'PGDATABASE',
+                    'PGHOST', 'PGHOSTADDR', 'PGPORT', 'PGSERVICE',
+                    'PGSERVICEFILE', 'PGOPTIONS', 'PGSSLMODE', 'PGREQUIRESSL',
+                    'PGCLIENTENCODING', 'PGAPPNAME', 'PGCONNECT_TIMEOUT')) {
+    if (Test-Path "Env:\$name") {
+        $inheritedPg += $name
+        Remove-Item "Env:\$name" -ErrorAction SilentlyContinue
+    }
+}
+
+if ($inheritedPg.Count -gt 0) {
+    # Names only - PGPASSWORD's value is someone else's secret.
+    Write-Log "Ignoring inherited PostgreSQL environment settings: $($inheritedPg -join ', ')"
+}
+
 $creds = Get-Content $CredentialsFile -Raw | ConvertFrom-Json
 $dbHost = $creds.host
 $dbPort = $creds.port

@@ -53,7 +53,7 @@ version of these rules.
 | `web` | React + TypeScript. Built into `wwwroot` and embedded in the binary. |
 | `tests/HospitalPm.IntegrationTests` | xUnit against real PostgreSQL via Testcontainers. |
 | `tools/HospitalPm.LicenceTool` | Vendor-only key generation and signing. Never shipped. |
-| `installer` | Inno Setup script and the PowerShell it drives. |
+| `installer` | Inno Setup script, the PowerShell it drives, and the smoke test that installs it for real on a CI runner. |
 
 136 C# files (37 of them migrations and their designer files), 18 migrations,
 21 TypeScript files. `dotnet test` reports 253 tests from 229 `[Fact]` and
@@ -330,6 +330,26 @@ Other installer behaviour worth knowing:
   `/T`. Locking afterwards with `/T` strips the settings file's inherited ACEs
   while the `(OI)(CI)` container-inheritance grants apply nothing to a file,
   producing a file with an empty ACL that not even LocalSystem can read.
+- Both PowerShell scripts clear inherited `PG*` environment variables before
+  touching PostgreSQL. **`PGPASSWORD` takes precedence over `PGPASSFILE`**,
+  and there is no command-line option for a password — so a machine with
+  `PGPASSWORD` set system-wide authenticates as something the installer did
+  not choose, however explicit its arguments are. That machine is the one
+  that already has PostgreSQL on it, which is precisely the case the private
+  port 5433 exists to accommodate. Found by the CI smoke test on its first
+  real run: `initdb` succeeded, the cluster started, and the next `psql` died
+  with *"password authentication failed for user postgres"* against a
+  password the script had just set itself. Everything else (`--host`,
+  `--port`, `--username`, `--dbname`) is an explicit connection parameter and
+  outranks the environment, so clearing those is hygiene rather than a fix.
+- The "Open Hospital PM now" `[Run]` entry carries `skipifsilent`. A
+  `postinstall` entry still **executes** under `/VERYSILENT` — the flag only
+  governs the checkbox on a Finished page a silent install never shows — so
+  without it an unattended install opened a browser, which for an SCCM or
+  Intune rollout running as LocalSystem is meaningless at best. Pre-existing,
+  and found by the CI smoke test: Setup finished in 26 seconds, `ShellExec`'d
+  the URL on a headless runner, and the harness then waited 35 minutes on a
+  child process that was never going to exit.
 - `install-failure.txt` is deleted in `CurUninstallStepChanged(usUninstall)`,
   not through `[UninstallDelete]`. Inno processes `[UninstallDelete]` entries
   *after* it has already tried to remove the install directory, so the file
@@ -388,14 +408,23 @@ Ranked by how much I would like to be wrong about them.
 9. **The signing-key path** (§5) — one security bug was already found there by
    accident, which is weak evidence that it was the only one.
 
-10. **Nothing about the installer is covered by an automated test.** The 253
-    tests stop at the API boundary. Every installer claim in §9 — the exit
-    codes, the preflight refusals, the failure file, the health poll — was
-    established by installing on a real machine by hand and reading what came
-    back. That is better evidence than a mock would give, and it is also
-    evidence that expires: nothing will tell me when one of those stops being
-    true. I do not have a good answer for how to test an installer in CI
-    without a Windows VM per run.
+10. **The installer's coverage is new and shallow.** The 253 tests stop at the
+    API boundary. Every installer claim in §9 was originally established by
+    installing on a real machine by hand — better evidence than a mock, and
+    evidence that expires the moment someone edits the `.iss`.
+
+    `installer/smoke-test.ps1` now runs those scenarios on a `windows-latest`
+    runner on every push: port refusals, orphaned cluster, clean install,
+    two consecutive upgrades, a deliberately corrupted cluster, and both
+    uninstall paths. A GitHub Windows runner is a throwaway VM whose default
+    account is an administrator, which is exactly what registering services
+    and locking ACLs needs.
+
+    What it still does not cover: the wizard itself. Every scenario is
+    `/VERYSILENT`, so nothing exercises the pages a hospital actually sees,
+    the Ready-page memo, or the Finished-page checkbox suppression after a
+    failure. It also runs on one Windows version with no third-party
+    antivirus, which is the gap in item 3, not this one.
 
 11. **The licence signing key does not exist yet** (§7), so the verification
     path has never run against a real key, and the release step that would
@@ -426,6 +455,17 @@ powershell -ExecutionPolicy Bypass -File installer\build.ps1
 
 Downloads PostgreSQL against a pinned SHA-256, publishes both binaries, and
 compiles the installer.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File installer\smoke-test.ps1
+```
+
+Installs the compiled installer, breaks it deliberately, and uninstalls it —
+eight scenarios, asserting exit codes, `/health`, the SPA, the failure report
+and what survives an uninstall. **Destructive.** It registers services, writes
+to Program Files and deletes its own data directory, so it is meant for a
+throwaway CI runner; it refuses to run at all if Hospital PM is already
+installed, rather than eating a real installation.
 
 Verified toolchain on the author's machine: .NET SDK 10.0.400, PostgreSQL
 17.11, Node 24.18.0, Docker 29.7.2, Inno Setup 6.7.3.

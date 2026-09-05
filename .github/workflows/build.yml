@@ -211,3 +211,88 @@ jobs:
           name: hospitalpm-${{ matrix.rid }}
           path: artifacts/${{ matrix.rid }}/
           retention-days: 14
+
+  # Builds the real installer and installs it, on a real Windows machine, in
+  # every way that has gone wrong before.
+  #
+  # Every installer bug this project has had was invisible to reading and
+  # only showed up on a machine: a service registered against a database that
+  # was never created, a JWT signing key readable by every local user, an
+  # uninstaller that deleted the hospital's records, an upgrade that refused
+  # itself. Until now they were found by installing by hand, which does not
+  # survive the next edit to HospitalPm.iss - and one of them was
+  # non-deterministic, so a single manual pass could not tell a pass from a
+  # lucky one.
+  #
+  # A GitHub Windows runner is a throwaway VM whose default account is an
+  # administrator, which is exactly what this needs: it registers services,
+  # writes to Program Files, and locks ACLs. Destructive, and that is fine
+  # here and nowhere else.
+  installer:
+    name: installer (windows)
+    needs: test
+    runs-on: windows-latest
+
+    # Eight installs and uninstalls, each with waits measured in minutes - a
+    # health poll up to two minutes, a service-stop wait up to ninety seconds.
+    # A healthy run is around twenty minutes. Without this, a smoke test that
+    # hangs waiting for a service that will never start holds a runner for the
+    # six-hour default.
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Build.props') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      # 340 MB from EnterpriseDB on every run would be slow and would make
+      # this job fail for their reasons rather than ours. Keyed on the pinned
+      # version, so bumping PostgreSQL busts the cache by construction.
+      - name: Cache the PostgreSQL archive
+        uses: actions/cache@v4
+        with:
+          path: artifacts/cache
+          key: pgsql-17.11-1-windows-x64
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build the installer
+        shell: pwsh
+        run: ./installer/build.ps1 -Version 1.0.0
+
+      - name: Smoke test the installer
+        shell: pwsh
+        run: ./installer/smoke-test.ps1 -Setup artifacts/installer/HospitalPM-Setup-1.0.0.exe
+
+      # Uploaded on failure too - the Inno logs are the only record of which
+      # step failed, and they are what a person would ask for first.
+      - name: Upload installer logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-smoke-logs
+          path: artifacts/smoke-logs/
+          retention-days: 14
+
+      - name: Upload the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: hospitalpm-installer
+          path: artifacts/installer/HospitalPM-Setup-1.0.0.exe
+          retention-days: 14
