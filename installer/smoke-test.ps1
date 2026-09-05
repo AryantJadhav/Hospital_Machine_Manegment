@@ -53,13 +53,64 @@ $LogDir = (Resolve-Path $LogDir).Path
 
 $script:Failures = @()
 $script:Scenario = "startup"
+$script:FailuresAtScenarioStart = 0
 
 # --- Reporting -------------------------------------------------------------
 # ::error:: and ::group:: are GitHub Actions workflow commands. They are inert
 # noise anywhere else, which is what makes this script runnable by hand when
 # something needs debugging.
 
+<#
+    Dumps everything that explains a failed install, into the job log.
+
+    Written after the first CI run failed and could not say why: the install
+    reported that the database step had failed, and the log that would have
+    named the reason lives in ProgramData, which nothing collected. Reading a
+    failure should not require a second run with more logging bolted on.
+
+    Copied into the log directory as well, so the uploaded artifact carries
+    them, but printed inline first - the job log is where someone looks.
+#>
+function Show-Diagnostics([string]$Tag) {
+    $sources = @(
+        @{ Name = "install-failure.txt"; Path = $FailureFile },
+        @{ Name = "setup-database.log";  Path = (Join-Path $DataDir "setup-database.log") },
+        @{ Name = "restore.log";         Path = (Join-Path $DataDir "restore.log") }
+    )
+
+    $target = Join-Path $LogDir "$Tag-diagnostics"
+    New-Item -ItemType Directory -Force -Path $target | Out-Null
+
+    foreach ($s in $sources) {
+        if (-not (Test-PathQuiet $s.Path)) { continue }
+        Write-Host "::group::$Tag - $($s.Name)"
+        Get-Content $s.Path -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $_" }
+        Write-Host "::endgroup::"
+        Copy-Item $s.Path (Join-Path $target $s.Name) -ErrorAction SilentlyContinue
+    }
+
+    # PostgreSQL says why it would not start here and nowhere else.
+    $pgLog = Join-Path $DataDir "pgdata\log"
+    if (Test-PathQuiet $pgLog) {
+        foreach ($f in @(Get-ChildItem $pgLog -File -ErrorAction SilentlyContinue |
+                         Sort-Object LastWriteTime -Descending | Select-Object -First 2)) {
+            Write-Host "::group::$Tag - pgdata/log/$($f.Name)"
+            Get-Content $f.FullName -Tail 60 -ErrorAction SilentlyContinue |
+                ForEach-Object { Write-Host "  $_" }
+            Write-Host "::endgroup::"
+            Copy-Item $f.FullName (Join-Path $target $f.Name) -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 function Write-Scenario([string]$Name) {
+    # Whatever the scenario just ending left behind is the only evidence of why
+    # it failed, and the next scenario is about to destroy it.
+    if ($script:Failures.Count -gt $script:FailuresAtScenarioStart) {
+        Show-Diagnostics ($script:Scenario -replace '[^A-Za-z0-9]+', '-')
+    }
+    $script:FailuresAtScenarioStart = $script:Failures.Count
+
     $script:Scenario = $Name
     Write-Host ""
     Write-Host "==> $Name" -ForegroundColor Cyan
@@ -323,6 +374,12 @@ Assert-That (-not (Test-Path $InstallDir))   "nothing installed"
 
 Remove-Item $DataDir -Recurse -Force -ErrorAction SilentlyContinue
 
+# Asserted, not assumed. This scenario plants a fake PG_VERSION, and if it
+# survives, the NEXT scenario's install sees an existing cluster with no
+# credentials and fails within seconds - reporting a database fault that this
+# scenario caused. Silent cleanup is how a test suite blames the wrong thing.
+Assert-That (-not (Test-PathQuiet $DataDir)) "the planted cluster was cleaned up"
+
 # --- 4. A clean install ----------------------------------------------------
 Write-Scenario "Installs clean, and actually serves"
 
@@ -421,6 +478,12 @@ Assert-That ($code -eq 0)                     "uninstall exit 0 (was $code)"
 Assert-That (-not (Test-Path $InstallDir))    "no install directory left"
 Assert-That (Test-PathQuiet $DataDir)              "the data directory SURVIVED"
 Assert-That (Test-PathQuiet (Join-Path $DataDir "pgdata\PG_VERSION")) "the database itself survived"
+
+# The last scenario has no successor to trigger its dump, and Reset-Machine is
+# about to delete everything that would explain it.
+if ($script:Failures.Count -gt $script:FailuresAtScenarioStart) {
+    Show-Diagnostics ($script:Scenario -replace '[^A-Za-z0-9]+', '-')
+}
 
 Reset-Machine
 
