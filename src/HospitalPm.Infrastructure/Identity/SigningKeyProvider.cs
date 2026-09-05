@@ -10,8 +10,16 @@ namespace HospitalPm.Infrastructure.Identity;
 /// The key must not be a compile-time constant and must not live in a
 /// committed config file: every hospital would then share the same signing
 /// key, and anyone with a copy of the installer could mint valid tokens for
-/// every install in the country. It is generated per install, stored beside
-/// the binary with restrictive permissions, and never leaves the machine.
+/// every install in the country. It is generated per install and never leaves
+/// the machine.
+///
+/// Where it is stored is decided by the caller, and matters: an install test
+/// found it sitting in Program Files, where BUILTIN\Users has read access by
+/// inheritance, so every local user on a shared ward PC could read the key
+/// that signs authentication tokens - and anyone who can read it can mint a
+/// token for any user, including an administrator. Program.cs now passes the
+/// keys folder inside the data directory, which the installer locks to SYSTEM
+/// and Administrators before anything is written into it.
 ///
 /// A file rather than a database row, deliberately: the app needs to
 /// validate tokens during startup and while the database is unreachable,

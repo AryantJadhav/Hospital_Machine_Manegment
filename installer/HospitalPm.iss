@@ -11,6 +11,53 @@
 ; five-minute install real - the alternative is talking a ward clerk through
 ; installing a database server over the phone.
 ;
+;
+; --- On failure reporting, which is not obvious and was measured -----------
+;
+; Inno Setup can only fail an installation BEFORE file copying begins. This
+; was measured against Inno 6.7.3 rather than assumed, because everything
+; below depends on it:
+;
+;   InitializeSetup returns False .................. exit 1, nothing written
+;   PrepareToInstall returns a message ............. exit 7, nothing written
+;   CurStepChanged(ssInstall) aborts ............... exit 3, rolled back
+;   [Files] AfterInstall raises or aborts .......... exit 0, files left
+;   [Run] entry's program exits non-zero ........... exit 0, files left
+;   [Run] BeforeInstall raises or aborts ........... exit 0, files left,
+;                                                    and the entry still runs
+;   CurStepChanged(ssPostInstall) raises or aborts . exit 0, files left
+;
+; Stage order is ssInstall -> [Files] AfterInstall -> [Run] -> ssPostInstall.
+;
+; So everything after the payload is extracted - creating the database
+; cluster, writing settings, registering and starting the service - runs in a
+; phase where Inno reports success no matter what happens. An earlier version
+; of this file relied on RaiseException from a [Run] entry's BeforeInstall to
+; stop the install when the database step had failed. It stops nothing: the
+; exception is logged as an internal error, the [Run] entry executes anyway,
+; and Setup exits 0. A silent install could leave a hospital with a registered
+; service, no settings file and no database, and report success to whoever ran
+; it.
+;
+; Two things follow, and both are done below:
+;
+;   1. Every check that CAN be made before file copying is made in
+;      PrepareToInstall, where refusing costs the hospital nothing and returns
+;      a real exit code. Ports, an orphaned cluster.
+;
+;   2. What genuinely cannot move - the database, the service, the first start
+;      - runs in ssPostInstall with every exit code checked, stops at the
+;      first failure, and writes the reason to install-failure.txt in the
+;      install directory. Since Inno's exit code cannot be made non-zero
+;      there, that file IS the machine-readable result:
+;
+;        HospitalPM-Setup.exe /VERYSILENT ...
+;        if exist "%ProgramFiles%\Hospital PM\install-failure.txt" ( ... )
+;
+;      An unattended deployment must test for it, because the exit code will
+;      be 0 either way. Said on the Ready page and in docs/REVIEW.md rather
+;      than left to be discovered.
+;
 ; Build:  ISCC.exe installer\HospitalPm.iss /DAppVersion=1.0.0 /DSourceDir=<published win-x64 folder>
 
 #ifndef AppVersion
@@ -56,6 +103,10 @@ UninstallDisplayName={#AppName}
 ; A hospital that reinstalls after a support call must not be told the
 ; installer is older than what is there.
 AppVerName={#AppName} {#AppVersion}
+VersionInfoVersion={#AppVersion}
+VersionInfoCompany={#AppPublisher}
+VersionInfoProductName={#AppName}
+VersionInfoDescription={#AppName} Setup
 
 ; No RestartManager. Its scan runs before PrepareToInstall gets a chance to
 ; stop our services, so it finds them holding our own files, cannot close a
@@ -102,80 +153,17 @@ Name: "{group}\Open {#AppName}"; Filename: "http://localhost:{code:GetPort}/"
 Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
 
 [Run]
-; --- 1. Lock the data folder down, BEFORE anything is written into it ------
-; It holds the database password, and ProgramData is world-readable by
-; default, so inheritance is broken and Users removed.
+; Everything that used to be here now runs from InstallSteps in [Code], so
+; that each step's exit code is actually looked at. Inno discards a [Run]
+; entry's exit code, which made a failed database setup indistinguishable
+; from a successful one.
 ;
-; The order matters and is not obvious. Doing this after writing the settings
-; file, with /T, strips that file's inherited ACEs while the (OI)(CI) grants -
-; container inheritance flags - apply nothing to a file. The result is a file
-; with an empty ACL that not even LocalSystem can read: the service installs,
-; fails to start, and says why only in the Event Log. Locking the folder first
-; lets the file inherit the right ACEs when it is created.
-;
-; No /T, for the same reason: on an upgrade it would blank the existing file.
-Filename: "{sys}\icacls.exe"; \
-  Parameters: """{commonappdata}\{#AppName}"" /inheritance:r /grant ""*S-1-5-18:(OI)(CI)F"" /grant ""*S-1-5-32-544:(OI)(CI)F"" /C"; \
-  Flags: runhidden waituntilterminated; StatusMsg: "Securing the settings folder..."
-
-; --- 2. Antivirus exclusion for the database directory --------------------
-; Real-time scanning of a PostgreSQL data directory is a well-known cause of
-; corruption and of write stalls that look like the application hanging.
-; Deliberately scoped to the cluster only, never the whole install.
-;
-; Best effort: Defender may be absent, replaced, or centrally managed, and
-; none of those should fail an install. runhidden so a hospital never sees a
-; console window it will worry about.
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
-  Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""try {{ Add-MpPreference -ExclusionPath '{commonappdata}\{#AppName}\pgdata' -ErrorAction Stop }} catch {{ }}"""; \
-  Flags: runhidden waituntilterminated; StatusMsg: "Configuring antivirus exclusion..."
-
-; --- 3. Create the bundled database ---------------------------------------
-; initdb, register the PostgreSQL service, generate credentials, create the
-; role and database. The hospital is never asked for any of it.
-;
-; The script is idempotent: reinstalling over an existing cluster keeps it,
-; because that cluster holds the equipment register.
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
-  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\setup-database.ps1"" -PgRoot ""{app}\pgsql"" -DataDir ""{commonappdata}\{#AppName}\pgdata"" -OutFile ""{commonappdata}\{#AppName}\db.json"" -Port {code:GetDbPort} -ServiceName {#PgServiceName} -LogFile ""{commonappdata}\{#AppName}\setup-database.log"""; \
-  Flags: runhidden waituntilterminated; StatusMsg: "Setting up the database (this takes a minute)...";
-
-; --- 4. Register the application service -----------------------------------
-; Settings are written immediately before this, so they land inside the
-; already-locked folder and inherit its permissions. They can only be written
-; now, because the database password is generated by the step above.
-;
-; Delayed start: PostgreSQL must be accepting connections before we migrate
-; against it, and on a slow hospital PC that is not instant.
-Filename: "{sys}\sc.exe"; \
-  Parameters: "create {#ServiceName} binPath= ""{app}\{#ExeName}"" DisplayName= ""{#ServiceDisplay}"" start= delayed-auto"; \
-  Flags: runhidden waituntilterminated; BeforeInstall: WriteSettings; \
-  StatusMsg: "Registering the service..."
-
-Filename: "{sys}\sc.exe"; \
-  Parameters: "description {#ServiceName} ""Biomedical equipment preventive maintenance. Serves the Hospital PM web application."""; \
-  Flags: runhidden waituntilterminated
-
-; If the service dies, restart it. A ward should not lose the system because
-; of one bad night, and nobody there will be watching services.msc.
-Filename: "{sys}\sc.exe"; \
-  Parameters: "failure {#ServiceName} reset= 86400 actions= restart/60000/restart/60000/restart/120000"; \
-  Flags: runhidden waituntilterminated
-
-; --- 4. Firewall ----------------------------------------------------------
-; Phones and other PCs on the ward network need to reach this machine. Scoped
-; to private networks: a hospital PC that ends up on a public Wi-Fi should not
-; be serving its asset register to it.
-Filename: "{sys}\netsh.exe"; \
-  Parameters: "advfirewall firewall add rule name=""{#AppName}"" dir=in action=allow protocol=TCP localport={code:GetPort} profile=private,domain"; \
-  Flags: runhidden waituntilterminated; StatusMsg: "Opening the firewall..."
-
-; --- 5. Start --------------------------------------------------------------
-Filename: "{sys}\sc.exe"; Parameters: "start {#ServiceName}"; \
-  Flags: runhidden waituntilterminated; StatusMsg: "Starting the service..."
-
+; This entry is the exception: it is the Finished page's checkbox, it runs
+; after everything else, and there is nothing to check. Suppressed when the
+; install failed, so a broken system does not offer to open a page that will
+; not load.
 Filename: "http://localhost:{code:GetPort}/"; Flags: shellexec postinstall nowait; \
-  Description: "Open {#AppName} now"
+  Description: "Open {#AppName} now"; Check: InstallSucceeded
 
 [UninstallRun]
 ; Stop before deleting, or the files are locked and the uninstall leaves a
@@ -208,6 +196,10 @@ var
   AdminPage: TInputQueryWizardPage;
   LicencePage: TInputFileWizardPage;
   PortPage: TInputQueryWizardPage;
+
+  // Empty means nothing has failed yet. Set once, by the first step that
+  // fails; every step afterwards is skipped.
+  FailureReason: String;
 
 procedure InitializeWizard;
 begin
@@ -259,6 +251,135 @@ begin
   // and a hospital name and a person's name almost always contain spaces.
   // The wizard is unaffected; this only bites an unattended install.
   PortPage.Values[0] := ExpandConstant('{param:PORT|5000}');
+end;
+
+function GetPort(Param: String): String;
+begin
+  Result := PortPage.Values[0];
+end;
+
+/// The bundled PostgreSQL's port. Not 5432: a machine that already runs
+/// PostgreSQL must keep working, and ours has to sit beside it rather than
+/// fight it for the port.
+function GetDbPort(Param: String): String;
+begin
+  Result := ExpandConstant('{param:DBPORT|5433}');
+end;
+
+function DataDir: String;
+begin
+  Result := ExpandConstant('{commonappdata}\{#AppName}');
+end;
+
+/// Where a failed install explains itself.
+///
+/// The install directory, NOT the data directory. The data directory is
+/// locked to SYSTEM and Administrators because it holds the database
+/// password, which means a report written there cannot be opened by the
+/// person reading it without elevating first - and someone whose install has
+/// just failed should not also have to work out how to get at the
+/// explanation. An install-test caught exactly that: the file was written,
+/// correctly, and was unreadable.
+///
+/// Program Files is readable by every local user, the folder is guaranteed to
+/// exist by the time anything can fail here, and the report contains no
+/// secrets - a reason, a step, and the paths of three logs.
+function FailureFile: String;
+begin
+  Result := ExpandConstant('{app}\install-failure.txt');
+end;
+
+/// True while nothing has failed.
+function InstallSucceeded: Boolean;
+begin
+  Result := FailureReason = '';
+end;
+
+/// Runs a program to completion and reports whether it exited 0.
+///
+/// Exec's own Boolean result only says the process could be STARTED; the exit
+/// code comes back in ResultCode and is the part that matters. Conflating the
+/// two is how a failed step reads as a successful one.
+function RunChecked(const Exe, Params: String; var Code: Integer): Boolean;
+begin
+  Code := -1;
+  Result := Exec(Exe, Params, '', SW_HIDE, ewWaitUntilTerminated, Code) and (Code = 0);
+end;
+
+/// Runs a PowerShell command and returns its exit code, or -1 if PowerShell
+/// itself could not be started.
+function RunPowerShell(const Command: String): Integer;
+var
+  Code: Integer;
+begin
+  if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+              '-NoProfile -ExecutionPolicy Bypass -Command "' + Command + '"',
+              '', SW_HIDE, ewWaitUntilTerminated, Code) then
+    Result := -1
+  else
+    Result := Code;
+end;
+
+/// Waits for both of our services to actually reach Stopped.
+///
+/// Replaces a fixed Sleep, which was a guess and lost the race often enough
+/// to matter. An install test caught it: Setup stopped its own PostgreSQL,
+/// waited six seconds, found port 5433 still held by it, and refused the
+/// upgrade with a message blaming "another PostgreSQL". That is a
+/// non-deterministic failure to upgrade the very machine already running the
+/// product, and the same race previously risked the worse outcome of
+/// replacing binaries under a live postgres.exe.
+///
+/// sc stop returns as soon as it has SIGNALLED the service, never when the
+/// process has gone, so something has to wait. A service that does not exist
+/// reports no status and counts as stopped, which is the fresh-install case.
+function WaitForServicesStopped(const Seconds: String): Boolean;
+begin
+  Result := RunPowerShell(
+    '$deadline = (Get-Date).AddSeconds(' + Seconds + '); ' +
+    'do { ' +
+    '  $running = @(''{#ServiceName}'', ''{#PgServiceName}'') | ForEach-Object { ' +
+    '    (Get-Service $_ -ErrorAction SilentlyContinue).Status } | ' +
+    '    Where-Object { $_ -and $_ -ne ''Stopped'' }; ' +
+    '  if (-not $running) { exit 0 } ' +
+    '  Start-Sleep -Seconds 1 ' +
+    '} while ((Get-Date) -lt $deadline); ' +
+    'exit 1') = 0;
+end;
+
+/// True when something is still listening on that TCP port after a grace
+/// period.
+///
+/// GetActiveTcpListeners rather than Get-NetTCPConnection: it is a BCL call
+/// that needs no elevation and no NetTCPIP module, so it behaves the same on
+/// a stripped-down hospital image.
+///
+/// Retried rather than sampled once. Even after the SCM reports a service
+/// stopped, its listening socket can take a moment to disappear, and a
+/// single unlucky sample turns into a refusal to install. Ten seconds costs
+/// nothing on the only path that reaches it - a machine that is genuinely
+/// about to be refused.
+///
+/// Exit 2 means in use, 0 means free, and anything else means the question
+/// could not be answered - which is NOT treated as in-use, because refusing
+/// an install over a check that did not run is worse than not checking.
+function PortInUse(const Port: String): Boolean;
+var
+  Attempt: Integer;
+begin
+  Result := False;
+  for Attempt := 1 to 5 do
+  begin
+    if RunPowerShell(
+         '$listeners = [System.Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties()' +
+         '.GetActiveTcpListeners() | Where-Object { $_.Port -eq ' + Port + ' }; ' +
+         'if ($listeners) { exit 2 } else { exit 0 }') <> 2 then
+      Exit;
+
+    Result := True;
+    if Attempt < 5 then
+      Sleep(2000);
+  end;
 end;
 
 /// Refuses to install on a machine that cannot run this.
@@ -327,40 +448,81 @@ begin
   end;
 end;
 
-/// Stops both services before any file is replaced.
+/// Stops both services, then refuses the install if this machine is not in a
+/// state where it can succeed.
 ///
-/// Without this, reinstalling over a working install fails: RestartManager
-/// finds the running service holding our files, cannot shut it down, and
-/// Setup aborts - which is exactly what a hospital does when it upgrades or
-/// reinstalls after a support call. Inno's own RestartManager prompt is no
-/// help either, because a silent install answers it with Abort.
+/// This is the last point at which refusing is free: returning a message here
+/// exits with code 7 and writes nothing. Every check that can be made without
+/// the payload extracted belongs here rather than later, because later there
+/// is no way to fail at all.
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ResultCode: Integer;
+  AppPort, DbPort: String;
 begin
   Result := '';
 
+  // Without this, reinstalling over a working install fails: the running
+  // service holds our own files. Inno's RestartManager prompt is no help
+  // either, because a silent install answers it with Abort.
   Exec(ExpandConstant('{sys}\sc.exe'), 'stop {#ServiceName}', '',
        SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec(ExpandConstant('{sys}\sc.exe'), 'stop {#PgServiceName}', '',
        SW_HIDE, ewWaitUntilTerminated, ResultCode);
 
-  // Both need a moment to actually exit. Replacing a binary out from under a
-  // running postgres.exe is how a data directory ends up needing recovery.
-  Sleep(6000);
-end;
+  // Waited for, not slept through. Replacing a binary out from under a
+  // running postgres.exe is how a data directory ends up needing recovery,
+  // and the port checks below are meaningless until our own listeners are
+  // gone.
+  if not WaitForServicesStopped('90') then
+  begin
+    Result := 'Hospital PM is already installed on this computer and its services ' +
+              'would not stop, so Setup cannot safely replace the files they are ' +
+              'using.' + #13#10#13#10 +
+              'Restart the computer and run Setup again.' + #13#10#13#10 +
+              'Nothing has been installed.';
+    Exit;
+  end;
 
-function GetPort(Param: String): String;
-begin
-  Result := PortPage.Values[0];
-end;
+  AppPort := Trim(PortPage.Values[0]);
+  DbPort := GetDbPort('');
 
-/// The bundled PostgreSQL's port. Not 5432: a machine that already runs
-/// PostgreSQL must keep working, and ours has to sit beside it rather than
-/// fight it for the port.
-function GetDbPort(Param: String): String;
-begin
-  Result := ExpandConstant('{param:DBPORT|5433}');
+  // Ports are checked AFTER stopping our own services, so on an upgrade we
+  // are not reporting a conflict with ourselves.
+  if PortInUse(AppPort) then
+  begin
+    Result := 'Another program on this computer is already using port ' + AppPort + '.' + #13#10#13#10 +
+              'Run Setup again and choose a different port, or stop whatever is using it.' + #13#10#13#10 +
+              'Nothing has been installed.';
+    Exit;
+  end;
+
+  if PortInUse(DbPort) then
+  begin
+    Result := 'Port ' + DbPort + ' is already in use, and that is the port the bundled ' +
+              'database needs.' + #13#10#13#10 +
+              'This usually means another PostgreSQL is running on it. Run Setup again ' +
+              'with /DBPORT= followed by a free port.' + #13#10#13#10 +
+              'Nothing has been installed.';
+    Exit;
+  end;
+
+  // An existing cluster whose credentials file is gone is a dead end: the
+  // application's database password lives only in db.json and cannot be
+  // recovered from the cluster. setup-database.ps1 detects this too, but by
+  // then the payload is installed and its refusal cannot be reported.
+  // Catching it here costs the hospital nothing and says what to do about it.
+  if FileExists(DataDir + '\pgdata\PG_VERSION') and (not FileExists(DataDir + '\db.json')) then
+  begin
+    Result := 'This computer has a Hospital PM database from an earlier installation, ' +
+              'but the file holding its password is missing:' + #13#10#13#10 +
+              DataDir + '\db.json' + #13#10#13#10 +
+              'Restore that file from a copy of this folder and run Setup again. ' +
+              'Deleting the pgdata folder would let Setup start over, but that discards ' +
+              'the existing database.' + #13#10#13#10 +
+              'Nothing has been installed.';
+    Exit;
+  end;
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
@@ -467,32 +629,110 @@ begin
   Result := Trim(Copy(Json, Start, Finish - Start));
 end;
 
-procedure WriteSettings;
+/// Records the first failure, writes it down, and shows it.
+///
+/// The message box is suppressible so an unattended install does not hang on
+/// it - which means on those installs the file is the only record, hence
+/// writing the file first and unconditionally.
+procedure Fail(const Reason, Detail: String);
+var
+  Lines: TStringList;
+begin
+  // Only the first failure is kept. The ones after it are its consequences.
+  if FailureReason <> '' then
+    Exit;
+
+  FailureReason := Reason;
+  Log('INSTALL FAILED: ' + Reason);
+
+  Lines := TStringList.Create;
+  try
+    Lines.Add('Hospital PM {#AppVersion} did not finish installing.');
+    Lines.Add('');
+    Lines.Add(GetDateTimeString('yyyy-mm-dd hh:nn:ss', '-', ':'));
+    Lines.Add('');
+    Lines.Add('What went wrong');
+    Lines.Add('---------------');
+    Lines.Add(Reason);
+    if Detail <> '' then
+    begin
+      Lines.Add('');
+      Lines.Add(Detail);
+    end;
+    Lines.Add('');
+    Lines.Add('Where to look');
+    Lines.Add('-------------');
+    Lines.Add('Database setup log: ' + DataDir + '\setup-database.log');
+    Lines.Add('PostgreSQL log:     ' + DataDir + '\pgdata\log');
+    Lines.Add('Service errors:     Event Viewer, Windows Logs, Application,');
+    Lines.Add('                    source HospitalPM');
+    Lines.Add('');
+    // Said here because otherwise the next thing that happens to someone
+    // following these paths is an access-denied box, and it reads like a
+    // second fault rather than the intended one.
+    Lines.Add('The two log files are in a folder restricted to administrators, so');
+    Lines.Add('opening them will ask you to confirm. That is deliberate: if a database');
+    Lines.Add('command fails, its log can contain the generated database password.');
+    Lines.Add('');
+    Lines.Add('None of these hold patient data, but treat the two log files as');
+    Lines.Add('sensitive - read them before sending them on.');
+
+    Lines.SaveToFile(FailureFile);
+  finally
+    Lines.Free;
+  end;
+
+  SuppressibleMsgBox(
+    'Hospital PM was installed but could not be started.' + #13#10#13#10 +
+    Reason + #13#10#13#10 +
+    'The details are in:' + #13#10 + FailureFile,
+    mbCriticalError, MB_OK, IDOK);
+end;
+
+procedure Status(const Message: String);
+begin
+  Log('STEP: ' + Message);
+  if WizardForm <> nil then
+  begin
+    WizardForm.StatusLabel.Caption := Message;
+    WizardForm.Refresh;
+  end;
+end;
+
+/// Writes this machine's settings into the locked data directory.
+///
+/// Returns False rather than raising. An exception here is swallowed by Inno
+/// and the install carries on regardless, which is the bug this whole
+/// restructuring exists to fix - so failure has to be a return value that the
+/// caller checks.
+function WriteSettings: Boolean;
 var
   Settings: TStringList;
-  DataDir, CredentialsPath: String;
+  CredentialsPath: String;
   // AnsiString, because that is what LoadStringFromFile takes. The file is
   // machine-written ASCII, so nothing is lost.
   Credentials: AnsiString;
   DbHost, DbPort, DbName, DbUser, DbPassword: String;
   ConnectionString: String;
 begin
-  DataDir := ExpandConstant('{commonappdata}\{#AppName}');
+  Result := False;
   ForceDirectories(DataDir);
 
   CredentialsPath := DataDir + '\db.json';
 
-  // The database step runs before this one. If its output is missing, that
-  // step failed, and continuing would register a service that cannot start
-  // and leave an administrator guessing. Say so instead.
   if not FileExists(CredentialsPath) then
-    RaiseException(
-      'The database was not set up, so there are no credentials to configure.' + #13#10 +
-      'Look in ' + ExpandConstant('{commonappdata}\{#AppName}\pgdata\log') +
-      ' for what PostgreSQL reported.');
+  begin
+    Fail('The database setup wrote no credentials file, so there is nothing to ' +
+         'configure the application with.',
+         'Expected: ' + CredentialsPath);
+    Exit;
+  end;
 
   if not LoadStringFromFile(CredentialsPath, Credentials) then
-    RaiseException('The database credentials at ' + CredentialsPath + ' could not be read.');
+  begin
+    Fail('The database credentials could not be read.', 'File: ' + CredentialsPath);
+    Exit;
+  end;
 
   DbHost := ReadJsonField(String(Credentials), 'host');
   DbPort := ReadJsonField(String(Credentials), 'port');
@@ -501,7 +741,12 @@ begin
   DbPassword := ReadJsonField(String(Credentials), 'password');
 
   if (DbHost = '') or (DbPort = '') or (DbName = '') or (DbUser = '') or (DbPassword = '') then
-    RaiseException('The database credentials at ' + CredentialsPath + ' are incomplete.');
+  begin
+    Fail('The database credentials are incomplete, so the application cannot be told ' +
+         'how to reach its database.',
+         'File: ' + CredentialsPath);
+    Exit;
+  end;
 
   ConnectionString :=
     'Host=' + JsonEscape(DbHost) +
@@ -520,9 +765,7 @@ begin
   // application checks the signature when it reads it, and a bad file should
   // surface on the Licence page rather than stop an install.
   if (Trim(LicencePage.Values[0]) <> '') and FileExists(Trim(LicencePage.Values[0])) then
-  begin
     CopyFile(Trim(LicencePage.Values[0]), DataDir + '\hospitalpm.licence', False);
-  end;
 
   Settings := TStringList.Create;
   try
@@ -552,16 +795,240 @@ begin
   finally
     Settings.Free;
   end;
+
+  Result := True;
+end;
+
+/// Waits until the application answers on /health, or gives up.
+///
+/// This is the only step that checks the thing the hospital actually cares
+/// about. "sc start returned 0" means the service was asked to start; it says
+/// nothing about whether migrations ran, whether the database was reachable,
+/// or whether the process died two seconds later. All three have happened
+/// during development, and each one looked like a clean install.
+///
+/// Two minutes: a delayed-auto service on a slow hospital PC, plus the first
+/// migration run against an empty database.
+function WaitForHealth(const Port: String): Boolean;
+begin
+  Result := RunPowerShell(
+    '$deadline = (Get-Date).AddSeconds(120); ' +
+    'do { ' +
+    '  try { ' +
+    '    $r = Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 ' +
+    '           -Uri ''http://localhost:' + Port + '/health''; ' +
+    '    if ($r.StatusCode -eq 200) { exit 0 } ' +
+    '  } catch { } ' +
+    '  Start-Sleep -Seconds 3 ' +
+    '} while ((Get-Date) -lt $deadline); ' +
+    'exit 1') = 0;
+end;
+
+/// Everything that used to live in [Run], in order, with every exit code
+/// checked and the first failure recorded.
+procedure InstallSteps;
+var
+  Code: Integer;
+  Port, DbPort: String;
+begin
+  Port := Trim(PortPage.Values[0]);
+  DbPort := GetDbPort('');
+
+  // A note left by a previous failed attempt must not be read as describing
+  // this one.
+  if FileExists(FailureFile) then
+    DeleteFile(FailureFile);
+
+  // --- 1. Lock the data folder down, BEFORE anything is written into it ----
+  // It holds the database password, and ProgramData is world-readable by
+  // default, so inheritance is broken and Users removed.
+  //
+  // The order matters and is not obvious. Doing this after writing the
+  // settings file, with /T, strips that file's inherited ACEs while the
+  // (OI)(CI) grants - container inheritance flags - apply nothing to a file.
+  // The result is a file with an empty ACL that not even LocalSystem can
+  // read: the service installs, fails to start, and says why only in the
+  // Event Log. Locking the folder first lets the file inherit the right ACEs
+  // when it is created.
+  //
+  // No /T, for the same reason: on an upgrade it would blank the existing
+  // file.
+  Status('Securing the settings folder...');
+  ForceDirectories(DataDir);
+  if not RunChecked(ExpandConstant('{sys}\icacls.exe'),
+                    '"' + DataDir + '" /inheritance:r ' +
+                    '/grant "*S-1-5-18:(OI)(CI)F" /grant "*S-1-5-32-544:(OI)(CI)F" /C',
+                    Code) then
+  begin
+    Fail('The folder holding the database password could not be secured, so Setup ' +
+         'stopped rather than leave it readable by every user of this computer.',
+         'icacls exited with code ' + IntToStr(Code) + ' for ' + DataDir);
+    Exit;
+  end;
+
+  // --- 2. Antivirus exclusion for the database directory -------------------
+  // Real-time scanning of a PostgreSQL data directory is a well-known cause
+  // of corruption and of write stalls that look like the application hanging.
+  // Deliberately scoped to the cluster only, never the whole install.
+  //
+  // Best effort, and deliberately NOT checked: Defender may be absent,
+  // replaced by another product, or centrally managed, and none of those
+  // should fail an install. Note that this therefore does nothing at all on a
+  // machine running third-party antivirus, where the exclusion has to be
+  // added by hand. Called out in docs/REVIEW.md.
+  Status('Configuring antivirus exclusion...');
+  RunPowerShell('try { Add-MpPreference -ExclusionPath ''' + DataDir +
+                '\pgdata'' -ErrorAction Stop } catch { }');
+
+  // --- 3. Create the bundled database --------------------------------------
+  // initdb, register the PostgreSQL service, generate credentials, create the
+  // role and database. The hospital is never asked for any of it.
+  //
+  // The script is idempotent: reinstalling over an existing cluster keeps it,
+  // because that cluster holds the equipment register.
+  Status('Setting up the database (this takes a minute)...');
+  if not RunChecked(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+                    '-NoProfile -ExecutionPolicy Bypass -File "' +
+                    ExpandConstant('{app}\setup-database.ps1') + '"' +
+                    ' -PgRoot "' + ExpandConstant('{app}\pgsql') + '"' +
+                    ' -DataDir "' + DataDir + '\pgdata"' +
+                    ' -OutFile "' + DataDir + '\db.json"' +
+                    ' -Port ' + DbPort +
+                    ' -ServiceName {#PgServiceName}' +
+                    ' -LogFile "' + DataDir + '\setup-database.log"',
+                    Code) then
+  begin
+    Fail('The database could not be set up, so Hospital PM has nowhere to store ' +
+         'records.',
+         'setup-database.ps1 exited with code ' + IntToStr(Code) + '. The last lines ' +
+         'of setup-database.log say which step failed.');
+    Exit;
+  end;
+
+  // --- 4. Settings ---------------------------------------------------------
+  // Written now and not earlier, because the database password is generated
+  // by the step above. They land inside the already-locked folder and inherit
+  // its permissions.
+  Status('Writing settings...');
+  if not WriteSettings then
+    Exit;
+
+  // --- 5. Register the application service ---------------------------------
+  // Delayed start: PostgreSQL must be accepting connections before we migrate
+  // against it, and on a slow hospital PC that is not instant.
+  Status('Registering the service...');
+  if not RunChecked(ExpandConstant('{sys}\sc.exe'),
+                    'create {#ServiceName} binPath= "' + ExpandConstant('{app}\{#ExeName}') +
+                    '" DisplayName= "{#ServiceDisplay}" start= delayed-auto', Code) then
+  begin
+    // 1073 is ERROR_SERVICE_EXISTS, which is the normal case on a reinstall
+    // and not a problem: the binary path has not changed.
+    if Code <> 1073 then
+    begin
+      Fail('The Hospital PM service could not be registered with Windows.',
+           'sc create exited with code ' + IntToStr(Code) + '.');
+      Exit;
+    end;
+    Log('Service already registered - this is a reinstall, continuing.');
+  end;
+
+  RunChecked(ExpandConstant('{sys}\sc.exe'),
+             'description {#ServiceName} "Biomedical equipment preventive maintenance. ' +
+             'Serves the Hospital PM web application."', Code);
+
+  // If the service dies, restart it. A ward should not lose the system
+  // because of one bad night, and nobody there will be watching services.msc.
+  RunChecked(ExpandConstant('{sys}\sc.exe'),
+             'failure {#ServiceName} reset= 86400 ' +
+             'actions= restart/60000/restart/60000/restart/120000', Code);
+
+  // --- 6. Firewall ---------------------------------------------------------
+  // Phones and other PCs on the ward network need to reach this machine.
+  // Scoped to private networks: a hospital PC that ends up on a public Wi-Fi
+  // should not be serving its asset register to it.
+  //
+  // Not fatal. A machine that cannot open its firewall still works perfectly
+  // for the person sitting at it, and refusing the whole install over LAN
+  // access would be the wrong trade. Deleted first so a reinstall on a
+  // different port does not leave the old rule behind.
+  Status('Opening the firewall...');
+  RunChecked(ExpandConstant('{sys}\netsh.exe'),
+             'advfirewall firewall delete rule name="{#AppName}"', Code);
+  if not RunChecked(ExpandConstant('{sys}\netsh.exe'),
+                    'advfirewall firewall add rule name="{#AppName}" dir=in action=allow ' +
+                    'protocol=TCP localport=' + Port + ' profile=private,domain', Code) then
+    Log('WARNING: the firewall rule could not be added (netsh exited ' +
+        IntToStr(Code) + '). Hospital PM will work on this computer but may not be ' +
+        'reachable from other machines.');
+
+  // --- 7. Start ------------------------------------------------------------
+  Status('Starting the service...');
+  if not RunChecked(ExpandConstant('{sys}\sc.exe'), 'start {#ServiceName}', Code) then
+  begin
+    Fail('The Hospital PM service would not start.',
+         'sc start exited with code ' + IntToStr(Code) + '.');
+    Exit;
+  end;
+
+  // --- 8. Prove it actually works ------------------------------------------
+  Status('Waiting for Hospital PM to answer...');
+  if not WaitForHealth(Port) then
+  begin
+    Fail('Hospital PM was installed and started but never answered on port ' + Port +
+         ', so it is not usable yet.',
+         'No reply from http://localhost:' + Port + '/health within two minutes. ' +
+         'The service is usually still running; the Event Log says why it is not ' +
+         'serving.');
+    Exit;
+  end;
+
+  Status('Hospital PM is running.');
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then
+    InstallSteps;
+end;
+
+/// The Ready page, which is the last thing anyone reads before committing.
+/// It names where a failure would be reported, because that is the one piece
+/// of information nobody has when they need it.
+function UpdateReadyMemo(const Space, NewLine, MemoUserInfoInfo, MemoDirInfo,
+  MemoTypeInfo, MemoComponentsInfo, MemoGroupInfo, MemoTasksInfo: String): String;
+begin
+  Result := MemoDirInfo + NewLine + NewLine +
+            'Hospital:' + NewLine +
+            Space + Trim(HospitalPage.Values[0]) + NewLine + NewLine +
+            'Administrator:' + NewLine +
+            Space + Trim(AdminPage.Values[1]) + NewLine + NewLine +
+            'Reachable at:' + NewLine +
+            Space + 'http://localhost:' + Trim(PortPage.Values[0]) + '/' + NewLine + NewLine +
+            'Database:' + NewLine +
+            Space + 'bundled PostgreSQL, port ' + GetDbPort('') + NewLine + NewLine +
+            'If anything goes wrong, Setup writes the reason to:' + NewLine +
+            Space + FailureFile;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
-  DataDir: String;
+  Dir: String;
   RemoveData: Boolean;
   ResultCode: Integer;
 begin
   if CurUninstallStep = usUninstall then
   begin
+    // install-failure.txt is written at run time by Fail(), so Inno has no
+    // record of it and will not remove it - and one unknown file is enough to
+    // leave the whole install directory behind, on exactly the machines where
+    // an install went wrong.
+    //
+    // Deleted HERE rather than through [UninstallDelete]. Those entries are
+    // processed after Inno has already tried to remove the directory, so the
+    // file goes but an empty "Hospital PM" folder stays in Program Files.
+    // Measured, after an uninstall test found the folder still there.
+    DeleteFile(ExpandConstant('{app}\install-failure.txt'));
+
     // Both services stopped here, before [UninstallRun] and before any file
     // is deleted.
     //
@@ -585,7 +1052,16 @@ begin
 
   if CurUninstallStep = usPostUninstall then
   begin
-    DataDir := ExpandConstant('{commonappdata}\{#AppName}');
+    // Inno will not remove the install directory once a file it has no record
+    // of has lived there - install-failure.txt, written at run time by Fail().
+    // Deleting that file early (above) is not enough on its own; the directory
+    // is still left behind, empty. Measured, twice.
+    //
+    // RemoveDir has exactly the right semantics: it removes the directory only
+    // if it is empty, so anything a hospital put there by hand survives.
+    RemoveDir(ExpandConstant('{app}'));
+
+    Dir := ExpandConstant('{commonappdata}\{#AppName}');
 
     // Data is kept unless removal is asked for explicitly. Someone
     // uninstalling to fix a problem is not asking to lose the equipment
@@ -598,7 +1074,7 @@ begin
     // the folder anyway - which on a real install is the hospital's entire
     // database. A destructive default that only shows up when nobody is
     // watching is the worst kind.
-    if DirExists(DataDir) then
+    if DirExists(Dir) then
     begin
       RemoveData := ExpandConstant('{param:REMOVEDATA|0}') = '1';
 
@@ -608,7 +1084,7 @@ begin
           'Remove Hospital PM''s data as well?' + #13#10#13#10 +
           'This deletes the database itself, every backup, the settings and' + #13#10 +
           'the licence, in:' + #13#10 +
-          DataDir + #13#10#13#10 +
+          Dir + #13#10#13#10 +
           'There is no way to undo this.' + #13#10#13#10 +
           'Choose No to keep them.',
           mbConfirmation, MB_YESNO or MB_DEFBUTTON2, IDNO) = IDYES;
@@ -620,10 +1096,10 @@ begin
         // existing; leaving it behind is untidy at best and misleading later.
         Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
              '-NoProfile -ExecutionPolicy Bypass -Command "try { Remove-MpPreference ' +
-             '-ExclusionPath ''' + DataDir + '\pgdata'' -ErrorAction Stop } catch { }"',
+             '-ExclusionPath ''' + Dir + '\pgdata'' -ErrorAction Stop } catch { }"',
              '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 
-        DelTree(DataDir, True, True, True);
+        DelTree(Dir, True, True, True);
       end;
     end;
   end;
