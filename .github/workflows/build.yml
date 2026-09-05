@@ -233,6 +233,13 @@ jobs:
     needs: test
     runs-on: windows-latest
 
+    # Eight installs and uninstalls, each with waits measured in minutes - a
+    # health poll up to two minutes, a service-stop wait up to ninety seconds.
+    # A healthy run is around twenty minutes. Without this, a smoke test that
+    # hangs waiting for a service that will never start holds a runner for the
+    # six-hour default.
+    timeout-minutes: 45
+
     steps:
       - uses: actions/checkout@v4
 
