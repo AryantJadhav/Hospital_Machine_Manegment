@@ -135,6 +135,49 @@ trap {
     break
 }
 
+<#
+    Clears inherited libpq settings before touching PostgreSQL.
+
+    Every psql call below passes --host, --port and --username explicitly and
+    supplies the password through PGPASSFILE. None of that is enough on its
+    own, because libpq also reads the environment - and PGPASSWORD takes
+    PRECEDENCE over PGPASSFILE. A machine with PGPASSWORD set system-wide
+    therefore authenticates with someone else's password no matter what this
+    script does.
+
+    That machine is not hypothetical. It is the machine that already has
+    PostgreSQL on it - exactly the case the private port 5433 exists to
+    accommodate - and it is what a CI runner looks like: initdb succeeded,
+    the cluster started, and the very next psql died with "password
+    authentication failed for user postgres" against a password this script
+    had just set itself.
+
+    Only the password is actually overridden this way. --host, --port,
+    --username and --dbname are explicit connection parameters, which libpq
+    ranks above the environment; there is no command-line option for a
+    password, which is exactly why that one is vulnerable. The rest are
+    cleared as hygiene - PGSERVICE, PGOPTIONS and PGSSLMODE can still colour
+    a session - not because they would redirect us.
+
+    Logged rather than done quietly, because "it works on every machine
+    except that one" is otherwise unanswerable over the phone.
+#>
+$inheritedPg = @()
+foreach ($name in @('PGPASSWORD', 'PGPASSFILE', 'PGUSER', 'PGDATABASE',
+                    'PGHOST', 'PGHOSTADDR', 'PGPORT', 'PGSERVICE',
+                    'PGSERVICEFILE', 'PGOPTIONS', 'PGSSLMODE', 'PGREQUIRESSL',
+                    'PGCLIENTENCODING', 'PGAPPNAME', 'PGCONNECT_TIMEOUT')) {
+    if (Test-Path "Env:\$name") {
+        $inheritedPg += $name
+        Remove-Item "Env:\$name" -ErrorAction SilentlyContinue
+    }
+}
+
+if ($inheritedPg.Count -gt 0) {
+    # Names only. PGPASSWORD's value is someone else's secret.
+    Write-Log "Ignoring inherited PostgreSQL environment settings: $($inheritedPg -join ', ')"
+}
+
 # --- 1. The cluster --------------------------------------------------------
 $freshCluster = -not (Test-Path (Join-Path $DataDir "PG_VERSION"))
 

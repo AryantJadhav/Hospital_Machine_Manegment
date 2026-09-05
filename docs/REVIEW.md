@@ -330,6 +330,18 @@ Other installer behaviour worth knowing:
   `/T`. Locking afterwards with `/T` strips the settings file's inherited ACEs
   while the `(OI)(CI)` container-inheritance grants apply nothing to a file,
   producing a file with an empty ACL that not even LocalSystem can read.
+- Both PowerShell scripts clear inherited `PG*` environment variables before
+  touching PostgreSQL. **`PGPASSWORD` takes precedence over `PGPASSFILE`**,
+  and there is no command-line option for a password — so a machine with
+  `PGPASSWORD` set system-wide authenticates as something the installer did
+  not choose, however explicit its arguments are. That machine is the one
+  that already has PostgreSQL on it, which is precisely the case the private
+  port 5433 exists to accommodate. Found by the CI smoke test on its first
+  real run: `initdb` succeeded, the cluster started, and the next `psql` died
+  with *"password authentication failed for user postgres"* against a
+  password the script had just set itself. Everything else (`--host`,
+  `--port`, `--username`, `--dbname`) is an explicit connection parameter and
+  outranks the environment, so clearing those is hygiene rather than a fix.
 - `install-failure.txt` is deleted in `CurUninstallStepChanged(usUninstall)`,
   not through `[UninstallDelete]`. Inno processes `[UninstallDelete]` entries
   *after* it has already tried to remove the install directory, so the file
