@@ -29,7 +29,29 @@ param(
     [string]$Rid = "win-x64",
 
     # Skips npm ci. Fine for a local rebuild, never for a release.
-    [switch]$SkipWebInstall
+    [switch]$SkipWebInstall,
+
+    <#
+        The public half of the licence signing key: base64 SubjectPublicKeyInfo,
+        exactly as the licence tool's keygen prints it.
+
+        Defaults to the environment so a release pipeline can pass it as a
+        secret. It is a PUBLIC key and not sensitive - the private half never
+        leaves the machine that generated it and never enters this repository.
+    #>
+    [string]$LicencePublicKey = $env:HOSPITALPM_LICENCE_PUBLIC_KEY,
+
+    <#
+        Builds an installer that cannot verify any licence.
+
+        Required to be explicit, because the failure it prevents is silent: a
+        binary with no public key reports "licensing is not enforced" and
+        works perfectly, so nothing about a release cut without a key looks
+        wrong until a hospital is sent a licence that their copy cannot check.
+
+        Correct for development and for the CI smoke test. Never for a release.
+    #>
+    [switch]$Unlicensed
 )
 
 $ErrorActionPreference = "Stop"
@@ -39,6 +61,67 @@ $publishDir = Join-Path $repoRoot "artifacts\$Rid"
 $installerDir = Join-Path $repoRoot "artifacts\installer"
 
 Write-Host "==> Hospital PM installer $Version ($Rid)" -ForegroundColor Cyan
+
+<#
+    Checks the licence public key looks like one, before anything is built.
+
+    A P-256 SubjectPublicKeyInfo is exactly 91 bytes and begins with 0x30, the
+    DER SEQUENCE tag. Checking the shape catches the realistic failure - a
+    secret that was truncated, wrapped, or pasted with something else around it
+    - which would otherwise produce an installer that builds, installs, runs,
+    and rejects every licence the vendor ever issues.
+
+    Deliberately structural rather than a real ECDSA import: ImportSubject-
+    PublicKeyInfo is .NET Core only, and this script has to keep working under
+    the Windows PowerShell 5.1 a release might be cut from.
+#>
+function Assert-LicencePublicKey([string]$Value) {
+    $bytes = $null
+    try {
+        $bytes = [Convert]::FromBase64String($Value.Trim())
+    }
+    catch {
+        throw "The licence public key is not valid base64. Pass the contents of public-key.txt exactly as keygen wrote it."
+    }
+
+    if ($bytes.Length -ne 91 -or $bytes[0] -ne 0x30) {
+        throw "The licence public key is not a P-256 public key: expected 91 bytes starting 0x30, got $($bytes.Length) bytes starting 0x$('{0:X2}' -f $bytes[0])."
+    }
+}
+
+# Checked here rather than after the build, so a release cut without a key
+# fails in a second instead of five minutes.
+if (-not $LicencePublicKey -and -not $Unlicensed) {
+    throw @"
+No licence public key.
+
+A release build must carry the public half of the licence signing key, or the
+installer it produces cannot verify any licence ever issued - and says so only
+on the Licence page, long after it has shipped.
+
+Pass it one of these ways:
+
+  -LicencePublicKey <base64>              the contents of public-key.txt
+  `$env:HOSPITALPM_LICENCE_PUBLIC_KEY      preferred in a pipeline
+
+If no signing key exists yet, create one ONCE, keep signing-key.pem off this
+machine, and never lose it - every licence issued under it becomes
+unverifiable if you do:
+
+  dotnet run --project tools\HospitalPm.LicenceTool -- keygen --out <dir>
+
+To build deliberately without licensing - development, or the CI smoke test -
+pass -Unlicensed.
+"@
+}
+
+if ($LicencePublicKey) {
+    Assert-LicencePublicKey $LicencePublicKey
+    Write-Host "    Licence public key: present and well-formed"
+}
+else {
+    Write-Host "    Licence public key: NONE (-Unlicensed) - this build cannot verify a licence" -ForegroundColor Yellow
+}
 
 # --- 1. Web ---------------------------------------------------------------
 Push-Location (Join-Path $repoRoot "web")
@@ -154,6 +237,57 @@ if (-not (Test-Path $indexPath)) {
 $assetCount = @(Get-ChildItem (Join-Path $publishDir "wwwroot\assets") -File).Count
 Write-Host "    wwwroot assets: $assetCount file(s)"
 
+# --- 3a. The licence public key -------------------------------------------
+# Written into the PUBLISHED appsettings.json rather than the one in source,
+# so the key never lands in the repository and a working tree is never left
+# dirty by a release.
+#
+# This file ships into Program Files, which standard users cannot write. That
+# matters: the public key is what decides whether a licence is genuine, and a
+# hospital that could edit it could substitute their own and sign whatever
+# they liked. An administrator still can, but an administrator can replace the
+# binary too.
+#
+# The machine-specific settings the installer writes live in ProgramData and
+# layer OVER this file; they never mention Licence, so nothing downstream
+# overwrites what is set here.
+if ($LicencePublicKey) {
+    $settingsPath = Join-Path $publishDir "appsettings.json"
+    if (-not (Test-Path $settingsPath)) {
+        throw "No appsettings.json in the published output, so the licence key has nowhere to go."
+    }
+
+    $settingsText = Get-Content $settingsPath -Raw
+
+    # A targeted replacement rather than parse-and-reserialise: ConvertTo-Json
+    # reorders and reformats the whole file, and this is the file a reviewer
+    # reads to see what a build shipped. The match count is asserted, so if
+    # the setting is ever renamed or pre-filled this fails loudly instead of
+    # silently shipping a build with no key.
+    $pattern = '("PublicKey"\s*:\s*)""'
+    $matchCount = ([regex]::Matches($settingsText, $pattern)).Count
+    if ($matchCount -ne 1) {
+        throw "Expected exactly one empty PublicKey setting in $settingsPath, found $matchCount."
+    }
+
+    $settingsText = [regex]::Replace(
+        $settingsText, $pattern, "`${1}""$($LicencePublicKey.Trim())""")
+
+    # No BOM. PowerShell 5.1 writes one for -Encoding utf8, and a leading
+    # EF BB BF has already broken one machine-written JSON file in this
+    # project.
+    [System.IO.File]::WriteAllText(
+        $settingsPath, $settingsText, (New-Object System.Text.UTF8Encoding($false)))
+
+    # Read back rather than trust the write. This is the last moment the key
+    # can be confirmed present; after this it is inside a compressed installer.
+    $written = (Get-Content $settingsPath -Raw | ConvertFrom-Json).Licence.PublicKey
+    if ($written -ne $LicencePublicKey.Trim()) {
+        throw "The licence public key did not survive being written to $settingsPath."
+    }
+    Write-Host "    Licence public key written into appsettings.json and read back"
+}
+
 # --- 4. Compile the installer ---------------------------------------------
 $iscc = @(
     "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
@@ -177,3 +311,10 @@ $sizeMb = [math]::Round((Get-Item $setup).Length / 1MB, 1)
 Write-Host ""
 Write-Host "Installer: $setup ($sizeMb MB)" -ForegroundColor Green
 Write-Host "NOTE: unsigned. Windows SmartScreen will warn until an OV code-signing certificate is applied." -ForegroundColor Yellow
+
+# Said at the end as well as the beginning. The beginning scrolls away, and
+# this is the line that distinguishes a releasable installer from one that
+# will reject every licence it is ever sent.
+if (-not $LicencePublicKey) {
+    Write-Host "NOTE: built WITHOUT a licence public key. This installer cannot verify any licence. Do not release it." -ForegroundColor Yellow
+}

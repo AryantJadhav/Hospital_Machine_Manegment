@@ -272,9 +272,13 @@ jobs:
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
 
+      # -Unlicensed, explicitly. This job builds an installer to smoke-test the
+      # installer, not to release one, and the licence signing key must not be
+      # reachable from a pull-request build. A release is cut by release.yml,
+      # which supplies the key and refuses to build without it.
       - name: Build the installer
         shell: pwsh
-        run: ./installer/build.ps1 -Version 1.0.0
+        run: ./installer/build.ps1 -Version 1.0.0 -Unlicensed
 
       - name: Smoke test the installer
         shell: pwsh
