@@ -162,7 +162,16 @@ Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
 ; after everything else, and there is nothing to check. Suppressed when the
 ; install failed, so a broken system does not offer to open a page that will
 ; not load.
-Filename: "http://localhost:{code:GetPort}/"; Flags: shellexec postinstall nowait; \
+;
+; skipifsilent is NOT optional here, and its absence was a real bug. A
+; postinstall entry still EXECUTES under /VERYSILENT - the flag only governs
+; the checkbox on a Finished page that a silent install never shows. So an
+; unattended install opened a browser on whoever's session it could find,
+; which for an SCCM or Intune rollout running as LocalSystem is meaningless at
+; best. Caught by the CI smoke test: Setup finished, ShellExec'd the URL on a
+; headless runner, and the harness then waited thirty-five minutes on a child
+; process that was never going to exit.
+Filename: "http://localhost:{code:GetPort}/"; Flags: shellexec postinstall nowait skipifsilent; \
   Description: "Open {#AppName} now"; Check: InstallSucceeded
 
 [UninstallRun]

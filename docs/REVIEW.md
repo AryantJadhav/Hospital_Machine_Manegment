@@ -342,6 +342,14 @@ Other installer behaviour worth knowing:
   password the script had just set itself. Everything else (`--host`,
   `--port`, `--username`, `--dbname`) is an explicit connection parameter and
   outranks the environment, so clearing those is hygiene rather than a fix.
+- The "Open Hospital PM now" `[Run]` entry carries `skipifsilent`. A
+  `postinstall` entry still **executes** under `/VERYSILENT` — the flag only
+  governs the checkbox on a Finished page a silent install never shows — so
+  without it an unattended install opened a browser, which for an SCCM or
+  Intune rollout running as LocalSystem is meaningless at best. Pre-existing,
+  and found by the CI smoke test: Setup finished in 26 seconds, `ShellExec`'d
+  the URL on a headless runner, and the harness then waited 35 minutes on a
+  child process that was never going to exit.
 - `install-failure.txt` is deleted in `CurUninstallStepChanged(usUninstall)`,
   not through `[UninstallDelete]`. Inno processes `[UninstallDelete]` entries
   *after* it has already tried to remove the install directory, so the file

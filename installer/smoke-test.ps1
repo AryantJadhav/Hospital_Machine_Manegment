@@ -220,7 +220,36 @@ function Invoke-Setup {
         "/LOG=$log"
     ) + $Extra
 
-    $p = Start-Process -FilePath $Setup -ArgumentList $arguments -Wait -PassThru
+    return (Wait-ForProcess -FilePath $Setup -Arguments $arguments -What "Setup")
+}
+
+<#
+    Runs a process and waits for THAT process, with a deadline.
+
+    Not Start-Process -Wait, which also waits on children the process leaves
+    behind. Setup ShellExec'd a URL as its last act, the browser never exited
+    on a headless runner, and the harness sat there for thirty-five minutes
+    while Setup itself had finished in twenty-six seconds. The installer no
+    longer does that under /VERYSILENT, but a test harness should not be able
+    to hang on it either.
+
+    The deadline turns a stuck Setup into a reported failure instead of a job
+    that runs until the runner's own timeout and explains nothing.
+#>
+function Wait-ForProcess {
+    param(
+        [Parameter(Mandatory)][string]$FilePath,
+        [string[]]$Arguments = @(),
+        [Parameter(Mandatory)][string]$What,
+        [int]$TimeoutSeconds = 600
+    )
+
+    $p = Start-Process -FilePath $FilePath -ArgumentList $Arguments -PassThru
+    if (-not $p.WaitForExit($TimeoutSeconds * 1000)) {
+        Assert-That $false "$What did not exit within $TimeoutSeconds seconds"
+        try { $p.Kill($true) } catch { }
+        return -1
+    }
     return $p.ExitCode
 }
 
@@ -228,12 +257,12 @@ function Invoke-Uninstall([switch]$RemoveData) {
     if (-not (Test-Path $UninstallExe)) { return $null }
     $arguments = @("/VERYSILENT", "/SUPPRESSMSGBOXES")
     if ($RemoveData) { $arguments += "/REMOVEDATA=1" }
-    $p = Start-Process -FilePath $UninstallExe -ArgumentList $arguments -Wait -PassThru
+    $code = Wait-ForProcess -FilePath $UninstallExe -Arguments $arguments -What "Uninstall"
 
     # The uninstaller hands the last of its own deletion to a detached process
     # and returns before it has finished.
     Start-Sleep -Seconds 12
-    return $p.ExitCode
+    return $code
 }
 
 <#
