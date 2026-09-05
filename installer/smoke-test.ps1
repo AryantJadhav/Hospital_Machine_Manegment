@@ -433,21 +433,24 @@ $code = Invoke-Setup -LogName "06-broken-cluster"
 Assert-That ($code -eq 0) "exit 0, as Inno cannot fail after file copying (was $code)"
 Assert-That (Test-Path $FailureFile) "install-failure.txt was written"
 
-if (Test-Path $FailureFile) {
+# All of this is inside the existence check on purpose. Get-Acl on a file that
+# is not there throws, and with $ErrorActionPreference = Stop that ends the run
+# - taking both uninstall scenarios with it. The scenario most likely to fail
+# must not be the one that stops the rest from being reported.
+if (Test-PathQuiet $FailureFile) {
     $report = Get-Content $FailureFile -Raw
     Assert-That ($report -match 'database could not be set up') "the report names the database step"
     Assert-That ($report -match 'setup-database\.log')          "the report says where to look"
-}
 
-# Readable by the person who has to read it. The report first shipped inside
-# the data directory, which is locked to SYSTEM and Administrators - written
-# correctly and impossible to open.
-$acl = Get-Acl $FailureFile
-$readableByUsers = @($acl.Access | Where-Object {
-    $_.IdentityReference -match 'BUILTIN\\Users|Everyone|Authenticated Users' -and
-    $_.AccessControlType -eq 'Allow'
-}).Count -gt 0
-Assert-That $readableByUsers "install-failure.txt is readable without elevating"
+    # Readable by the person who has to read it. The report first shipped
+    # inside the data directory, which is locked to SYSTEM and Administrators
+    # - written correctly and impossible to open.
+    $readableByUsers = @((Get-Acl $FailureFile).Access | Where-Object {
+        $_.IdentityReference -match 'BUILTIN\\Users|Everyone|Authenticated Users' -and
+        $_.AccessControlType -eq 'Allow'
+    }).Count -gt 0
+    Assert-That $readableByUsers "install-failure.txt is readable without elevating"
+}
 
 # --- 7. Uninstalling leaves nothing ---------------------------------------
 # With a failure file present, which is the case that used to leave an empty
