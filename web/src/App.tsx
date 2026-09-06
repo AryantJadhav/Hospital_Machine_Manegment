@@ -16,6 +16,7 @@ import { LicencePage } from './pages/LicencePage';
 import { ScanPage } from './pages/ScanPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { PmTasksPage } from './pages/PmTasksPage';
+import { StaffPage } from './pages/StaffPage';
 import { ChecklistsPage } from './pages/ChecklistsPage';
 import { WorkOrdersPage } from './pages/WorkOrdersPage';
 import './App.css';
@@ -70,6 +71,12 @@ function Shell() {
         )}
 
         {isAdmin && (
+          <NavLink to="/staff" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+            Staff
+          </NavLink>
+        )}
+
+        {isAdmin && (
           <NavLink to="/backups" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
             Backups
           </NavLink>
@@ -107,6 +114,11 @@ function Shell() {
             path="/import"
             element={canImport ? <ImportPage /> : <Navigate to="/dashboard" replace />}
           />
+          <Route
+            path="/staff"
+            element={isAdmin ? <StaffPage /> : <Navigate to="/dashboard" replace />}
+          />
+
           <Route
             path="/backups"
             element={isAdmin ? <BackupsPage /> : <Navigate to="/dashboard" replace />}
