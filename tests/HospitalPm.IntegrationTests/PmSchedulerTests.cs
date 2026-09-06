@@ -397,6 +397,64 @@ public sealed class PmSchedulerTests(PostgresFixture fixture)
         await db.SaveChangesAsync();
     }
 
+    // ---------------- retired machines ----------------
+
+    /// <summary>
+    /// A condemned machine stops generating work.
+    ///
+    /// It stays on the register so its certificates remain readable, and is
+    /// never maintained again. Before this, its schedule kept producing PM
+    /// tasks forever — work nobody can do, on a machine that may no longer
+    /// physically exist, in the list a technician reads every morning.
+    ///
+    /// Latent while schedules were created one at a time. Certain the moment
+    /// a hospital can schedule two thousand at once.
+    /// </summary>
+    [Theory]
+    [InlineData(Domain.Assets.EquipmentStatus.Condemned)]
+    [InlineData(Domain.Assets.EquipmentStatus.Disposed)]
+    public async Task A_retired_machine_generates_no_further_work(
+        Domain.Assets.EquipmentStatus status)
+    {
+        await using var db = fixture.CreateContext();
+
+        var schedule = await NewScheduleAsync(db, PmFrequency.Monthly, new DateOnly(2026, 1, 1));
+
+        var equipment = await db.Equipment.SingleAsync(e => e.Id == schedule.EquipmentId);
+        equipment.Status = status;
+        await db.SaveChangesAsync();
+
+        await Generator(db, new DateTimeOffset(2026, 6, 1, 6, 0, 0, TimeSpan.Zero)).RunAsync();
+
+        // Scoped to THIS schedule, deliberately. The suite shares one
+        // database, so GenerationResult.Created counts every schedule any
+        // other test left behind — asserting on it passed alone and failed in
+        // a full run, which is a test measuring the wrong thing rather than a
+        // product that behaves differently.
+        Assert.Equal(0, await db.PmTasks.CountAsync(t => t.PmScheduleId == schedule.Id));
+    }
+
+    /// <summary>
+    /// The counterpart, so the test above cannot pass by generating nothing
+    /// at all. A machine out for repair is still owned, still coming back,
+    /// and still due its PM.
+    /// </summary>
+    [Fact]
+    public async Task A_machine_under_repair_is_still_maintained()
+    {
+        await using var db = fixture.CreateContext();
+
+        var schedule = await NewScheduleAsync(db, PmFrequency.Monthly, new DateOnly(2026, 1, 1));
+
+        var equipment = await db.Equipment.SingleAsync(e => e.Id == schedule.EquipmentId);
+        equipment.Status = Domain.Assets.EquipmentStatus.UnderRepair;
+        await db.SaveChangesAsync();
+
+        await Generator(db, new DateTimeOffset(2026, 6, 1, 6, 0, 0, TimeSpan.Zero)).RunAsync();
+
+        Assert.True(await db.PmTasks.CountAsync(t => t.PmScheduleId == schedule.Id) > 0);
+    }
+
     private static async Task<PmTask> CompletedTaskAsync(HospitalPmDbContext db)
     {
         var schedule = await NewScheduleAsync(db, PmFrequency.Monthly, new DateOnly(2026, 3, 1));

@@ -417,16 +417,20 @@ Ranked by how much I would like to be wrong about them.
    through the API a 2,000-asset hospital faces 2,000 requests. There is no
    bulk path — no "schedule this checklist for every infusion pump".
 
-   The two halves fail differently, and the distinction matters:
+   **Setup is now closed.** `/checklists` authors templates and publishes
+   versions, and `POST /api/pm/schedules/bulk` puts one published checklist
+   onto every machine of its type in a single call — with an optional location
+   subtree, so a hospital can commission a ward at a time. Verified on a real
+   install: 1,702 schedules and 10,212 PM tasks across a 2,000-asset register.
 
-   - **PM setup** — checklist templates, publishing a version, creating a
-     schedule — has no client *anywhere*. Not web, not mobile. API only.
-   - **PM execution** — working a task list, filling a checklist, signing a
-     completion — exists only in the Expo app (`WorkListScreen`,
-     `PmChecklistScreen`), which is on hold.
+   **Execution is still open**, and it is the half that matters more. Working
+   a task list, filling a checklist and signing a completion exist only in the
+   Expo app (`WorkListScreen`, `PmChecklistScreen`), which is on hold. So a
+   hospital given the PC app today can define its whole PM programme, watch
+   the work appear, and has no way to record that any of it was done.
 
-   So a hospital given the PC app today can hold a register and run corrective
-   work orders, and cannot do preventive maintenance at all.
+   Also still missing: equipment enters only through the Excel import, with no
+   way to add a single asset.
 
 3. **No hospital has ever used this.** The Phase 1 gate — a biomedical
    engineer who is not me completing a PM round unaided — has never been met.
@@ -472,10 +476,22 @@ Ranked by how much I would like to be wrong about them.
    150ms, a 200-label PDF sheet 3.7s, a full backup 691ms producing a 301 KB
    dump. Nothing there needs optimising.
 
+   A second pass with the PM programme actually populated — 1,702 schedules
+   and 10,212 tasks — found nothing slow either: the nightly generator runs
+   in 0.9s over every schedule, the task list answers in 12ms, the dashboard
+   in 92ms. The generator issues one query per schedule, which sounds like an
+   N+1 and measurably is not worth changing at this size.
+
    What it does *not* cover: 20,000 assets, a year of accumulated PM
-   completions and work-order history, or the spinning-disk PC a hospital
+   *completions* and work-order history, or the spinning-disk PC a hospital
    will actually provide. Every number above came from a fast developer
-   machine with an empty history table, which is the easiest case there is.
+   machine, and while there are now plenty of scheduled tasks, none of them
+   have been completed — so the history tables are still empty, which is the
+   easiest case there is.
+
+   One thing the pass surfaced without fixing: `GET /api/pm/schedules` is
+   unpaged and returned 371 KB for 1,702 schedules. Fast today, and the wrong
+   shape for a chain hospital.
 
 10. **The signing-key path** (§5) — one security bug was already found there by
    accident, which is weak evidence that it was the only one.
