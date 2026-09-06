@@ -65,6 +65,23 @@ type Version = {
 
 type Problem = { path: string; message: string };
 type Lookup = { id: number; code: string; name: string };
+type LocationLookup = Lookup & { depth: number };
+
+type BulkResult = {
+  created: number;
+  alreadyScheduled: number;
+  skippedRetired: number;
+  skippedNotYetInService: number;
+  considered: number;
+};
+
+const FREQUENCIES = [
+  { value: 10, label: 'Monthly' },
+  { value: 20, label: 'Quarterly' },
+  { value: 30, label: 'Half-yearly' },
+  { value: 40, label: 'Yearly' },
+  { value: 90, label: 'Custom interval' },
+];
 
 const ITEM_TYPES: { value: ItemType; label: string; hint: string }[] = [
   { value: 10, label: 'Pass / Fail', hint: 'Pass, Fail or Not applicable.' },
@@ -86,6 +103,7 @@ export function ChecklistsPage() {
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Template | null>(null);
+  const [scheduling, setScheduling] = useState<Template | null>(null);
   const [query, setQuery] = useState('');
 
   const load = useCallback(async () => {
@@ -154,6 +172,14 @@ export function ChecklistsPage() {
       </header>
 
       {error && <p className="alert alert-error" role="alert">{error}</p>}
+
+      {scheduling && (
+        <ScheduleForm
+          template={scheduling}
+          onClose={() => setScheduling(null)}
+          onError={setError}
+        />
+      )}
 
       {creating && (
         <TemplateForm
@@ -227,7 +253,17 @@ export function ChecklistsPage() {
                     : <span className="muted">—</span>}
                 </td>
                 <td>{t.versionCount}</td>
-                <td>
+                <td style={{ whiteSpace: 'nowrap' }}>
+                  {/* Offered here rather than on a separate setup screen: the
+                      checklist decides which machines get scheduled, so the
+                      action belongs beside the thing it acts on. Only once
+                      published — scheduling a draft would promise a technician
+                      work with no questions in it. */}
+                  {canAuthor && t.publishedVersionNo !== null && (
+                    <button className="btn btn-quiet" onClick={() => setScheduling(t)}>
+                      Schedule…
+                    </button>
+                  )}
                   <button className="btn btn-quiet" onClick={() => setEditing(t)}>
                     {canAuthor ? 'Edit' : 'View'}
                   </button>
@@ -238,6 +274,208 @@ export function ChecklistsPage() {
         </table>
       </div>
     </div>
+  );
+}
+
+/**
+ * Puts one published checklist onto every machine of its type, in one action.
+ *
+ * The reason this exists: schedules were created one machine at a time, so a
+ * hospital with 2,000 assets faced 2,000 operations to set up preventive
+ * maintenance. That is not a slow path — it is a path nobody walks, which is
+ * why the product could hold an equipment register and never schedule a PM.
+ *
+ * The result is reported rather than assumed. "Created 47" on its own leaves
+ * an operator wondering about the other nine, so what was skipped is named
+ * along with why.
+ */
+function ScheduleForm({
+  template,
+  onClose,
+  onError,
+}: {
+  template: Template;
+  onClose: () => void;
+  onError: (msg: string | null) => void;
+}) {
+  const [locations, setLocations] = useState<LocationLookup[]>([]);
+  const [frequency, setFrequency] = useState(20);
+  const [intervalDays, setIntervalDays] = useState('90');
+  const [anchorDate, setAnchorDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [graceDays, setGraceDays] = useState('7');
+  const [locationId, setLocationId] = useState('');
+  const [includeInStore, setIncludeInStore] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<BulkResult | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        setLocations(await api.get<LocationLookup[]>('/api/lookups/locations'));
+      } catch {
+        // The whole-hospital default still works without the list, so a
+        // failed lookup should not block scheduling.
+      }
+    })();
+  }, []);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    onError(null);
+    setBusy(true);
+    try {
+      setResult(await api.post<BulkResult>('/api/pm/schedules/bulk', {
+        checklistTemplateId: template.id,
+        frequency,
+        intervalDays: frequency === 90 ? Number(intervalDays) : 0,
+        anchorDate,
+        graceDays: Number(graceDays),
+        locationId: locationId ? Number(locationId) : null,
+        includeInStore,
+      }));
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Could not schedule this checklist.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (result) {
+    return (
+      <div className="card stack">
+        <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Scheduled {template.name}</h2>
+
+        <p className={result.created > 0 ? 'alert alert-ok' : 'alert'}>
+          {result.created > 0
+            ? `${result.created} machine${result.created === 1 ? '' : 's'} now on this schedule.`
+            : 'Nothing new to schedule.'}
+        </p>
+
+        <dl className="detail">
+          <dt>Machines of this type</dt>
+          <dd>{result.considered}</dd>
+          <dt>Newly scheduled</dt>
+          <dd>{result.created}</dd>
+          {result.alreadyScheduled > 0 && (
+            <>
+              <dt>Already scheduled</dt>
+              <dd>{result.alreadyScheduled} — left alone</dd>
+            </>
+          )}
+          {result.skippedNotYetInService > 0 && (
+            <>
+              <dt>Still in store</dt>
+              <dd>{result.skippedNotYetInService} — not yet in service</dd>
+            </>
+          )}
+          {result.skippedRetired > 0 && (
+            <>
+              <dt>Condemned or disposed</dt>
+              <dd>{result.skippedRetired} — never maintained again</dd>
+            </>
+          )}
+        </dl>
+
+        <button className="btn btn-primary" onClick={onClose}>Done</button>
+      </div>
+    );
+  }
+
+  return (
+    <form className="card stack" onSubmit={submit}>
+      <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Schedule {template.name}</h2>
+      <p className="muted" style={{ margin: 0 }}>
+        Puts this checklist on every {template.equipmentTypeName.toLowerCase()} in the
+        hospital. Machines already on it are left alone, so this is safe to run again
+        after commissioning more.
+      </p>
+
+      <label className="stack">
+        <span>How often</span>
+        <select
+          className="field"
+          value={frequency}
+          onChange={(e) => setFrequency(Number(e.target.value))}
+        >
+          {FREQUENCIES.map((f) => (
+            <option key={f.value} value={f.value}>{f.label}</option>
+          ))}
+        </select>
+      </label>
+
+      {frequency === 90 && (
+        <label className="stack">
+          <span>Interval in days</span>
+          <input
+            className="field"
+            type="number"
+            min={1}
+            required
+            value={intervalDays}
+            onChange={(e) => setIntervalDays(e.target.value)}
+          />
+        </label>
+      )}
+
+      <label className="stack">
+        <span>First due</span>
+        <input
+          className="field"
+          type="date"
+          required
+          value={anchorDate}
+          onChange={(e) => setAnchorDate(e.target.value)}
+        />
+        <span className="muted">
+          Occurrences are counted from this date. Set it in the past and the PMs that
+          were missed appear as overdue, which is what an auditor expects to see.
+        </span>
+      </label>
+
+      <label className="stack">
+        <span>Grace period in days</span>
+        <input
+          className="field"
+          type="number"
+          min={0}
+          required
+          value={graceDays}
+          onChange={(e) => setGraceDays(e.target.value)}
+        />
+        <span className="muted">How long after the due date a PM stays merely due, not overdue.</span>
+      </label>
+
+      <label className="stack">
+        <span>Limit to part of the hospital (optional)</span>
+        <select className="field" value={locationId} onChange={(e) => setLocationId(e.target.value)}>
+          <option value="">Everywhere</option>
+          {locations.map((l) => (
+            <option key={l.id} value={l.id}>
+              {' '.repeat(l.depth * 2)}{l.name}
+            </option>
+          ))}
+        </select>
+        <span className="muted">Includes everything beneath the place you choose.</span>
+      </label>
+
+      <label style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+        <input
+          type="checkbox"
+          checked={includeInStore}
+          onChange={(e) => setIncludeInStore(e.target.checked)}
+        />
+        <span>Also schedule machines still in store</span>
+      </label>
+
+      <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <button className="btn btn-primary" disabled={busy}>
+          {busy ? 'Scheduling…' : 'Schedule'}
+        </button>
+        <button type="button" className="btn" onClick={onClose} disabled={busy}>
+          Cancel
+        </button>
+      </div>
+    </form>
   );
 }
 

@@ -1,3 +1,5 @@
+using HospitalPm.Domain.Assets;
+using HospitalPm.Domain.Checklists;
 using HospitalPm.Domain.Identity;
 using HospitalPm.Domain.Maintenance;
 using HospitalPm.Infrastructure.Maintenance;
@@ -14,6 +16,33 @@ public sealed record ScheduleRequest(
     int IntervalDays,
     DateOnly AnchorDate,
     int GraceDays);
+
+/// <summary>
+/// Schedules one checklist across a whole equipment type at once.
+///
+/// The equipment type is NOT a field here: a checklist template belongs to
+/// exactly one type, so taking both would invite a mismatch that can only be
+/// rejected. The template decides what gets scheduled.
+///
+/// <see cref="LocationId"/> narrows it to one part of the hospital and
+/// everything beneath it — "every defibrillator in the Cardiac Wing" — because
+/// a large hospital commissions a ward at a time rather than a fleet at once.
+/// </summary>
+public sealed record BulkScheduleRequest(
+    int ChecklistTemplateId,
+    PmFrequency Frequency,
+    int IntervalDays,
+    DateOnly AnchorDate,
+    int GraceDays,
+    int? LocationId,
+    bool IncludeInStore);
+
+public sealed record BulkScheduleResponse(
+    int Created,
+    int AlreadyScheduled,
+    int SkippedRetired,
+    int SkippedNotYetInService,
+    int Considered);
 
 public sealed record ScheduleResponse(
     int Id,
@@ -57,6 +86,7 @@ public static class PmEndpoints
             .RequireAuthorization(p => p.RequireRole(Roles.Admin, Roles.BiomedicalHead, Roles.SeniorEngineer));
 
         owner.MapPost("/schedules", CreateScheduleAsync);
+        owner.MapPost("/schedules/bulk", CreateSchedulesBulkAsync);
         owner.MapPost("/generate", GenerateAsync);
     }
 
@@ -187,6 +217,147 @@ public static class PmEndpoints
                      && t.CompletedAtUtc!.Value.Month == today.Month, ct),
             activeSchedules = await db.PmSchedules.CountAsync(s => s.IsActive, ct),
         });
+    }
+
+    /// <summary>
+    /// Puts one checklist on every machine of its type, in one call.
+    ///
+    /// The reason this exists: creating schedules one at a time meant a
+    /// hospital with 2,000 assets faced 2,000 requests to set up preventive
+    /// maintenance. That is not a slow path, it is a path nobody walks — and
+    /// it is why the product could hold an equipment register and still never
+    /// schedule a PM.
+    ///
+    /// Idempotent, so running it again after commissioning another ward adds
+    /// only what is new. Machines already carrying this checklist are counted
+    /// and left alone rather than rejected, because "some of these are already
+    /// done" is the normal case, not an error.
+    /// </summary>
+    private static async Task<IResult> CreateSchedulesBulkAsync(
+        [FromBody] BulkScheduleRequest request,
+        HospitalPmDbContext db,
+        PmScheduleGenerator generator,
+        CancellationToken ct)
+    {
+        var template = await db.ChecklistTemplates
+            .Where(t => t.Id == request.ChecklistTemplateId)
+            .Select(t => new
+            {
+                t.Id,
+                t.EquipmentTypeId,
+                Published = t.Versions.Any(v => v.Status == ChecklistVersionStatus.Published),
+            })
+            .SingleOrDefaultAsync(ct);
+
+        if (template is null)
+        {
+            return Results.BadRequest(new { error = "Unknown checklist." });
+        }
+
+        // A draft can still be edited, and a completion has to be tied to the
+        // exact version it was filled under. Scheduling against a checklist
+        // that has never been published would promise a technician work that
+        // has no questions in it.
+        if (!template.Published)
+        {
+            return Results.BadRequest(new
+            {
+                error = "That checklist has never been published, so it cannot be scheduled yet.",
+            });
+        }
+
+        if (request.Frequency == PmFrequency.Custom && request.IntervalDays < 1)
+        {
+            return Results.BadRequest(new { error = "A custom frequency needs an interval in days." });
+        }
+
+        var candidates = db.Equipment.Where(e => e.EquipmentTypeId == template.EquipmentTypeId);
+
+        if (request.LocationId is int locationId)
+        {
+            var prefix = await db.Locations
+                .Where(l => l.Id == locationId)
+                .Select(l => l.Path)
+                .SingleOrDefaultAsync(ct);
+
+            if (prefix is null)
+            {
+                return Results.NotFound(new { error = "Unknown location." });
+            }
+
+            candidates = candidates.Where(e => e.Location!.Path.StartsWith(prefix));
+        }
+
+        var equipment = await candidates
+            .Select(e => new { e.Id, e.Status })
+            .ToListAsync(ct);
+
+        var alreadyScheduled = await db.PmSchedules
+            .Where(s => s.ChecklistTemplateId == template.Id)
+            .Select(s => s.EquipmentId)
+            .ToListAsync(ct);
+
+        var have = alreadyScheduled.ToHashSet();
+
+        var created = 0;
+        var skippedRetired = 0;
+        var skippedNotYetInService = 0;
+        var existing = 0;
+
+        foreach (var machine in equipment)
+        {
+            if (have.Contains(machine.Id))
+            {
+                existing++;
+                continue;
+            }
+
+            // Condemned and disposed machines stay on the register so their
+            // certificates remain readable, and are never maintained again.
+            if (machine.Status is EquipmentStatus.Condemned or EquipmentStatus.Disposed)
+            {
+                skippedRetired++;
+                continue;
+            }
+
+            // In store is not yet in use. Scheduling it produces PM tasks for
+            // a machine sitting in a cupboard, which reads as overdue work
+            // that nobody can sensibly do — so it is opt-in rather than a
+            // default that quietly fills a technician's list.
+            if (machine.Status == EquipmentStatus.InStore && !request.IncludeInStore)
+            {
+                skippedNotYetInService++;
+                continue;
+            }
+
+            db.PmSchedules.Add(new PmSchedule
+            {
+                EquipmentId = machine.Id,
+                ChecklistTemplateId = template.Id,
+                Frequency = request.Frequency,
+                IntervalDays = request.Frequency == PmFrequency.Custom ? request.IntervalDays : 0,
+                AnchorDate = request.AnchorDate,
+                GraceDays = request.GraceDays,
+            });
+
+            created++;
+        }
+
+        if (created > 0)
+        {
+            await db.SaveChangesAsync(ct);
+
+            // Generated immediately, as the single-schedule path does, so the
+            // work appears rather than waiting for the nightly job.
+            await generator.RunAsync(ct);
+        }
+
+        return Results.Ok(new BulkScheduleResponse(
+            Created: created,
+            AlreadyScheduled: existing,
+            SkippedRetired: skippedRetired,
+            SkippedNotYetInService: skippedNotYetInService,
+            Considered: equipment.Count));
     }
 
     private static async Task<IResult> CreateScheduleAsync(

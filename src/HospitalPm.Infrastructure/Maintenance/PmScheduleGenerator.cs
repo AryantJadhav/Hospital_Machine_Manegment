@@ -1,3 +1,4 @@
+using HospitalPm.Domain.Assets;
 using HospitalPm.Domain.Maintenance;
 using HospitalPm.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -30,6 +31,19 @@ public sealed class PmScheduleGenerator(
 
         var schedules = await db.PmSchedules
             .Where(s => s.IsActive)
+            // A condemned or disposed machine stays on the register so its
+            // certificates remain readable, and is never maintained again.
+            // Without this, a schedule on one keeps producing PM tasks
+            // forever: work nobody can do, on a machine that may no longer
+            // physically exist, in the list a technician works from every
+            // morning.
+            //
+            // Filtered here rather than by deactivating the schedule, because
+            // condemning is a property of the machine and can be reversed by
+            // correcting a mis-set status - at which point maintenance should
+            // resume without anyone remembering to re-enable anything.
+            .Where(s => s.Equipment!.Status != EquipmentStatus.Condemned
+                        && s.Equipment!.Status != EquipmentStatus.Disposed)
             .Select(s => new
             {
                 s.Id,
