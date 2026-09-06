@@ -62,16 +62,24 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          # A tag wins; workflow_dispatch supplies one by hand. The leading v
-          # is stripped because the installer's filename and AppVersion use a
-          # bare version.
-          if ($env:GITHUB_REF -like 'refs/tags/v*') {
-            $v = $env:GITHUB_REF -replace '^refs/tags/v', ''
+          # A tag wins; workflow_dispatch supplies one by hand. A leading v is
+          # stripped from either, because the installer's filename and
+          # AppVersion use a bare version - and because "v1.0.0" is what
+          # someone dispatching this by hand will type first.
+          if ($env:GITHUB_REF -like 'refs/tags/*') {
+            $v = $env:GITHUB_REF -replace '^refs/tags/', ''
           } else {
             $v = '${{ github.event.inputs.version }}'
           }
+          $v = $v -replace '^v', ''
+
+          # Strictly x.y.z, so v1.0.0-rc1 is refused. Not pedantry: Inno's
+          # VersionInfoVersion takes a numeric version only, so a prerelease
+          # suffix fails deep inside ISCC with a message about a resource
+          # rather than about the tag someone pushed. Refusing here says which
+          # tag was wrong.
           if ($v -notmatch '^\d+\.\d+\.\d+$') {
-            Write-Output "::error::Version '$v' is not x.y.z."
+            Write-Output "::error::Version '$v' is not x.y.z. Tag a release as vX.Y.Z; prerelease suffixes are not supported because the installer's version resource must be numeric."
             exit 1
           }
           "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
