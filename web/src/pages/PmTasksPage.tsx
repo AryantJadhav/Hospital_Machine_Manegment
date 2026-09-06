@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
+import { useAuth } from '../auth/useAuth';
+import { ROLES } from '../auth/context';
+import { PmChecklistForm } from './PmChecklistForm';
 
 type PmTask = {
   id: number;
@@ -38,6 +41,14 @@ export function PmTasksPage() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [working, setWorking] = useState<PmTask | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const { can } = useAuth();
+  // Deciding a PM will not happen is a supervisory call, not a technician's,
+  // because a skip is a permanent gap in the record. The server enforces the
+  // same rule; this only keeps the button out of the way.
+  const canSkip = can(ROLES.admin, ROLES.biomedicalHead, ROLES.seniorEngineer);
 
   useEffect(() => {
     (async () => {
@@ -93,6 +104,21 @@ export function PmTasksPage() {
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
 
+  if (working) {
+    return (
+      <PmChecklistForm
+        taskId={working.id}
+        canSkip={canSkip}
+        onClose={() => setWorking(null)}
+        onDone={async (message) => {
+          setWorking(null);
+          setNotice(message);
+          await load();
+        }}
+      />
+    );
+  }
+
   return (
     <div className="page">
       <header className="page-head">
@@ -105,6 +131,7 @@ export function PmTasksPage() {
       </header>
 
       {error && <p className="alert alert-error" role="alert">{error}</p>}
+      {notice && <p className="alert alert-ok" role="status">{notice}</p>}
 
       <div className="filters card">
         <select value={status} onChange={(e) => setFilter('status', e.target.value)}>
@@ -162,7 +189,16 @@ export function PmTasksPage() {
                 <td>{t.locationName}</td>
                 <td>{t.checklistName}</td>
                 <td><span className={`pill pm-${t.status}`}>{STATUS[t.status] ?? '—'}</span></td>
-                <td>
+                <td style={{ whiteSpace: 'nowrap' }}>
+                  {/* Scheduled, Due and Overdue are open work. Completed and
+                      Skipped are finished records — a completion is immutable
+                      by database trigger, so offering to reopen one would be
+                      offering something the database will refuse. */}
+                  {(t.status === 10 || t.status === 20 || t.status === 30) && (
+                    <button className="btn btn-quiet" onClick={() => setWorking(t)}>
+                      Do PM
+                    </button>
+                  )}
                   {t.status === 40 && (
                     <button className="btn btn-quiet" onClick={() => void certificate(t)}>
                       Certificate

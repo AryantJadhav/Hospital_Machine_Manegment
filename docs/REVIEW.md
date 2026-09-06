@@ -423,14 +423,21 @@ Ranked by how much I would like to be wrong about them.
    subtree, so a hospital can commission a ward at a time. Verified on a real
    install: 1,702 schedules and 10,212 PM tasks across a 2,000-asset register.
 
-   **Execution is still open**, and it is the half that matters more. Working
-   a task list, filling a checklist and signing a completion exist only in the
-   Expo app (`WorkListScreen`, `PmChecklistScreen`), which is on hold. So a
-   hospital given the PC app today can define its whole PM programme, watch
-   the work appear, and has no way to record that any of it was done.
+   **Execution is now closed too.** `PmChecklistForm` fills in and records a
+   PM from the PC — answers, per-item notes, a drawn signature, and a
+   supervisory skip with a reason. Proven end to end on the same install:
+   checklist authored, scheduled across the fleet, a task completed in the
+   browser with a signature, and a certificate PDF rendered from it.
 
-   Also still missing: equipment enters only through the Excel import, with no
-   way to add a single asset.
+   It is deliberately close to the Expo screen rather than a nicer desktop
+   design: the same answer values (`pass`/`fail`/`na`), the same advisory
+   out-of-range handling, the same `clientSubmissionId` idempotency. Two
+   clients disagreeing about what "pass" means would be a data problem, not a
+   styling one.
+
+   **What remains:** equipment enters only through the Excel import, with no
+   way to add a single asset. And the whole PM loop, while now complete, has
+   still only ever been walked by its author.
 
 3. **No hospital has ever used this.** The Phase 1 gate — a biomedical
    engineer who is not me completing a PM round unaided — has never been met.
