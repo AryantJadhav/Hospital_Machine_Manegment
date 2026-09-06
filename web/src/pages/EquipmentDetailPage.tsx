@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../auth/useAuth';
 import { ROLES } from '../auth/context';
+import { EquipmentForm } from './EquipmentForm';
 
 type History = {
   equipment: {
@@ -16,6 +17,9 @@ type History = {
     installationDate: string | null;
     warrantyExpiryDate: string | null;
     notes: string | null;
+    // Returned by the history endpoint and simply not declared here until the
+    // edit form needed it to prefill the type.
+    equipmentTypeId: number;
     equipmentTypeName: string;
     locationId: number;
     locationName: string;
@@ -75,9 +79,14 @@ export function EquipmentDetailPage() {
   const { can } = useAuth();
   const canPrint = can(ROLES.admin, ROLES.biomedicalHead, ROLES.seniorEngineer);
 
+  const canEdit = can(ROLES.admin, ROLES.biomedicalHead, ROLES.seniorEngineer);
+  const canCondemn = can(ROLES.admin, ROLES.biomedicalHead);
+
   const [data, setData] = useState<History | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -98,6 +107,35 @@ export function EquipmentDetailPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function condemn() {
+    // Typed, not clicked. Condemning ends this machine's PM programme: the
+    // generator stops producing tasks for it from the next run. Reversible by
+    // correcting the status afterwards, but a technician should not discover
+    // it by finding the work gone.
+    const typed = prompt(
+      [
+        `Condemn ${data?.equipment.assetTag}?`,
+        '',
+        'The machine stays on the register so its PM certificates and work-order',
+        'history remain readable — nothing is deleted.',
+        '',
+        'But its preventive maintenance stops: no further PM tasks will be',
+        'generated for it.',
+        '',
+        'Type CONDEMN to continue:',
+      ].join('\n'),
+    );
+    if (typed !== 'CONDEMN') return;
+
+    setActionError(null);
+    try {
+      await api.post(`/api/equipment/${id}/condemn`, {});
+      await load();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Could not condemn this machine.');
+    }
+  }
 
   if (loading) return <div className="page"><p className="muted">Loading…</p></div>;
   if (error) return <div className="page"><p className="alert alert-error">{error}</p></div>;
@@ -121,6 +159,9 @@ export function EquipmentDetailPage() {
         </div>
 
         <div className="row">
+          {canEdit && !editing && (
+            <button className="btn" onClick={() => setEditing(true)}>Edit</button>
+          )}
           {canPrint && (
             <button
               className="btn"
@@ -132,8 +173,43 @@ export function EquipmentDetailPage() {
             </button>
           )}
           <Link className="btn" to="/work-orders">Report a fault</Link>
+          {/* Condemning is its own action, not a status in a dropdown. It ends
+              the machine's PM programme - the generator stops producing tasks
+              for it - and that is not something to do by mis-clicking a
+              select. Admin and biomedical head only. */}
+          {canCondemn && e.status !== 40 && e.status !== 50 && (
+            <button className="btn btn-quiet" onClick={() => void condemn()}>
+              Condemn…
+            </button>
+          )}
         </div>
       </header>
+
+      {actionError && <p className="alert alert-error" role="alert">{actionError}</p>}
+
+      {editing && (
+        <EquipmentForm
+          editing={{
+            id: e.id,
+            assetTag: e.assetTag,
+            serialNumber: e.serialNumber ?? null,
+            equipmentTypeId: e.equipmentTypeId,
+            locationId: e.locationId,
+            manufacturer: e.manufacturer ?? null,
+            model: e.model ?? null,
+            status: e.status,
+            purchaseDate: e.purchaseDate ?? null,
+            installationDate: e.installationDate ?? null,
+            warrantyExpiryDate: e.warrantyExpiryDate ?? null,
+            notes: e.notes ?? null,
+          }}
+          onCancel={() => setEditing(false)}
+          onSaved={async () => {
+            setEditing(false);
+            await load();
+          }}
+        />
+      )}
 
       <div className="row">
         <span className={`pill pill-${e.status}`}>{EQUIPMENT_STATUS[e.status] ?? '—'}</span>

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../auth/useAuth';
 import { ROLES } from '../auth/context';
+import { EquipmentForm } from './EquipmentForm';
 
 type Equipment = {
   id: number;
@@ -36,6 +37,8 @@ const PAGE_SIZE = 25;
 export function EquipmentListPage() {
   const { can } = useAuth();
   const canPrint = can(ROLES.admin, ROLES.biomedicalHead, ROLES.seniorEngineer);
+  const canEdit = can(ROLES.admin, ROLES.biomedicalHead, ROLES.seniorEngineer);
+  const [adding, setAdding] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [printing, setPrinting] = useState(false);
   const [query, setQuery] = useState('');
@@ -163,6 +166,11 @@ export function EquipmentListPage() {
             </p>
           )}
         </div>
+        {canEdit && selected.size === 0 && (
+          <button className="btn btn-primary" onClick={() => setAdding(true)}>
+            Add a machine
+          </button>
+        )}
         {canPrint && selected.size > 0 && (
           <div className="row">
             <span className="muted" style={{ alignSelf: 'center' }}>
@@ -180,6 +188,16 @@ export function EquipmentListPage() {
           </div>
         )}
       </header>
+
+      {adding && (
+        <EquipmentForm
+          onCancel={() => setAdding(false)}
+          onSaved={async () => {
+            setAdding(false);
+            await load();
+          }}
+        />
+      )}
 
       <div className="filters card">
         <input

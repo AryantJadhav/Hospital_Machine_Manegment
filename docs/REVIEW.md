@@ -435,9 +435,8 @@ Ranked by how much I would like to be wrong about them.
    clients disagreeing about what "pass" means would be a data problem, not a
    styling one.
 
-   **What remains:** equipment enters only through the Excel import, with no
-   way to add a single asset. And the whole PM loop, while now complete, has
-   still only ever been walked by its author.
+   **What remains:** the whole PM loop, while now complete, has still only
+   ever been walked by its author.
 
 3. **No hospital has ever used this.** The Phase 1 gate — a biomedical
    engineer who is not me completing a PM round unaided — has never been met.
