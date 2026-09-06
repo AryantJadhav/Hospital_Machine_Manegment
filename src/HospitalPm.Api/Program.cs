@@ -213,6 +213,7 @@ app.UseAuthorization();
 
 app.MapSetupEndpoints();
 app.MapAuthEndpoints();
+app.MapUserEndpoints();
 app.MapEquipmentEndpoints();
 app.MapImportEndpoints();
 app.MapLookupEndpoints();

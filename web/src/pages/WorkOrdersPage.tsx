@@ -192,6 +192,19 @@ function Detail({
 }) {
   const [note, setNote] = useState('');
   const [resolution, setResolution] = useState('');
+  const [staff, setStaff] = useState<{ id: number; fullName: string }[]>([]);
+
+  // Only the people who can actually be sent to a machine. Loaded here rather
+  // than with the list because it is only needed once a work order is open.
+  useEffect(() => {
+    void (async () => {
+      try {
+        setStaff(await api.get<{ id: number; fullName: string }[]>('/api/users'));
+      } catch {
+        // Assignment degrades to unavailable rather than breaking the page.
+      }
+    })();
+  }, []);
 
   // Only what the server will actually accept. Offering a button that
   // returns 409 teaches people to distrust the buttons.
@@ -258,13 +271,24 @@ function Detail({
             </button>
           ))}
 
-          {canAssign && order.assignedToUserId === null && (
-            <button
-              className="btn"
-              onClick={() => void act(() => api.post(`/api/work-orders/${order.id}/assign`, { assignedToUserId: 1 }))}
+          {/* Was hardcoded to user id 1 — not "me", just whoever happened to
+              be first — because until staff accounts existed there was nobody
+              else to assign to. Now it offers the actual engineers. */}
+          {canAssign && order.assignedToUserId === null && staff.length > 0 && (
+            <select
+              className="field"
+              style={{ maxWidth: '14rem' }}
+              defaultValue=""
+              onChange={(e) => {
+                const id = Number(e.target.value);
+                if (id) void act(() => api.post(`/api/work-orders/${order.id}/assign`, { assignedToUserId: id }));
+              }}
             >
-              Assign to me
-            </button>
+              <option value="">Assign to…</option>
+              {staff.map((p) => (
+                <option key={p.id} value={p.id}>{p.fullName}</option>
+              ))}
+            </select>
           )}
         </div>
       )}
