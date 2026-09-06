@@ -381,6 +381,13 @@ Other installer behaviour worth knowing:
   and found by the CI smoke test: Setup finished in 26 seconds, `ShellExec`'d
   the URL on a headless runner, and the harness then waited 35 minutes on a
   child process that was never going to exit.
+- The settings file binds `http://+:<port>`, not `http://0.0.0.0:<port>`.
+  Kestrel binds `0.0.0.0` to IPv4 **only**, while Windows resolves
+  `localhost` to `::1` first — and the Start Menu shortcut points at
+  `http://localhost:<port>/`. Measured on a real install: **210 ms to connect
+  via `localhost` against 0.8 ms via `127.0.0.1`**, on every new connection,
+  while the request itself took 4 ms. `+` binds both stacks. This was invisible
+  for the whole project because nothing had ever measured a request.
 - `install-failure.txt` is deleted in `CurUninstallStepChanged(usUninstall)`,
   not through `[UninstallDelete]`. Inno processes `[UninstallDelete]` entries
   *after* it has already tried to remove the install directory, so the file
@@ -395,13 +402,32 @@ Ranked by how much I would like to be wrong about them.
    person's judgement, checked only against itself. This document exists to
    make that cheaper to attack.
 
-2. **No hospital has ever used this.** The Phase 1 gate — a biomedical
-   engineer who is not me completing a PM round unaided — has never been met.
-   Every workflow decision is a guess informed by research rather than by
-   watching someone work. This is the largest risk in the project and it is
-   not a code risk.
+2. **The preventive-maintenance workflow has no front end on PC.** The most
+   serious finding here, and found late — by walking the product end to end
+   at realistic scale rather than slice by slice.
 
-3. **Every install test has been on my machine.** One Windows 11 developer PC
+   The web UI can write locations, work orders, backups, the licence and the
+   first admin account. It cannot create a checklist template, publish a
+   version, create a PM schedule, or complete a PM. Equipment enters *only*
+   through the Excel import; there is no way to add a single asset. So the
+   loop the product is named for is reachable only by calling the API
+   directly.
+
+   `POST /api/pm/schedules` also takes one equipment id per call, so even
+   through the API a 2,000-asset hospital faces 2,000 requests. There is no
+   bulk path — no "schedule this checklist for every infusion pump".
+
+   PM execution was built for the mobile app, and mobile is on hold, so that
+   half currently has no usable client at all.
+
+3. **No hospital has ever used this.** The Phase 1 gate — a biomedical
+   engineer who is not me completing a PM round unaided — has never been met.
+   I had been treating that as blocked on finding an engineer. Given the item
+   above it is also blocked on the software: on the PC app as it stands, the
+   round cannot be completed. Every workflow decision remains a guess informed
+   by research rather than by watching someone work.
+
+4. **Every install test has been on my machine.** One Windows 11 developer PC
    with McAfee and no Defender. That last part matters more than it sounds:
    the installer's antivirus-exclusion step calls `Add-MpPreference`, so on
    this machine it has silently done nothing every single time. On a hospital
@@ -417,29 +443,36 @@ Ranked by how much I would like to be wrong about them.
    vanish. This is an argument for the code-signing certificate that is
    stronger than the SmartScreen warning.
 
-4. **Tenancy is schema-only** (§5). Deliberate, but it is the kind of debt
+5. **Tenancy is schema-only** (§5). Deliberate, but it is the kind of debt
    that turns into a data-leak incident rather than a refactor.
 
-5. **The installer cannot report post-copy failure through its exit code**
+6. **The installer cannot report post-copy failure through its exit code**
    (§9). Mitigated, not solved.
 
-6. **Restore is destructive by construction.** It is guarded by a typed
+7. **Restore is destructive by construction.** It is guarded by a typed
    confirmation and a safety dump, and it has been exercised, but it drops a
    database. It deserves a harder look than I can give my own code.
 
-7. **Hangfire runs in-process with one worker**, against the same PostgreSQL,
+8. **Hangfire runs in-process with one worker**, against the same PostgreSQL,
    to honour the two-services rule. Whether one worker is right when PM
    generation for a large hospital coincides with the nightly backup is
    untested at realistic scale.
 
-8. **No load or volume testing at all.** No idea how this behaves with 20,000
-   pieces of equipment, or how long a first migration takes on the kind of
-   spinning-disk PC a hospital will actually provide.
+9. **Volume is measured now, but only at one size and on one machine.** A
+   pass at 2,000 assets across 278 locations — a realistic mid-size Indian
+   hospital — found nothing slow: import 2.9s, equipment list 5ms, dashboard
+   150ms, a 200-label PDF sheet 3.7s, a full backup 691ms producing a 301 KB
+   dump. Nothing there needs optimising.
 
-9. **The signing-key path** (§5) — one security bug was already found there by
+   What it does *not* cover: 20,000 assets, a year of accumulated PM
+   completions and work-order history, or the spinning-disk PC a hospital
+   will actually provide. Every number above came from a fast developer
+   machine with an empty history table, which is the easiest case there is.
+
+10. **The signing-key path** (§5) — one security bug was already found there by
    accident, which is weak evidence that it was the only one.
 
-10. **The installer's coverage is new and shallow.** The 253 tests stop at the
+11. **The installer's coverage is new and shallow.** The 253 tests stop at the
     API boundary. Every installer claim in §9 was originally established by
     installing on a real machine by hand — better evidence than a mock, and
     evidence that expires the moment someone edits the `.iss`.
@@ -457,7 +490,7 @@ Ranked by how much I would like to be wrong about them.
     failure. It also runs on one Windows version with no third-party
     antivirus, which is the gap in item 3, not this one.
 
-11. **The licence signing key does not exist yet** (§7). The release path that
+12. **The licence signing key does not exist yet** (§7). The release path that
     injects it now does, and refuses to build without it — but no production
     key has been generated, so verification has still only ever run against
     test keys, and no release has ever been cut through that path.
