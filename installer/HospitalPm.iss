@@ -782,7 +782,20 @@ begin
     Settings.Add('  "ConnectionStrings": {');
     Settings.Add('    "HospitalPm": "' + ConnectionString + '"');
     Settings.Add('  },');
-    Settings.Add('  "Urls": "http://0.0.0.0:' + Trim(PortPage.Values[0]) + '",');
+    // "+" and not "0.0.0.0". Kestrel binds 0.0.0.0 to IPv4 ONLY, while
+    // Windows resolves "localhost" to ::1 first - and the Start Menu shortcut
+    // this installer creates points at http://localhost:<port>/.
+    //
+    // So every request from the shortcut tried IPv6, found nothing listening,
+    // and fell back to IPv4. Measured on a real install: 210 ms to connect
+    // via localhost against 0.8 ms via 127.0.0.1, on every new connection.
+    // The request itself took 4 ms; the wait was entirely the fallback.
+    //
+    // "+" binds both stacks - netstat then shows 0.0.0.0 AND [::] - which is
+    // what a hospital's browser, and every phone on the ward network, needs.
+    // Kestrel needs no URL ACL for this; that is an HTTP.sys requirement and
+    // this does not use HTTP.sys.
+    Settings.Add('  "Urls": "http://+:' + Trim(PortPage.Values[0]) + '",');
     // Applied on the first start and then removed from this file, so a
     // hospital finishes the installer with a working login instead of a web
     // page asking them to invent one.
