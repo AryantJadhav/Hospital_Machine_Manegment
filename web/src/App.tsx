@@ -16,6 +16,7 @@ import { LicencePage } from './pages/LicencePage';
 import { ScanPage } from './pages/ScanPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { PmTasksPage } from './pages/PmTasksPage';
+import { ChecklistsPage } from './pages/ChecklistsPage';
 import { WorkOrdersPage } from './pages/WorkOrdersPage';
 import './App.css';
 
@@ -53,6 +54,13 @@ function Shell() {
 
         <NavLink to="/locations" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
           Locations
+        </NavLink>
+
+        {/* Visible to everyone, editable only by an author. A technician
+            reading the checklist they are about to work from is reasonable;
+            the server enforces who may change it. */}
+        <NavLink to="/checklists" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+          Checklists
         </NavLink>
 
         {canImport && (
@@ -93,6 +101,7 @@ function Shell() {
           <Route path="/equipment" element={<EquipmentListPage />} />
           <Route path="/equipment/:id" element={<EquipmentDetailPage />} />
           <Route path="/locations" element={<LocationsPage />} />
+          <Route path="/checklists" element={<ChecklistsPage />} />
           <Route path="/scan" element={<ScanPage />} />
           <Route
             path="/import"
