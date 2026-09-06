@@ -1,0 +1,166 @@
+name: release
+
+# Cuts a releasable installer: one that carries the licence public key, has
+# been installed and uninstalled on a real Windows machine, and is attached to
+# a GitHub release.
+#
+# Separate from build.yml on purpose. build.yml runs on every pull request,
+# including from a fork, and the licence signing key must not be reachable
+# from any of those. This workflow runs only on a tag an author pushed.
+#
+# It refuses to produce anything if the key is missing, because the failure it
+# prevents is silent: an installer built without one works perfectly and
+# reports "licensing is not enforced", so a release cut without it looks
+# entirely normal until a hospital is sent a licence their copy cannot check.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build, e.g. 1.0.0'
+        required: true
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: 1
+
+jobs:
+  release:
+    name: release installer
+    runs-on: windows-latest
+
+    # The smoke test alone is around twenty minutes; see build.yml.
+    timeout-minutes: 60
+
+    permissions:
+      # Creating the release and attaching the installer to it.
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Fails before anything is built, and before the key is even read, so a
+      # misconfigured repository costs seconds rather than half an hour.
+      #
+      # Only whether the secret EXISTS is reported. Its length or shape would
+      # be a small leak about a value that gates licence verification, and
+      # build.ps1 checks the shape properly a moment later anyway.
+      - name: Require the licence signing key
+        shell: pwsh
+        env:
+          HOSPITALPM_LICENCE_PUBLIC_KEY: ${{ secrets.LICENCE_PUBLIC_KEY }}
+        run: |
+          if (-not $env:HOSPITALPM_LICENCE_PUBLIC_KEY) {
+            Write-Output "::error::The LICENCE_PUBLIC_KEY repository secret is not set. A release cannot be built without it - the installer would reject every licence ever issued. Generate a signing key once with the licence tool's keygen, keep signing-key.pem off this machine and off this repository, and put the contents of public-key.txt in that secret."
+            exit 1
+          }
+          Write-Output "Licence public key secret is present."
+
+      - name: Work out the version
+        id: version
+        shell: pwsh
+        run: |
+          # A tag wins; workflow_dispatch supplies one by hand. A leading v is
+          # stripped from either, because the installer's filename and
+          # AppVersion use a bare version - and because "v1.0.0" is what
+          # someone dispatching this by hand will type first.
+          if ($env:GITHUB_REF -like 'refs/tags/*') {
+            $v = $env:GITHUB_REF -replace '^refs/tags/', ''
+          } else {
+            $v = '${{ github.event.inputs.version }}'
+          }
+          $v = $v -replace '^v', ''
+
+          # Strictly x.y.z, so v1.0.0-rc1 is refused. Not pedantry: Inno's
+          # VersionInfoVersion takes a numeric version only, so a prerelease
+          # suffix fails deep inside ISCC with a message about a resource
+          # rather than about the tag someone pushed. Refusing here says which
+          # tag was wrong.
+          if ($v -notmatch '^\d+\.\d+\.\d+$') {
+            Write-Output "::error::Version '$v' is not x.y.z. Tag a release as vX.Y.Z; prerelease suffixes are not supported because the installer's version resource must be numeric."
+            exit 1
+          }
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Output "Building $v"
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Cache the PostgreSQL archive
+        uses: actions/cache@v4
+        with:
+          path: artifacts/cache
+          key: pgsql-17.11-1-windows-x64
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      # The key is passed through the environment, never as an argument.
+      # Command lines are visible to every user on the machine in the process
+      # list, and are echoed into logs by well-meaning tooling.
+      - name: Build the installer
+        shell: pwsh
+        env:
+          HOSPITALPM_LICENCE_PUBLIC_KEY: ${{ secrets.LICENCE_PUBLIC_KEY }}
+        run: ./installer/build.ps1 -Version ${{ steps.version.outputs.version }}
+
+      # The same eight scenarios build.yml runs, against the artifact that is
+      # actually about to ship rather than a near-identical one. A release is
+      # the one build where "it worked on the PR" is not good enough.
+      - name: Smoke test the installer
+        shell: pwsh
+        run: >
+          ./installer/smoke-test.ps1
+          -Setup artifacts/installer/HospitalPM-Setup-${{ steps.version.outputs.version }}.exe
+
+      # Asserted against the built artifact, not against the build script's own
+      # word for it. The published appsettings.json is what ships.
+      - name: Confirm the shipped build carries the licence key
+        shell: pwsh
+        run: |
+          $settings = Get-Content artifacts/win-x64/appsettings.json -Raw | ConvertFrom-Json
+          if (-not $settings.Licence.PublicKey) {
+            Write-Output "::error::The published appsettings.json has no licence public key. This build must not be released."
+            exit 1
+          }
+          Write-Output "Shipped build carries a licence public key."
+
+      - name: Upload installer logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-smoke-logs
+          path: artifacts/smoke-logs/
+          retention-days: 30
+
+      # A draft, not a published release. Someone should look at an unsigned
+      # installer before a hospital downloads it, and until an OV code-signing
+      # certificate exists that look is the only gate there is.
+      - name: Draft the GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          name: Hospital PM ${{ steps.version.outputs.version }}
+          tag_name: v${{ steps.version.outputs.version }}
+          files: artifacts/installer/HospitalPM-Setup-${{ steps.version.outputs.version }}.exe
+          body: |
+            Hospital PM ${{ steps.version.outputs.version }}
+
+            Installed and uninstalled on a clean Windows machine before this
+            was drafted: port conflicts refused, clean install served, upgraded
+            over itself twice, a failed install reported, and an uninstall that
+            keeps the hospital's data unless asked otherwise.
+
+            **This installer is not code-signed.** Windows SmartScreen will
+            warn on download and on first run, and some antivirus products
+            delete unsigned installers outright. Until an OV certificate is
+            applied, a hospital has to be told to expect that.

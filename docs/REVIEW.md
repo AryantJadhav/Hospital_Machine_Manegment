@@ -199,8 +199,39 @@ run against test keys. Two consequences worth weighing:
 - Generating the production key is a one-way door. If `signing-key.pem` is
   ever lost, every licence already issued becomes unverifiable, and there is
   no recovery path by design.
-- Whatever release process eventually injects the public key is
-  security-critical and does not exist yet, so there is nothing to review.
+- The release process that injects the public half **now exists and is worth
+  reviewing** — see below. What does not exist is the key itself.
+
+**The release path.** `installer/build.ps1` takes `-LicencePublicKey` (or
+`HOSPITALPM_LICENCE_PUBLIC_KEY` from the environment) and **refuses to build
+without it** unless `-Unlicensed` is passed explicitly. That default is the
+whole point: an installer built with no key works perfectly and reports
+"licensing is not enforced", so a release cut without one looks entirely
+normal until a hospital is sent a licence their copy cannot check. The failure
+had to be made loud because it is otherwise silent.
+
+The key is checked for shape before anything is built — a P-256
+SubjectPublicKeyInfo is exactly 91 bytes beginning `0x30` — which catches the
+realistic failure of a secret that was truncated or wrapped in transit. It is
+then written into the *published* `appsettings.json` (never the one in source,
+so a release never dirties the working tree) and read back before the
+installer is compiled, because that is the last moment it can be confirmed.
+
+`.github/workflows/release.yml` cuts a release on a `v*` tag: it fails
+immediately if the `LICENCE_PUBLIC_KEY` secret is absent, passes it through
+the environment rather than a command line, runs the full installer smoke test
+against the artifact that is actually about to ship, re-asserts the key is in
+the shipped `appsettings.json`, and drafts — not publishes — a GitHub release.
+`build.yml` passes `-Unlicensed` explicitly, so the signing key is never
+reachable from a pull-request build, including one from a fork.
+
+**What to attack here:** the public key ships in `appsettings.json` inside
+Program Files. Standard users cannot write there, but an administrator can
+substitute their own key and sign whatever they like. Compiling it into the
+assembly would raise that bar; it would not remove it, and nothing currently
+stops working without a licence anyway. I think the trade is right for a
+product sold to hospitals rather than pirated by them, and I would like that
+challenged rather than assumed.
 
 ## 8. Backups, restore, diagnostics
 
@@ -426,9 +457,10 @@ Ranked by how much I would like to be wrong about them.
     failure. It also runs on one Windows version with no third-party
     antivirus, which is the gap in item 3, not this one.
 
-11. **The licence signing key does not exist yet** (§7), so the verification
-    path has never run against a real key, and the release step that would
-    inject the public half has not been written.
+11. **The licence signing key does not exist yet** (§7). The release path that
+    injects it now does, and refuses to build without it — but no production
+    key has been generated, so verification has still only ever run against
+    test keys, and no release has ever been cut through that path.
 
 ## 11. Things that are decided, not open
 

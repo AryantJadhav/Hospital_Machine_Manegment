@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using HospitalPm.Domain.Licensing;
 using HospitalPm.Infrastructure.Licensing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 
 namespace HospitalPm.IntegrationTests;
@@ -244,5 +245,109 @@ public sealed class LicenceTests : IDisposable
 
         Assert.Equal(LicenceState.Valid,
             new LicenceVerifier(PublicKey).Verify(mangled, Today).State);
+    }
+
+    // --- The release path ---------------------------------------------------
+    //
+    // installer/build.ps1 writes the public key into the PUBLISHED
+    // appsettings.json at release time, and refuses to build without one.
+    // Neither of the two things that has to hold for that to work is
+    // exercised by the tests above, and both fail silently: a build with the
+    // wrong key shape rejects every licence, and a build whose key never
+    // reached LicenceOptions reports "licensing is not enforced" while working
+    // perfectly.
+
+    /// <summary>
+    /// The setting build.ps1 fills in has to still be there, still be empty,
+    /// and still be the only one.
+    ///
+    /// The release build finds it with a regex and asserts it matches exactly
+    /// once, so renaming the setting, pre-filling it, or adding a second one
+    /// breaks a release — at the moment a release is being cut, which is the
+    /// worst time to find out. This fails on the pull request instead.
+    ///
+    /// It also stops a real public key being committed. The key itself is not
+    /// secret, but a key in source is one nobody chose per release.
+    /// </summary>
+    [Fact]
+    public void The_shipped_settings_leave_exactly_one_empty_public_key_for_the_release_build()
+    {
+        var settingsPath = FindRepositoryFile("src/HospitalPm.Api/appsettings.json");
+        var text = File.ReadAllText(settingsPath);
+
+        // The same pattern installer/build.ps1 uses.
+        var matches = System.Text.RegularExpressions.Regex.Matches(
+            text, "(\"PublicKey\"\\s*:\\s*)\"\"");
+
+        Assert.Single(matches);
+
+        using var document = JsonDocument.Parse(text);
+        var publicKey = document.RootElement
+            .GetProperty(LicenceOptions.Section).GetProperty(nameof(LicenceOptions.PublicKey)).GetString();
+
+        Assert.Equal(string.Empty, publicKey);
+    }
+
+    /// <summary>
+    /// A key sitting in appsettings.json under "Licence" actually reaches the
+    /// service that verifies licences.
+    ///
+    /// This is the link the release path depends on and the one nothing else
+    /// covers: every other test hands LicenceOptions to the service directly,
+    /// so all of them would still pass if the configuration section were
+    /// renamed and the shipped key bound to nothing.
+    /// </summary>
+    [Fact]
+    public void A_public_key_in_configuration_reaches_the_service_that_verifies_licences()
+    {
+        var licencePath = TempPath();
+        File.WriteAllText(licencePath, Sign(Sample(new DateOnly(2099, 1, 1))));
+
+        // Shaped exactly like the file build.ps1 writes into.
+        var json = $$"""
+            {
+              "Licence": {
+                "PublicKey": "{{PublicKey}}",
+                "Path": "{{licencePath.Replace("\\", "\\\\")}}"
+              }
+            }
+            """;
+
+        var configuration = new ConfigurationBuilder()
+            .AddJsonStream(new MemoryStream(Encoding.UTF8.GetBytes(json)))
+            .Build();
+
+        var options = new LicenceOptions();
+        configuration.GetSection(LicenceOptions.Section).Bind(options);
+
+        var status = new LicenceService(Options.Create(options), TimeProvider.System).Current();
+
+        Assert.Equal(LicenceState.Valid, status.State);
+    }
+
+    /// <summary>
+    /// Walks up from the test assembly to the repository root.
+    ///
+    /// The test binary lives several directories below it and the depth
+    /// depends on the configuration and target framework, so the root is found
+    /// by looking for the file rather than counting "..".
+    /// </summary>
+    private static string FindRepositoryFile(string relativePath)
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+
+        while (directory is not null)
+        {
+            var candidate = Path.Combine(directory.FullName, relativePath);
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new FileNotFoundException(
+            $"Could not find {relativePath} above {AppContext.BaseDirectory}.");
     }
 }
