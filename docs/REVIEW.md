@@ -417,8 +417,16 @@ Ranked by how much I would like to be wrong about them.
    through the API a 2,000-asset hospital faces 2,000 requests. There is no
    bulk path — no "schedule this checklist for every infusion pump".
 
-   PM execution was built for the mobile app, and mobile is on hold, so that
-   half currently has no usable client at all.
+   The two halves fail differently, and the distinction matters:
+
+   - **PM setup** — checklist templates, publishing a version, creating a
+     schedule — has no client *anywhere*. Not web, not mobile. API only.
+   - **PM execution** — working a task list, filling a checklist, signing a
+     completion — exists only in the Expo app (`WorkListScreen`,
+     `PmChecklistScreen`), which is on hold.
+
+   So a hospital given the PC app today can hold a register and run corrective
+   work orders, and cannot do preventive maintenance at all.
 
 3. **No hospital has ever used this.** The Phase 1 gate — a biomedical
    engineer who is not me completing a PM round unaided — has never been met.
