@@ -278,7 +278,7 @@ jobs:
       # which supplies the key and refuses to build without it.
       - name: Build the installer
         shell: pwsh
-        run: ./installer/build.ps1 -Version 1.0.0 -Unlicensed
+        run: ./installer/build.ps1 -Version 1.0.0 -Unlicensed -NoUpdateKey
 
       - name: Smoke test the installer
         shell: pwsh

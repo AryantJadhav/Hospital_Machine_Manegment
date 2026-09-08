@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using HospitalPm.Api.Auth;
 using HospitalPm.Api.Hosting;
 using HospitalPm.Api.Checklists;
@@ -76,6 +76,17 @@ builder.Services.AddScoped<HospitalPm.Infrastructure.Operations.DiagnosticsServi
 builder.Services.Configure<HospitalPm.Infrastructure.Licensing.LicenceOptions>(
     builder.Configuration.GetSection(HospitalPm.Infrastructure.Licensing.LicenceOptions.Section));
 builder.Services.AddSingleton<HospitalPm.Infrastructure.Licensing.LicenceService>();
+
+// Updating from a signed file on a USB stick. Scoped rather than singleton
+// because it takes a backup, and BackupService is scoped around the
+// DbContext it writes the run row with.
+builder.Services.Configure<HospitalPm.Infrastructure.Updates.UpdateOptions>(
+    builder.Configuration.GetSection(HospitalPm.Infrastructure.Updates.UpdateOptions.Section));
+builder.Services.AddSingleton<HospitalPm.Domain.Updates.IUpdateFileSystem,
+    HospitalPm.Infrastructure.Updates.UpdateFileSystem>();
+builder.Services.AddSingleton<HospitalPm.Infrastructure.Updates.IUpdateLauncher,
+    HospitalPm.Infrastructure.Updates.UpdateLauncher>();
+builder.Services.AddScoped<HospitalPm.Infrastructure.Updates.UpdateService>();
 builder.Services.Configure<FirstRunOptions>(builder.Configuration.GetSection(FirstRunOptions.Section));
 builder.Services.AddSingleton<QrCodeService>();
 builder.Services.AddScoped<LabelSheetService>();
@@ -229,6 +240,7 @@ app.MapBackupEndpoints();
 app.MapDiagnosticsEndpoints();
 app.MapRestoreEndpoints();
 app.MapLicenceEndpoints();
+app.MapUpdateEndpoints();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();

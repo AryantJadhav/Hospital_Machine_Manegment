@@ -13,6 +13,7 @@ import { LocationsPage } from './pages/LocationsPage';
 import { BackupsPage } from './pages/BackupsPage';
 import { DiagnosticsPage } from './pages/DiagnosticsPage';
 import { LicencePage } from './pages/LicencePage';
+import { UpdatesPage } from './pages/UpdatesPage';
 import { ScanPage } from './pages/ScanPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { PmTasksPage } from './pages/PmTasksPage';
@@ -96,6 +97,12 @@ function Shell() {
           </NavLink>
         )}
 
+        {isAdmin && (
+          <NavLink to="/updates" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+            Updates
+          </NavLink>
+        )}
+
         <div className="nav-right">
           {/* The role is shown next to the name. An Employee who cannot find
               the Staff tab should be able to see why without asking. */}
@@ -150,6 +157,10 @@ function Shell() {
           <Route
             path="/licence"
             element={isAdmin ? <LicencePage /> : <Navigate to="/dashboard" replace />}
+          />
+          <Route
+            path="/updates"
+            element={isAdmin ? <UpdatesPage /> : <Navigate to="/dashboard" replace />}
           />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>

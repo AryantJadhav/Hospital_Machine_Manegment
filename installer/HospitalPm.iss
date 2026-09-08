@@ -811,6 +811,14 @@ begin
     // or on which PostgreSQL happens to be first on PATH.
     Settings.Add('    "PgDumpPath": "' + JsonEscape(ExpandConstant('{app}\pgsql\bin\pg_dump.exe')) + '",');
     Settings.Add('    "PgRestorePath": "' + JsonEscape(ExpandConstant('{app}\pgsql\bin\pg_restore.exe')) + '"');
+    Settings.Add('  },');
+    // Where someone drops an update that arrived on a USB stick, and where a
+    // verified installer is copied to before it is run. Under DataDir rather
+    // than {app}: a staged installer is a couple of hundred megabytes, Program
+    // Files is readable by every local user, and an uninstall removes {app}.
+    Settings.Add('  "Update": {');
+    Settings.Add('    "Directory": "' + JsonEscape(DataDir + '\updates') + '",');
+    Settings.Add('    "StagingDirectory": "' + JsonEscape(DataDir + '\updates\staging') + '"');
     Settings.Add('  }');
     Settings.Add('}');
     Settings.SaveToFile(DataDir + '\appsettings.json');

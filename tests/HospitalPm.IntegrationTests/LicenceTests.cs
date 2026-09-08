@@ -258,32 +258,39 @@ public sealed class LicenceTests : IDisposable
     // perfectly.
 
     /// <summary>
-    /// The setting build.ps1 fills in has to still be there, still be empty,
-    /// and still be the only one.
+    /// The settings build.ps1 fills in have to still be there, still be empty,
+    /// and still be findable one section at a time.
     ///
-    /// The release build finds it with a regex and asserts it matches exactly
-    /// once, so renaming the setting, pre-filling it, or adding a second one
-    /// breaks a release — at the moment a release is being cut, which is the
-    /// worst time to find out. This fails on the pull request instead.
+    /// There are two public keys now, the licence one and the update one, and
+    /// build.ps1 writes each with a regex scoped to its own section, asserting
+    /// a single match. Renaming a setting, pre-filling one, or moving
+    /// PublicKey out of first position in its object breaks a release at the
+    /// moment a release is being cut, which is the worst time to find out.
+    /// This fails on the pull request instead.
     ///
-    /// It also stops a real public key being committed. The key itself is not
-    /// secret, but a key in source is one nobody chose per release.
+    /// It also stops a real public key being committed. Neither key is secret,
+    /// but a key in source is one nobody chose per release.
     /// </summary>
-    [Fact]
-    public void The_shipped_settings_leave_exactly_one_empty_public_key_for_the_release_build()
+    [Theory]
+    [InlineData("Licence")]
+    [InlineData("Update")]
+    public void The_shipped_settings_leave_an_empty_public_key_for_the_release_build(string section)
     {
         var settingsPath = FindRepositoryFile("src/HospitalPm.Api/appsettings.json");
         var text = File.ReadAllText(settingsPath);
 
-        // The same pattern installer/build.ps1 uses.
+        // The same section-scoped pattern installer/build.ps1 uses. A pattern
+        // matching either section would let a release write the update key
+        // into the licence slot — a build that then rejects every licence ever
+        // issued, and says so only on a page nobody opens for months.
         var matches = System.Text.RegularExpressions.Regex.Matches(
-            text, "(\"PublicKey\"\\s*:\\s*)\"\"");
+            text, "(\"" + section + "\"\\s*:\\s*\\{\\s*\"PublicKey\"\\s*:\\s*)\"\"");
 
         Assert.Single(matches);
 
         using var document = JsonDocument.Parse(text);
         var publicKey = document.RootElement
-            .GetProperty(LicenceOptions.Section).GetProperty(nameof(LicenceOptions.PublicKey)).GetString();
+            .GetProperty(section).GetProperty(nameof(LicenceOptions.PublicKey)).GetString();
 
         Assert.Equal(string.Empty, publicKey);
     }
