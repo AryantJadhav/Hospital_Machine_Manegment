@@ -131,12 +131,12 @@ Console.WriteLine("==> Staff");
 
 (string User, string Name, string Code, string Role)[] staff =
 [
-    ("s.deshmukh", "Dr S Deshmukh", "BME-01", "BiomedicalHead"),
-    ("a.kulkarni", "A Kulkarni", "BME-02", "SeniorEngineer"),
-    ("r.patil", "R Patil", "BME-03", "SeniorEngineer"),
-    ("m.shaikh", "M Shaikh", "BME-04", "Technician"),
-    ("p.jadhav", "P Jadhav", "BME-05", "Technician"),
-    ("v.more", "V More", "BME-06", "Technician"),
+    ("s.deshmukh", "Dr S Deshmukh", "BME-01", "Admin"),
+    ("a.kulkarni", "A Kulkarni", "BME-02", "Admin"),
+    ("r.patil", "R Patil", "BME-03", "Admin"),
+    ("m.shaikh", "M Shaikh", "BME-04", "Employee"),
+    ("p.jadhav", "P Jadhav", "BME-05", "Employee"),
+    ("v.more", "V More", "BME-06", "Employee"),
 ];
 
 var staffIds = new List<int>();

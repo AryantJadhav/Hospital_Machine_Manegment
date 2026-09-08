@@ -134,8 +134,15 @@ because the install has to authenticate with the network cable out. Access
 tokens last 15 minutes, refresh tokens 14 days. Validating an access token
 deliberately does not touch the database, which means a deactivated user keeps
 working until their token expires; 15 minutes bounds that window and the
-refresh token is where revocation actually bites. Four roles: `Admin`,
-`BiomedicalHead`, `SeniorEngineer`, `Technician`.
+refresh token is where revocation actually bites.
+
+Two roles: `Admin` and `Employee`. There were four, modelling a teaching
+hospital's hierarchy; the department this is sold to is usually one head and
+three technicians, and the middle tiers made every account creation a choice
+between near-identical options. The line is that an Employee records what they
+did and an Admin decides what gets done — which is why skipping a PM and
+assigning work are Admin acts. Both are about the record, or about someone
+else's day, rather than about trust.
 
 The signing key is generated per install into a file, not a database row —
 the app must validate tokens during startup and while the database is

@@ -48,7 +48,7 @@ export function PmTasksPage() {
   // Deciding a PM will not happen is a supervisory call, not a technician's,
   // because a skip is a permanent gap in the record. The server enforces the
   // same rule; this only keeps the button out of the way.
-  const canSkip = can(ROLES.admin, ROLES.biomedicalHead, ROLES.seniorEngineer);
+  const canSkip = can(ROLES.admin);
 
   useEffect(() => {
     (async () => {

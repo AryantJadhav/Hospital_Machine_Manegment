@@ -21,7 +21,7 @@ public static class ImportEndpoints
             .WithTags("Equipment import")
             // Bulk-loading the register is a register-owner action, not a
             // technician's.
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin, Roles.BiomedicalHead));
+            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
 
         group.MapGet("/template", GetTemplate);
         group.MapGet("/locations/template", GetLocationTemplate);

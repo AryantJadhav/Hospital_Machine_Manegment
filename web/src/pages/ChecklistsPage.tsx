@@ -95,7 +95,7 @@ const STATUS: Record<number, string> = { 10: 'Draft', 20: 'Published', 30: 'Arch
 
 export function ChecklistsPage() {
   const { can } = useAuth();
-  const canAuthor = can(ROLES.admin, ROLES.biomedicalHead);
+  const canAuthor = can(ROLES.admin);
 
   const [templates, setTemplates] = useState<Template[]>([]);
   const [types, setTypes] = useState<Lookup[]>([]);
@@ -608,7 +608,7 @@ function DraftEditor({
   onClose: () => void | Promise<void>;
 }) {
   const { can } = useAuth();
-  const canAuthor = can(ROLES.admin, ROLES.biomedicalHead);
+  const canAuthor = can(ROLES.admin);
 
   const [versions, setVersions] = useState<Version[]>([]);
   const [definition, setDefinition] = useState<Definition>({ sections: [] });

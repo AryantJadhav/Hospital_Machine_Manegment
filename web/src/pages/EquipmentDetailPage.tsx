@@ -77,10 +77,10 @@ export function EquipmentDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { can } = useAuth();
-  const canPrint = can(ROLES.admin, ROLES.biomedicalHead, ROLES.seniorEngineer);
+  const canPrint = can(ROLES.admin);
 
-  const canEdit = can(ROLES.admin, ROLES.biomedicalHead, ROLES.seniorEngineer);
-  const canCondemn = can(ROLES.admin, ROLES.biomedicalHead);
+  const canEdit = can(ROLES.admin);
+  const canCondemn = can(ROLES.admin);
 
   const [data, setData] = useState<History | null>(null);
   const [loading, setLoading] = useState(true);

@@ -20,9 +20,14 @@ export type AuthState = {
 // no components, which is what React Fast Refresh needs to work.
 export const AuthContext = createContext<AuthState | null>(null);
 
+/**
+ * Two roles, not four.
+ *
+ * An Employee records what they did; an Admin decides what gets done. The
+ * server enforces the same split — everything here is presentation, so a page
+ * that forgets a check hides a button rather than opening a door.
+ */
 export const ROLES = {
   admin: 'Admin',
-  biomedicalHead: 'BiomedicalHead',
-  seniorEngineer: 'SeniorEngineer',
-  technician: 'Technician',
+  employee: 'Employee',
 } as const;

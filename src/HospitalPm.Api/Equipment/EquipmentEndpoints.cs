@@ -68,14 +68,14 @@ public static class EquipmentEndpoints
         // Writes are restricted. A technician records work against equipment;
         // they do not add or retire assets on the register.
         group.MapPost("/", CreateAsync)
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin, Roles.BiomedicalHead, Roles.SeniorEngineer));
+            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
 
         group.MapPut("/{id:int}", UpdateAsync)
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin, Roles.BiomedicalHead, Roles.SeniorEngineer));
+            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
 
         // Retiring an asset is a register-owner decision, not an engineer's.
         group.MapPost("/{id:int}/condemn", CondemnAsync)
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin, Roles.BiomedicalHead));
+            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
     }
 
     private static async Task<IResult> SearchAsync(

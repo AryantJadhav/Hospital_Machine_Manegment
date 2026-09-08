@@ -26,16 +26,16 @@ type Staff = {
 
 const ROLE_LABELS: Record<string, string> = {
   Admin: 'Administrator',
-  BiomedicalHead: 'Biomedical head',
-  SeniorEngineer: 'Senior engineer',
-  Technician: 'Technician',
+  Employee: 'Employee',
 };
 
 const ROLE_HELP: Record<string, string> = {
-  Admin: 'Everything, including staff accounts, backups and the licence.',
-  BiomedicalHead: 'Runs the department: checklists, schedules, the register, work orders.',
-  SeniorEngineer: 'Schedules PMs, works them, and decides a PM will not happen.',
-  Technician: 'Works the PM round and reports faults.',
+  Admin:
+    'Full access. Edits the register, writes checklists, schedules PMs, assigns ' +
+    'work, and manages staff, backups and the licence.',
+  Employee:
+    'Works the floor. Does PM rounds, reports and resolves faults, reads the ' +
+    'register. Cannot change what the department has committed to.',
 };
 
 export function StaffPage() {
@@ -224,7 +224,7 @@ function StaffForm({
   const [userName, setUserName] = useState(editing?.userName ?? '');
   const [fullName, setFullName] = useState(editing?.fullName ?? '');
   const [staffCode, setStaffCode] = useState(editing?.staffCode ?? '');
-  const [role, setRole] = useState(editing?.role ?? 'Technician');
+  const [role, setRole] = useState(editing?.role ?? 'Employee');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
 

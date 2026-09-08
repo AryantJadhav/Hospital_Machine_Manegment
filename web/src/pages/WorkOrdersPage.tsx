@@ -47,7 +47,7 @@ const PRIORITY: Record<number, string> = { 10: 'Low', 20: 'Medium', 30: 'High', 
 
 export function WorkOrdersPage() {
   const { can } = useAuth();
-  const canAssign = can(ROLES.admin, ROLES.biomedicalHead, ROLES.seniorEngineer);
+  const canAssign = can(ROLES.admin);
 
   const [params, setParams] = useSearchParams();
   const status = params.get('status') ?? '';
@@ -195,8 +195,11 @@ function Detail({
   const [staff, setStaff] = useState<{ id: number; fullName: string }[]>([]);
 
   // Only the people who can actually be sent to a machine. Loaded here rather
-  // than with the list because it is only needed once a work order is open.
+  // than with the list because it is only needed once a work order is open,
+  // and only for someone who may assign - the staff list is an Admin route
+  // now, so asking for it as an Employee is a guaranteed 403.
   useEffect(() => {
+    if (!canAssign) return;
     void (async () => {
       try {
         setStaff(await api.get<{ id: number; fullName: string }[]>('/api/users'));
@@ -204,7 +207,7 @@ function Detail({
         // Assignment degrades to unavailable rather than breaking the page.
       }
     })();
-  }, []);
+  }, [canAssign]);
 
   // Only what the server will actually accept. Offering a button that
   // returns 409 teaches people to distrust the buttons.

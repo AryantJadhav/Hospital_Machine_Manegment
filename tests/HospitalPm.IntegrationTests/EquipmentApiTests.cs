@@ -72,7 +72,7 @@ public sealed class EquipmentApiTests(PostgresFixture fixture) : IAsyncLifetime,
             FullName = "API Test User",
         };
         await users.CreateAsync(user, password);
-        await users.AddToRoleAsync(user, Domain.Identity.Roles.BiomedicalHead);
+        await users.AddToRoleAsync(user, Domain.Identity.Roles.Admin);
 
         var login = await _client.PostAsJsonAsync("/api/auth/login", new { userName, password });
         login.EnsureSuccessStatusCode();
@@ -154,10 +154,10 @@ public sealed class EquipmentApiTests(PostgresFixture fixture) : IAsyncLifetime,
     }
 
     [Fact]
-    public async Task A_biomedical_head_may_condemn_an_asset()
+    public async Task An_admin_may_condemn_an_asset()
     {
-        // Condemning is restricted to Admin and BiomedicalHead. This client
-        // is a BiomedicalHead, so the route must accept it.
+        // Condemning is restricted to Admin. This client is an Admin, so the
+        // route must accept it.
         await using var db = fixture.CreateContext();
         var asset = await db.Equipment.AsNoTracking().FirstAsync(e => e.AssetTag == _assetTag);
 
@@ -167,10 +167,10 @@ public sealed class EquipmentApiTests(PostgresFixture fixture) : IAsyncLifetime,
     }
 
     [Fact]
-    public async Task A_biomedical_head_may_download_the_import_template()
+    public async Task An_admin_may_download_the_import_template()
     {
-        // The import group requires Admin or BiomedicalHead. The negative
-        // case - an unauthenticated caller - is covered by the CI smoke test.
+        // The import group requires Admin. The negative case - an
+        // unauthenticated caller - is covered by the CI smoke test.
         var res = await _client.GetAsync("/api/equipment/import/template");
 
         Assert.Equal(HttpStatusCode.OK, res.StatusCode);

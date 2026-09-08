@@ -54,7 +54,7 @@ public static class ChecklistEndpoints
         // Authoring is a register-owner job. A checklist defines what counts
         // as a completed PM, which is evidence in an audit.
         var authoring = group.MapGroup(string.Empty)
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin, Roles.BiomedicalHead));
+            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
 
         authoring.MapPost("/", CreateAsync);
         authoring.MapPut("/{id:int}/draft", SaveDraftAsync);

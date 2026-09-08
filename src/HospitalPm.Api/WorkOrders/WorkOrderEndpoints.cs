@@ -44,7 +44,7 @@ public static class WorkOrderEndpoints
         // Assignment is a supervisory decision about who does the work.
         group.MapPost("/{id:int}/assign", AssignAsync)
             .RequireAuthorization(p => p.RequireRole(
-                Roles.Admin, Roles.BiomedicalHead, Roles.SeniorEngineer));
+                Roles.Admin));
     }
 
     private static async Task<IResult> ListAsync(

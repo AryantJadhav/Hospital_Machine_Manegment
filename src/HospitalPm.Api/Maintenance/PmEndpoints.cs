@@ -83,7 +83,7 @@ public static class PmEndpoints
         group.MapGet("/summary", SummaryAsync);
 
         var owner = group.MapGroup(string.Empty)
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin, Roles.BiomedicalHead, Roles.SeniorEngineer));
+            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
 
         owner.MapPost("/schedules", CreateScheduleAsync);
         owner.MapPost("/schedules/bulk", CreateSchedulesBulkAsync);

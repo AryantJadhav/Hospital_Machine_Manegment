@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using HospitalPm.Domain.Checklists;
 using HospitalPm.Domain.Identity;
 using HospitalPm.Domain.Maintenance;
@@ -37,15 +37,16 @@ public static class PmExecutionEndpoints
         group.MapGet("/{id:int}/form", FormAsync);
         group.MapGet("/{id:int}/completion", CompletionAsync);
 
-        // Doing the PM is the technician's job — every role that works the
-        // floor can submit one.
+        // Doing the PM is the job. Anyone signed in may record one —
+        // that is what an Employee account exists for.
         group.MapPost("/{id:int}/complete", CompleteAsync);
 
-        // Deciding a PM will not happen is a supervisory call, not a
-        // technician's, because a skip is a permanent gap in the record.
+        // Deciding a PM will not happen is not. A skip is a permanent gap
+        // in the maintenance record, and choosing that a machine goes
+        // unmaintained this quarter is a call about the department, not a
+        // call for whoever is holding the work list that morning.
         group.MapPost("/{id:int}/skip", SkipAsync)
-            .RequireAuthorization(p => p.RequireRole(
-                Roles.Admin, Roles.BiomedicalHead, Roles.SeniorEngineer));
+            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
     }
 
     /// <summary>

@@ -23,7 +23,9 @@ import './App.css';
 
 function Shell() {
   const { user, logout, can } = useAuth();
-  const canImport = can(ROLES.admin, ROLES.biomedicalHead);
+  // One flag, because there is one line: an Employee records what they did,
+  // an Admin decides what gets done. Everything hidden below is a decision
+  // about the department rather than a record of a job.
   const isAdmin = can(ROLES.admin);
 
   return (
@@ -57,14 +59,14 @@ function Shell() {
           Locations
         </NavLink>
 
-        {/* Visible to everyone, editable only by an author. A technician
-            reading the checklist they are about to work from is reasonable;
-            the server enforces who may change it. */}
+        {/* Visible to everyone, editable only by an Admin. Someone reading
+            the checklist they are about to work from is reasonable; the
+            server enforces who may change it. */}
         <NavLink to="/checklists" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
           Checklists
         </NavLink>
 
-        {canImport && (
+        {isAdmin && (
           <NavLink to="/import" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
             Import
           </NavLink>
@@ -95,7 +97,13 @@ function Shell() {
         )}
 
         <div className="nav-right">
-          <span className="muted">{user?.fullName ?? user?.userName}</span>
+          {/* The role is shown next to the name. An Employee who cannot find
+              the Staff tab should be able to see why without asking. */}
+          <span className="muted">
+            {user?.fullName ?? user?.userName}
+            {' · '}
+            {isAdmin ? 'Administrator' : 'Employee'}
+          </span>
           <button className="btn btn-quiet" onClick={() => void logout()}>Sign out</button>
         </div>
       </nav>
@@ -112,7 +120,7 @@ function Shell() {
           <Route path="/scan" element={<ScanPage />} />
           <Route
             path="/import"
-            element={canImport ? <ImportPage /> : <Navigate to="/dashboard" replace />}
+            element={isAdmin ? <ImportPage /> : <Navigate to="/dashboard" replace />}
           />
           <Route
             path="/staff"

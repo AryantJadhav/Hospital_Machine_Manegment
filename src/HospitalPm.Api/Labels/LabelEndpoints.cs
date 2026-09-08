@@ -34,10 +34,10 @@ public static class LabelEndpoints
 
         // Bulk printing is a tagging exercise run by the register owner.
         group.MapPost("/sheet", SheetAsync)
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin, Roles.BiomedicalHead, Roles.SeniorEngineer));
+            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
 
         group.MapPost("/zpl", ZplAsync)
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin, Roles.BiomedicalHead, Roles.SeniorEngineer));
+            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
     }
 
     private static async Task<IResult> QrAsync(
