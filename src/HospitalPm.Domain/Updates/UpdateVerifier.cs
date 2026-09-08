@@ -120,13 +120,7 @@ public sealed class UpdateVerifier(string publicKeyBase64)
         if (!Version.TryParse(manifest.Version, out var parsed)) return false;
         if (parsed.Major < 0 || parsed.Minor < 0 || parsed.Build < 0) return false;
 
-        // A bare file name and nothing else. A manifest that could name a
-        // path — "..\..\Windows\System32\cmd.exe", a UNC share — would turn
-        // one signed release into a way to run any executable on the machine,
-        // for as long as that signature stays valid.
-        if (string.IsNullOrWhiteSpace(manifest.InstallerFileName)) return false;
-        if (manifest.InstallerFileName != Path.GetFileName(manifest.InstallerFileName)) return false;
-        if (manifest.InstallerFileName.Contains("..", StringComparison.Ordinal)) return false;
+        if (!IsBareFileName(manifest.InstallerFileName)) return false;
 
         if (manifest.SizeBytes <= 0) return false;
         if (manifest.Sha256 is not { Length: 64 }) return false;
@@ -134,6 +128,47 @@ public sealed class UpdateVerifier(string publicKeyBase64)
 
         version = parsed;
         return true;
+    }
+
+    /// <summary>
+    /// A bare file name and nothing else.
+    ///
+    /// A manifest that could name a path — "..\..\Windows\System32\cmd.exe", a
+    /// UNC share, a drive letter — would turn one signed release into a way to
+    /// run any executable on the machine, for as long as that signature stayed
+    /// valid. The signature is not the defence here: our own release process
+    /// could produce such a manifest and it would be correctly signed.
+    ///
+    /// Spelled out rather than delegated to Path.GetFileName, which answers a
+    /// different question depending on where it runs. On Linux a backslash is
+    /// an ordinary character, so GetFileName hands back
+    /// "C:\Windows\System32\cmd.exe" unchanged and calls it a file name — and
+    /// the same signed manifest can be presented to a Windows install and a
+    /// Linux one, so a check that varies by platform is not a check. CI on
+    /// Linux is what caught this.
+    /// </summary>
+    private static bool IsBareFileName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return false;
+
+        // Both platforms' separators, always, whichever one we happen to be on.
+        if (name.Contains('/', StringComparison.Ordinal)) return false;
+        if (name.Contains('\\', StringComparison.Ordinal)) return false;
+
+        // Drive letters, and NTFS alternate data streams — "setup.exe:payload"
+        // names a stream, not the file it appears to name.
+        if (name.Contains(':', StringComparison.Ordinal)) return false;
+
+        // Traversal, and the two names that mean a directory.
+        if (name.Contains("..", StringComparison.Ordinal)) return false;
+        if (name is "." or "..") return false;
+
+        // Trailing dots and spaces are stripped by Windows when it opens a
+        // file, so "setup.exe " and "setup.exe." both resolve elsewhere than
+        // the name that was hashed.
+        if (name != name.Trim() || name.EndsWith('.')) return false;
+
+        return name.All(c => !char.IsControl(c));
     }
 
     private bool SignatureIsGood(UpdateManifestFile.Parsed parsed)

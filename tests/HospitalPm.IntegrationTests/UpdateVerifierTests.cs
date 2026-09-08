@@ -137,12 +137,26 @@ public sealed class UpdateVerifierTests
     /// as long as that signature stayed valid, let whoever holds a copy of it
     /// point the installer step at any executable on disk or on a share.
     /// </summary>
+    /// <remarks>
+    /// Every case runs on Windows and on Linux, and that is the point. The
+    /// first version of this check used Path.GetFileName, which on Linux
+    /// treats a backslash as an ordinary character and so waved through
+    /// C:\Windows\System32\cmd.exe as a perfectly good file name. The same
+    /// signed manifest can be handed to a Windows install and a Linux one, so
+    /// a check that varies by platform is not a check. Linux CI caught it.
+    /// </remarks>
     [Theory]
     [InlineData(@"..\..\Windows\System32\cmd.exe")]
     [InlineData("../../../etc/passwd")]
     [InlineData(@"C:\Windows\System32\cmd.exe")]
     [InlineData(@"\\attacker\share\payload.exe")]
     [InlineData("sub/folder/setup.exe")]
+    [InlineData("setup.exe:payload")]
+    [InlineData("setup.exe ")]
+    [InlineData("setup.exe.")]
+    [InlineData(".")]
+    [InlineData("..")]
+    [InlineData("setup\u0000.exe")]
     public void A_manifest_naming_a_path_rather_than_a_file_is_refused(string installerFileName)
     {
         var keys = NewKeys();

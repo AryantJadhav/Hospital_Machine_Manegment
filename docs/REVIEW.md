@@ -439,7 +439,16 @@ A signed manifest may only name a bare file name. A manifest that could name a
 path would turn one release into a way to run any executable on the machine,
 for as long as that signature stayed valid — the shape check, not the
 signature, is what stops that, because our own release process could produce
-it and it would be correctly signed. `UpdateVerifierTests` covers it.
+it and it would be correctly signed.
+
+That check is spelled out rather than delegated to `Path.GetFileName`, which
+answers a different question depending on where it runs: on Linux a backslash
+is an ordinary character, so `GetFileName` hands back
+`C:\Windows\System32\cmd.exe` unchanged and calls it a file name. The same
+signed manifest can be presented to a Windows install and a Linux one, so a
+check that varies by platform is not a check. The first version of this had
+that bug and Linux CI caught it; `UpdateVerifierTests` now runs every case on
+both.
 
 A build with no update public key refuses every update rather than trusting
 one. That is the safe failure and it is permanent for every machine that
