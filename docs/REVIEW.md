@@ -497,9 +497,41 @@ IT department.
 And one sharp edge worth knowing: the installer **deletes and rewrites**
 `ProgramData\Hospital PMppsettings.json` on every install and upgrade, so a
 machine-level setting added by hand does not survive one. `FeedUrl` is
-therefore meant to be baked into the shipped `appsettings.json` at build time,
-where it is a property of the product rather than of the hospital. A site that
-wants its own mirror has to re-add it after each upgrade, or use the USB path.
+therefore baked into the shipped `appsettings.json` at build time, where it is
+a property of the product rather than of the hospital. A site that wants its
+own mirror has to re-add it after each upgrade, or use the USB path.
+
+### Cutting a release
+
+Tagging `vX.Y.Z` builds, smoke-tests on a real Windows machine, and **drafts**
+a release carrying the installer and the update public key that build was made
+with. It stops there, because the next step needs a private key that is
+deliberately not in CI:
+
+```
+./installer/sign-release.ps1 -Version X.Y.Z -Key <update-signing-key.pem>
+```
+
+That downloads the installer CI actually built — not a local rebuild, because
+"should be byte-identical" and "is the file people will run" are different
+claims — signs a manifest naming it, checks the manifest verifies against the
+public key from the same release, and only then uploads `HospitalPM.update`.
+Publishing is a separate, deliberate act.
+
+**Why the private key is not a CI secret.** It authorises an executable to run
+as LocalSystem on every hospital that installs this. In a GitHub secret it is
+as safe as the GitHub account, a workflow edit, and every action the workflow
+trusts. The cost of keeping it local is one command between drafting and
+publishing; the cost of the alternative is that a compromised repository is a
+compromised hospital. That trade is worth revisiting when there is a team and
+a hardware token, and not before.
+
+The feed URL and the asset names are load-bearing together: `FeedUrl` points at
+`releases/latest/download/HospitalPM.update`, and the installer is fetched from
+the same folder under the name the manifest gives. So the `.update` asset must
+keep that exact name forever, and `releases/latest` must mean what a hospital
+should get — a draft or a prerelease is invisible to it, which is the intended
+safety.
 
 ## 10. Where I think the weaknesses are
 
