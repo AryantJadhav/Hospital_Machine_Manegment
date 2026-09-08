@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -12,7 +12,7 @@ namespace HospitalPm.IntegrationTests;
 /// Managing the hospital's staff.
 ///
 /// Until these endpoints existed an installation had exactly one account
-/// forever, which made the four roles decorative, every PM signature name the
+/// forever, which made the roles decorative, every PM signature name the
 /// same person, and the work-order screen assign every job to user id 1.
 ///
 /// The interesting cases are the refusals. Creating a user is ordinary; the
@@ -88,7 +88,7 @@ public sealed class UserApiTests(PostgresFixture fixture) : IAsyncLifetime, IDis
             userName = $"tech-{_suffix}",
             fullName = "R Patil",
             staffCode = "BME-07",
-            role = Domain.Identity.Roles.Technician,
+            role = Domain.Identity.Roles.Employee,
             password = Password,
         });
 
@@ -103,9 +103,9 @@ public sealed class UserApiTests(PostgresFixture fixture) : IAsyncLifetime, IDis
     }
 
     [Fact]
-    public async Task A_technician_cannot_create_accounts()
+    public async Task An_employee_cannot_create_accounts()
     {
-        await NewUserAsync($"tech-noadmin-{_suffix}", Domain.Identity.Roles.Technician);
+        await NewUserAsync($"tech-noadmin-{_suffix}", Domain.Identity.Roles.Employee);
         using var technician = _factory.CreateClient();
         await SignInAsync(technician, $"tech-noadmin-{_suffix}");
 
@@ -175,7 +175,7 @@ public sealed class UserApiTests(PostgresFixture fixture) : IAsyncLifetime, IDis
             {
                 fullName = "Still Admin",
                 staffCode = (string?)null,
-                role = Domain.Identity.Roles.Technician,
+                role = Domain.Identity.Roles.Employee,
             });
 
             Assert.Equal(HttpStatusCode.BadRequest, demote.StatusCode);
@@ -191,7 +191,7 @@ public sealed class UserApiTests(PostgresFixture fixture) : IAsyncLifetime, IDis
     [Fact]
     public async Task Deactivating_someone_ends_their_session_immediately()
     {
-        await NewUserAsync($"leaver-{_suffix}", Domain.Identity.Roles.Technician);
+        await NewUserAsync($"leaver-{_suffix}", Domain.Identity.Roles.Employee);
 
         using var leaver = _factory.CreateClient();
         var login = await leaver.PostAsJsonAsync("/api/auth/login",
@@ -217,7 +217,7 @@ public sealed class UserApiTests(PostgresFixture fixture) : IAsyncLifetime, IDis
     [Fact]
     public async Task A_password_reset_ends_every_existing_session()
     {
-        await NewUserAsync($"forgot-{_suffix}", Domain.Identity.Roles.SeniorEngineer);
+        await NewUserAsync($"forgot-{_suffix}", Domain.Identity.Roles.Admin);
 
         using var person = _factory.CreateClient();
         var login = await person.PostAsJsonAsync("/api/auth/login",
@@ -245,7 +245,7 @@ public sealed class UserApiTests(PostgresFixture fixture) : IAsyncLifetime, IDis
     [Fact]
     public async Task A_deactivated_person_is_hidden_from_the_staff_list_but_not_erased()
     {
-        await NewUserAsync($"gone-{_suffix}", Domain.Identity.Roles.Technician);
+        await NewUserAsync($"gone-{_suffix}", Domain.Identity.Roles.Employee);
         var id = await IdOfAsync($"gone-{_suffix}");
         (await _admin.PostAsJsonAsync($"/api/users/{id}/deactivate", new { })).EnsureSuccessStatusCode();
 

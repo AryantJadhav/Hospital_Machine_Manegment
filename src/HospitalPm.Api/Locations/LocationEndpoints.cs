@@ -44,13 +44,13 @@ public static class LocationEndpoints
         // The location tree is the spine of the register. Getting it wrong
         // misfiles every asset under it, so editing is a register-owner job.
         group.MapPost("/", CreateAsync)
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin, Roles.BiomedicalHead));
+            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
 
         group.MapPut("/{id:int}", UpdateAsync)
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin, Roles.BiomedicalHead));
+            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
 
         group.MapDelete("/{id:int}", DeleteAsync)
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin, Roles.BiomedicalHead));
+            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
     }
 
     private static async Task<IResult> ListAsync(HospitalPmDbContext db, CancellationToken ct)

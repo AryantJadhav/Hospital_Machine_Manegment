@@ -34,7 +34,7 @@ const COLLAPSED_KEY = 'hospitalpm.collapsedLocations';
 
 export function LocationsPage() {
   const { can } = useAuth();
-  const canEdit = can(ROLES.admin, ROLES.biomedicalHead);
+  const canEdit = can(ROLES.admin);
 
   const [items, setItems] = useState<Location[]>([]);
   const [loading, setLoading] = useState(true);

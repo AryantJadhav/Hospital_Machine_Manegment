@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -95,7 +95,7 @@ public sealed class BulkScheduleApiTests(PostgresFixture fixture) : IAsyncLifeti
             FullName = "Bulk Schedule User",
         };
         await users.CreateAsync(user, password);
-        await users.AddToRoleAsync(user, Domain.Identity.Roles.BiomedicalHead);
+        await users.AddToRoleAsync(user, Domain.Identity.Roles.Admin);
 
         var login = await _client.PostAsJsonAsync("/api/auth/login", new { userName, password });
         login.EnsureSuccessStatusCode();
@@ -277,7 +277,7 @@ public sealed class BulkScheduleApiTests(PostgresFixture fixture) : IAsyncLifeti
     }
 
     [Fact]
-    public async Task A_technician_cannot_schedule_the_hospital()
+    public async Task An_employee_cannot_schedule_the_hospital()
     {
         await PublishAsync();
 
@@ -293,7 +293,7 @@ public sealed class BulkScheduleApiTests(PostgresFixture fixture) : IAsyncLifeti
             UserName = userName, FullName = "Bulk Technician",
         };
         await users.CreateAsync(user, password);
-        await users.AddToRoleAsync(user, Domain.Identity.Roles.Technician);
+        await users.AddToRoleAsync(user, Domain.Identity.Roles.Employee);
 
         using var technician = _factory.CreateClient();
         var login = await technician.PostAsJsonAsync("/api/auth/login", new { userName, password });

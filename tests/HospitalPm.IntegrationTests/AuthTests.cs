@@ -9,13 +9,17 @@ namespace HospitalPm.IntegrationTests;
 public sealed class AuthTests(PostgresFixture fixture)
 {
     [Fact]
-    public async Task All_four_roles_are_seeded()
+    public async Task Both_roles_are_seeded_and_nothing_else()
     {
         await using var db = fixture.CreateContext();
 
         var names = await db.Roles.Select(r => r.Name).ToListAsync();
 
-        Assert.Equal(4, names.Count);
+        // Exactly two, not at-least-two: the four-role seed is still in the
+        // migration history, so this is what proves the collapse actually
+        // removed BiomedicalHead, SeniorEngineer and Technician rather than
+        // leaving them behind for someone to be assigned to.
+        Assert.Equal(2, names.Count);
         foreach (var expected in Roles.All)
         {
             Assert.Contains(expected, names);
@@ -218,7 +222,7 @@ public sealed class AuthTests(PostgresFixture fixture)
         db.Users.Add(user);
         await db.SaveChangesAsync();
 
-        var technician = await db.Roles.SingleAsync(r => r.Name == Roles.Technician);
+        var technician = await db.Roles.SingleAsync(r => r.Name == Roles.Employee);
 
         await db.Database.ExecuteSqlRawAsync(
             "INSERT INTO app_user_role (tenant_id, user_id, role_id) VALUES (1, {0}, {1})",

@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using HospitalPm.Domain.Identity;
 using HospitalPm.Infrastructure.Identity;
 using HospitalPm.Infrastructure.Persistence;
@@ -36,37 +36,37 @@ public sealed record UserResponse(
 /// telling the caller to "ask an administrator to create your account" — and
 /// no endpoint existed that an administrator could use to do that.
 ///
-/// Everything downstream depended on it and quietly did not work. The four
-/// roles were untestable, a PM signature named the only account in the system,
-/// the audit trail's "who did what" had one answer, and the work-order screen
-/// assigned every job to user id 1 because there was nobody else.
+/// Everything downstream depended on it and quietly did not work. Roles were
+/// untestable, a PM signature named the only account in the system, the audit
+/// trail's "who did what" had one answer, and the work-order screen assigned
+/// every job to user id 1 because there was nobody else.
 ///
-/// A biomedical department is a team: a head who plans, engineers who execute,
-/// technicians who walk the rounds. This is what lets it be one.
+/// A biomedical department is a team: someone who plans and people who walk
+/// the rounds. This is what lets it be one.
 /// </summary>
 public static class UserEndpoints
 {
     public static void MapUserEndpoints(this IEndpointRouteBuilder app)
     {
-        // Reading the staff list is not an admin-only act: the work-order
-        // screen needs it to offer real people to assign a job to, and every
-        // role uses that.
+        // The whole group is administrators only, listing included.
+        //
+        // Reading the list used to be open to everyone, because the
+        // work-order screen needs real people to offer in the assign
+        // dropdown. Assigning is now an Admin act, so that reason is gone,
+        // and what was left was every technician's browser downloading each
+        // colleague's role, staff code and last sign-in. Nothing an Employee
+        // can see asks for it.
         var group = app.MapGroup("/api/users")
             .WithTags("Staff")
-            .RequireAuthorization();
+            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
 
         group.MapGet("/", ListAsync);
 
-        // Creating accounts and changing what someone may do is an
-        // administrator's job and nobody else's.
-        var admin = group.MapGroup(string.Empty)
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
-
-        admin.MapPost("/", CreateAsync);
-        admin.MapPut("/{id:int}", UpdateAsync);
-        admin.MapPost("/{id:int}/deactivate", DeactivateAsync);
-        admin.MapPost("/{id:int}/activate", ActivateAsync);
-        admin.MapPost("/{id:int}/reset-password", ResetPasswordAsync);
+        group.MapPost("/", CreateAsync);
+        group.MapPut("/{id:int}", UpdateAsync);
+        group.MapPost("/{id:int}/deactivate", DeactivateAsync);
+        group.MapPost("/{id:int}/activate", ActivateAsync);
+        group.MapPost("/{id:int}/reset-password", ResetPasswordAsync);
 
         // Deliberately no delete. A user is referenced by every PM they
         // signed, every work order they touched and every audit row they

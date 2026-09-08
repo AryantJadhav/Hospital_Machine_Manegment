@@ -36,8 +36,8 @@ const PAGE_SIZE = 25;
 
 export function EquipmentListPage() {
   const { can } = useAuth();
-  const canPrint = can(ROLES.admin, ROLES.biomedicalHead, ROLES.seniorEngineer);
-  const canEdit = can(ROLES.admin, ROLES.biomedicalHead, ROLES.seniorEngineer);
+  const canPrint = can(ROLES.admin);
+  const canEdit = can(ROLES.admin);
   const [adding, setAdding] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [printing, setPrinting] = useState(false);
