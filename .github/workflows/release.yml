@@ -175,6 +175,19 @@ jobs:
           Write-Output "Shipped build carries a licence key, a separate update key, and a feed URL."
           Write-Output ("  feed: " + $settings.Update.FeedUrl)
 
+          # The version the running service will report, which is what decides
+          # whether a later update looks newer than what is installed. A build
+          # stamped 1.0.0.0 regardless of its tag would install fine and then
+          # offer the same update forever.
+          # The version resource, not GetAssemblyName: this is a single-file
+          # publish, so the exe is a native host with the assembly inside it.
+          $stamped = (Get-Item artifacts/win-x64/hospitalpm.exe).VersionInfo.FileVersion
+          if ($stamped -ne "${{ steps.version.outputs.version }}.0") {
+            Write-Output "::error::The published binary reports version $stamped but this release is ${{ steps.version.outputs.version }}. Installs would report the wrong version and mis-handle updates."
+            exit 1
+          }
+          Write-Output "  stamped version: $stamped"
+
       # Published alongside the installer so the signing step can prove,
       # before anything is uploaded, that the manifest it just made will
       # actually verify against the key this build shipped with. Signing

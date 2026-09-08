@@ -324,9 +324,38 @@ if (Test-Path $publishDir) {
 }
 
 Write-Host "==> dotnet publish"
+
+# -p:Version stamps the assembly, and the assembly is what the running service
+# reports as its own version - on /health, on the update page, and in the
+# comparison that decides whether an update is newer than what is installed.
+#
+# Without it every build ships 1.0.0.0 forever. The installer's own version
+# would still be right, so an upgrade would install correctly and then report
+# the old number, offer the same update again, and keep offering it. The
+# "already installed" guard is inert in exactly the case it exists for.
 dotnet publish (Join-Path $repoRoot "src\HospitalPm.Api\HospitalPm.Api.csproj") `
-    -c Release -r $Rid --self-contained true -o $publishDir
+    -c Release -r $Rid --self-contained true -o $publishDir `
+    -p:Version=$Version
 if ($LASTEXITCODE -ne 0) { throw "publish failed" }
+
+# Read back rather than trust the switch. A version that silently failed to
+# apply is invisible until a hospital cannot get past an update it already has.
+#
+# Read off the executable's version resource, not with GetAssemblyName: this
+# is a self-contained single-file publish, so hospitalpm.exe is a native host
+# with the managed assembly bundled inside it and there is no .dll to inspect.
+# Both numbers come from the same -p:Version, so the resource is a faithful
+# proxy for what Assembly.GetEntryAssembly() will report at run time.
+$exePath = Join-Path $publishDir "hospitalpm.exe"
+if (-not (Test-Path $exePath)) {
+    throw "No hospitalpm.exe in the published output."
+}
+
+$stamped = (Get-Item $exePath).VersionInfo.FileVersion
+if ($stamped -ne "$Version.0") {
+    throw "The published binary reports version $stamped, expected $Version.0. An install would report the wrong version and mis-handle updates."
+}
+Write-Host "    stamped version: $stamped"
 
 # The UI is the thing most likely to be silently missing, so it is checked
 # rather than assumed.
