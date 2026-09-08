@@ -484,7 +484,7 @@ Assert-That ($health -eq 200)               "bare upgrade: /health answered 200 
 
 # The name on every printed report. An upgrade is not told it and must not
 # lose it.
-$settingsAfter = Get-Content "$DataDirppsettings.json" -Raw | ConvertFrom-Json
+$settingsAfter = Get-Content "$DataDir\appsettings.json" -Raw | ConvertFrom-Json
 Assert-That ($settingsAfter.FirstRun.HospitalName -eq "Sahyadri Hospital, Pune") `
     "bare upgrade: kept the hospital name (was '$($settingsAfter.FirstRun.HospitalName)')"
 

@@ -259,10 +259,10 @@ var
   Existing: AnsiString;
 begin
   Result := '';
-  if not FileExists(DataDir + 'ppsettings.json') then
+  if not FileExists(DataDir + '\appsettings.json') then
     Exit;
 
-  if LoadStringFromFile(DataDir + 'ppsettings.json', Existing) then
+  if LoadStringFromFile(DataDir + '\appsettings.json', Existing) then
     Result := ReadJsonField(String(Existing), 'HospitalName');
 end;
 
@@ -282,10 +282,10 @@ var
   Colon: Integer;
 begin
   Result := '';
-  if not FileExists(DataDir + 'ppsettings.json') then
+  if not FileExists(DataDir + '\appsettings.json') then
     Exit;
 
-  if not LoadStringFromFile(DataDir + 'ppsettings.json', Existing) then
+  if not LoadStringFromFile(DataDir + '\appsettings.json', Existing) then
     Exit;
 
   Urls := ReadJsonField(String(Existing), 'Urls');
@@ -370,10 +370,19 @@ begin
   // serving on - an upgrade must not move a hospital off the port they
   // chose. 5000 only for a genuinely new install.
   PortPage.Values[0] := ExpandConstant('{param:PORT|}');
-  if Trim(PortPage.Values[0]) = '' then
+  if Trim(PortPage.Values[0]) <> '' then
+    Log('Port ' + PortPage.Values[0] + ' came from /PORT.')
+  else
+  begin
     PortPage.Values[0] := ExistingAppPort();
-  if Trim(PortPage.Values[0]) = '' then
-    PortPage.Values[0] := '5000';
+    if Trim(PortPage.Values[0]) <> '' then
+      Log('Port ' + PortPage.Values[0] + ' inherited from the existing install.')
+    else
+    begin
+      PortPage.Values[0] := '5000';
+      Log('Port 5000: no /PORT given and no existing install to inherit from.');
+    end;
+  end;
 end;
 
 function GetPort(Param: String): String;
@@ -681,6 +690,12 @@ begin
 
   AppPort := Trim(PortPage.Values[0]);
   DbPort := GetDbPort('');
+
+  // Said out loud because it could not be worked out from the log otherwise.
+  // A silent upgrade that quietly picked the wrong port looked, in the log,
+  // exactly like one that picked the right one: Setup polls whichever port
+  // it chose and reports success either way.
+  Log('Application port: ' + AppPort + '   database port: ' + DbPort);
 
   // Ports are checked AFTER stopping our own services, so on an upgrade we
   // are not reporting a conflict with ourselves.
