@@ -178,8 +178,21 @@ public static class ReportEndpoints
                  && t.CompletedAtUtc!.Value.Year == today.Year
                  && t.CompletedAtUtc!.Value.Month == today.Month, ct);
 
+        // Compliance compares like with like: of the PMs that actually fell due
+        // this month up to today, how many have been done.
+        //
+        // It used to divide completedThisMonth — every completion recorded this
+        // month, including a year of backlog being cleared — by only the PMs
+        // due this month. Two different populations. A department catching up
+        // showed either nothing at all (418 completions over a denominator of
+        // zero) or a figure well over 100%, which is worse: it is the number an
+        // auditor is handed.
         var dueThisMonth = await db.PmTasks.CountAsync(
             t => t.DueDate >= monthStart && t.DueDate <= today, ct);
+
+        var dueThisMonthDone = await db.PmTasks.CountAsync(
+            t => t.DueDate >= monthStart && t.DueDate <= today
+                 && t.Status == PmTaskStatus.Completed, ct);
 
         return Results.Ok(new
         {
@@ -204,7 +217,7 @@ public static class ReportEndpoints
                 // zero denominator, which is every hospital on day one.
                 complianceThisMonth = dueThisMonth == 0
                     ? (int?)null
-                    : (int)Math.Round(100.0 * completedThisMonth / dueThisMonth),
+                    : (int)Math.Round(100.0 * dueThisMonthDone / dueThisMonth),
             },
             workOrders = new
             {
