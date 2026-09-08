@@ -10,10 +10,18 @@ export type CurrentUser = {
 export type AuthState = {
   user: CurrentUser | null;
   loading: boolean;
-  login: (userName: string, password: string) => Promise<void>;
+  /**
+   * `expecting` is the role the login screen's chooser was set to. It changes
+   * nothing about the sign-in — it only decides whether the shell says
+   * afterwards that the account turned out to be the other kind.
+   */
+  login: (userName: string, password: string, expecting?: string) => Promise<void>;
   logout: () => Promise<void>;
   /** True when the user holds any of the given roles. */
   can: (...roles: string[]) => boolean;
+  /** Set when the chooser and the account disagreed. Shown once, then dismissed. */
+  signInNotice: string | null;
+  dismissNotice: () => void;
 };
 
 // Kept apart from the provider component so the module holding it exports
