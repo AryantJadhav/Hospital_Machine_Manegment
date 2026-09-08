@@ -455,13 +455,51 @@ one. That is the safe failure and it is permanent for every machine that
 installs that build, which is why the release workflow will not cut one
 without the key.
 
-**What this does not have.** No rollback beyond restore-from-backup. No
-download-from-the-internet half yet — deliberately, because that half is a
-remote code execution channel into hospitals and is worth doing slowly. And
-the installer itself is still unsigned by any certificate authority, so
-SmartScreen will warn: our manifest signature answers "was this file
-tampered with", but a code-signing certificate is what makes running it
-defensible to a hospital's IT department.
+### Fetching it over the network
+
+The same two files, delivered differently. `Update:FeedUrl` points straight at
+a `.update` file — a stable address that always serves the newest one — and
+the installer is fetched from the same folder, named by the manifest. Because
+a manifest may only name a bare file name, a signed manifest cannot redirect
+the download to another host or another path.
+
+The download decides nothing. It writes the manifest to the update folder,
+verifies it there, fetches the installer beside it, and re-verifies. What is
+on disk afterwards is exactly what a USB stick would have left, and the
+install path that runs next cannot tell the difference. Anything that fails
+is deleted rather than left looking like a pending update.
+
+This is the only outbound HTTP in the product, and the shape of it is the
+point:
+
+- **Off unless configured.** Empty `FeedUrl` disables it entirely.
+- **Manual only.** No schedule, no background check, no startup ping. A
+  hospital network sees one request that somebody asked for.
+- **Nothing identifying.** A constant `User-Agent`, no cookies, no
+  credentials, no licence id, no machine name, no query parameters. A request
+  that identified the hospital would make this telemetry by accident.
+- **https only**, refused before a socket opens, and refused again if a
+  redirect lands on plaintext.
+- **A byte cap enforced on what is written**, not on the `Content-Length` the
+  server claimed, so a hostile or broken server cannot fill the disk.
+
+It also adds no NuGet dependency: `UpdateDownloader` takes an `HttpClient`
+rather than an `IHttpClientFactory`, because `Microsoft.Extensions.Http` is
+already in the ASP.NET Core shared framework the API references and pulling it
+into Infrastructure would be a package bought for one constructor parameter.
+
+**What this does not have.** No rollback beyond restore-from-backup. The
+installer is still unsigned by any certificate authority, so SmartScreen will
+warn: the manifest signature answers "was this file tampered with", but a
+code-signing certificate is what makes running it defensible to a hospital's
+IT department.
+
+And one sharp edge worth knowing: the installer **deletes and rewrites**
+`ProgramData\Hospital PMppsettings.json` on every install and upgrade, so a
+machine-level setting added by hand does not survive one. `FeedUrl` is
+therefore meant to be baked into the shipped `appsettings.json` at build time,
+where it is a property of the product rather than of the hospital. A site that
+wants its own mirror has to re-add it after each upgrade, or use the USB path.
 
 ## 10. Where I think the weaknesses are
 

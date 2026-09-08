@@ -86,6 +86,43 @@ builder.Services.AddSingleton<HospitalPm.Domain.Updates.IUpdateFileSystem,
     HospitalPm.Infrastructure.Updates.UpdateFileSystem>();
 builder.Services.AddSingleton<HospitalPm.Infrastructure.Updates.IUpdateLauncher,
     HospitalPm.Infrastructure.Updates.UpdateLauncher>();
+
+// The only outbound HTTP in the product. It exists so an administrator can
+// press "check for updates"; it never runs on a schedule, sends nothing
+// about the hospital, and is inert unless Update:FeedUrl is set. The
+// air-gapped promise is that the core loop never needs the network, not
+// that the network is forbidden when somebody asks for it.
+builder.Services
+    .AddHttpClient<HospitalPm.Infrastructure.Updates.IUpdateDownloader,
+                   HospitalPm.Infrastructure.Updates.UpdateDownloader>(http =>
+    {
+        // Long enough for a couple of hundred megabytes over a bad
+        // hospital connection. The request is user-initiated and reports
+        // progress, so a generous ceiling costs nothing.
+        http.Timeout = TimeSpan.FromMinutes(
+            Math.Clamp(
+                builder.Configuration.GetValue("Update:DownloadTimeoutMinutes", 30), 1, 120));
+
+        // A constant, deliberately carrying no machine name, licence id or
+        // version. A request that identified the hospital would make this a
+        // telemetry channel by accident.
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("HospitalPM");
+    })
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        // Release hosting redirects, so this has to follow them - but a
+        // short chain, and the downloader refuses a final address that is
+        // not https.
+        AllowAutoRedirect = true,
+        MaxAutomaticRedirections = 5,
+
+        // No cookies and no credentials: there is nothing to authenticate
+        // to, and a public file fetch that carried either would be a way to
+        // leak something.
+        UseCookies = false,
+        UseDefaultCredentials = false,
+    });
+
 builder.Services.AddScoped<HospitalPm.Infrastructure.Updates.UpdateService>();
 builder.Services.Configure<FirstRunOptions>(builder.Configuration.GetSection(FirstRunOptions.Section));
 builder.Services.AddSingleton<QrCodeService>();
