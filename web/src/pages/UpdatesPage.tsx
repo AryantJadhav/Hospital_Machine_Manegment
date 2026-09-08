@@ -29,6 +29,8 @@ type Candidate = {
 
 type Status = {
   enabled: boolean;
+  canCheckOnline: boolean;
+  feedUrl: string | null;
   runningVersion: string;
   defaultFolder: string;
   folder: string;
@@ -59,11 +61,19 @@ function megabytes(bytes: number | null): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+type OnlineResult = {
+  reachable: boolean;
+  problem: string | null;
+  available: Candidate | null;
+};
+
 export function UpdatesPage() {
   const [data, setData] = useState<Status | null>(null);
   const [folder, setFolder] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [checking, setChecking] = useState<'idle' | 'looking' | 'downloading'>('idle');
+  const [online, setOnline] = useState<OnlineResult | null>(null);
 
   // Set once the installer has been handed control. From then on this page is
   // talking to a server that is shutting down, and the only useful thing it
@@ -88,6 +98,23 @@ export function UpdatesPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function check(download: boolean) {
+    setChecking(download ? 'downloading' : 'looking');
+    setError(null);
+    try {
+      const result = await api.post<OnlineResult>('/api/admin/update/check', { download });
+      setOnline(result);
+
+      // A download that arrived and verified shows up in the folder
+      // listing below, which is the same place a USB stick would put it.
+      if (result.available?.canInstall) await load(folder);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not check for updates.');
+    } finally {
+      setChecking('idle');
+    }
+  }
 
   if (loading && !data) return <div className="page"><p className="muted">Loading…</p></div>;
 
@@ -123,6 +150,62 @@ export function UpdatesPage() {
       )}
 
       {done && <p className="alert alert-ok" role="status">{done}</p>}
+
+      {data?.enabled && !installing && data.canCheckOnline && (
+        <div className="card stack">
+          <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Check online</h2>
+          <p className="muted" style={{ margin: 0 }}>
+            This machine can look for updates itself. Nothing about the hospital is sent, and
+            nothing is checked unless you press the button.
+          </p>
+
+          <div className="row">
+            <button
+              className="btn"
+              disabled={checking !== 'idle'}
+              onClick={() => void check(false)}
+            >
+              {checking === 'looking' ? 'Looking…' : 'Check for updates'}
+            </button>
+
+            {online?.available?.state === 'InstallerMissing' && (
+              <button
+                className="btn btn-primary"
+                disabled={checking !== 'idle'}
+                onClick={() => void check(true)}
+              >
+                {checking === 'downloading'
+                  ? 'Downloading…'
+                  : `Download version ${online.available.version}`}
+              </button>
+            )}
+          </div>
+
+          {checking === 'downloading' && (
+            <p className="muted" style={{ margin: 0 }}>
+              A few hundred megabytes over the hospital’s connection. Nothing is installed by
+              downloading it — the update appears below when it has arrived and been checked.
+            </p>
+          )}
+
+          {/* Muted, not an alert. A hospital PC with no route out is the
+              normal case, and rendering it in red teaches people the
+              button is broken. */}
+          {online && !online.reachable && (
+            <p className="muted" style={{ margin: 0 }}>{online.problem}</p>
+          )}
+          {online?.reachable && online.problem && (
+            <p className="alert alert-error" role="alert">{online.problem}</p>
+          )}
+          {online?.available?.state === 'NotNewer' && (
+            <p className="muted" style={{ margin: 0 }}>{online.available.message}</p>
+          )}
+
+          <p className="muted" style={{ margin: 0, fontSize: '0.85rem' }}>
+            Looking at <span className="mono">{data.feedUrl}</span>
+          </p>
+        </div>
+      )}
 
       {data?.enabled && !installing && (
         <>

@@ -23,6 +23,7 @@ public static partial class UpdateEndpoints
             .RequireAuthorization(p => p.RequireRole(Roles.Admin));
 
         group.MapGet("/", Status);
+        group.MapPost("/check", CheckOnlineAsync);
         group.MapPost("/install", InstallAsync);
     }
 
@@ -38,10 +39,41 @@ public static partial class UpdateEndpoints
         return Results.Ok(new
         {
             enabled = updates.Enabled,
+            canCheckOnline = updates.CanCheckOnline,
+            feedUrl = updates.FeedUrl,
             runningVersion = UpdateService.RunningVersion.ToString(3),
             defaultFolder = updates.DefaultFolder,
             folder = scanned,
             available = updates.Scan(folder).Select(Describe),
+        });
+    }
+
+    /// <summary>
+    /// Looks online for a newer release, and optionally downloads it into
+    /// the update folder.
+    ///
+    /// Nothing is installed here. A successful download leaves exactly what
+    /// a USB stick would have left - a signed manifest and the installer it
+    /// names, in the same folder - and the ordinary install route takes it
+    /// from there. The download is a delivery mechanism, not a shortcut
+    /// past any check.
+    /// </summary>
+    private static async Task<IResult> CheckOnlineAsync(
+        [FromBody] CheckUpdateRequest request,
+        UpdateService updates,
+        CancellationToken ct)
+    {
+        var result = await updates.CheckOnlineAsync(request.Download, ct);
+
+        // 200 even when nothing was reachable. "This machine has no
+        // internet" is the expected answer on most hospital PCs, not a
+        // failure of the request, and a page that renders it as an error
+        // teaches people that the button is broken.
+        return Results.Ok(new
+        {
+            reachable = result.Reachable,
+            problem = result.Problem,
+            available = result.Candidate is null ? null : Describe(result.Candidate),
         });
     }
 
@@ -101,6 +133,13 @@ public static partial class UpdateEndpoints
     };
 
     internal sealed record InstallUpdateRequest(string ManifestPath);
+
+    /// <param name="Download">
+    /// False only looks, which is a few hundred bytes and answers "is there
+    /// anything new" without committing a poor connection to a couple of
+    /// hundred megabytes.
+    /// </param>
+    internal sealed record CheckUpdateRequest(bool Download);
 
     [LoggerMessage(Level = LogLevel.Warning,
         Message = "Update to {Version} handed over to the installer")]

@@ -36,10 +36,14 @@ public sealed partial class UpdateService(
     IOptions<UpdateOptions> options,
     IUpdateFileSystem files,
     IUpdateLauncher launcher,
+    IUpdateDownloader downloader,
     BackupService backups,
     ILogger<UpdateService> logger)
 {
     private readonly UpdateOptions _options = options.Value;
+
+    /// <summary>A manifest is a few hundred bytes. Anything near this is not one.</summary>
+    private const int MaxManifestBytes = 64 * 1024;
 
     /// <summary>
     /// Set once, for the life of the process, the moment an installer is
@@ -99,6 +103,117 @@ public sealed partial class UpdateService(
             .Select(path => VerifyOne(path, target))
             .OrderByDescending(c => c.Manifest?.Version, VersionText.Descending)];
     }
+
+    /// <summary>
+    /// Whether this install has been told where to look for updates online.
+    /// Empty by default and correct for most hospitals, which have no route
+    /// out at all.
+    /// </summary>
+    public bool CanCheckOnline =>
+        Enabled
+        && Uri.TryCreate(_options.FeedUrl, UriKind.Absolute, out var url)
+        && url.Scheme == Uri.UriSchemeHttps;
+
+    public string? FeedUrl => string.IsNullOrWhiteSpace(_options.FeedUrl) ? null : _options.FeedUrl.Trim();
+
+    /// <summary>
+    /// Fetches the newest update file and, if it is one we would install,
+    /// fetches the installer it names — leaving both in the update folder for
+    /// the ordinary install path to pick up.
+    ///
+    /// The download is not a second way to trust something. It is a second way
+    /// to get the same two files onto the same disk, and what happens to them
+    /// afterwards is identical to a USB stick: same signature, same hash, same
+    /// backup, same handover. Nothing here decides anything.
+    ///
+    /// Deliberately not automatic and not scheduled. This runs when an
+    /// administrator presses a button, so a hospital's network sees one
+    /// outbound request that somebody asked for, rather than a service that
+    /// phones out on its own.
+    /// </summary>
+    public async Task<OnlineCheck> CheckOnlineAsync(bool downloadInstaller, CancellationToken ct = default)
+    {
+        if (!Enabled)
+        {
+            return OnlineCheck.Unavailable(
+                "This build cannot verify an update's signature, so it will not download one.");
+        }
+
+        if (!CanCheckOnline)
+        {
+            return OnlineCheck.Unavailable(
+                "No update address is configured for this installation, so there is nothing to check. "
+                + "Updates can still be copied across on a USB stick.");
+        }
+
+        var feed = new Uri(_options.FeedUrl.Trim());
+
+        var manifest = await downloader.GetTextAsync(feed, MaxManifestBytes, ct);
+        if (!manifest.Ok) return OnlineCheck.Unavailable(manifest.Problem!);
+
+        Directory.CreateDirectory(DefaultFolder);
+
+        // Written to disk before verification and re-read from there, so the
+        // thing that gets checked is the thing that will be installed. The
+        // alternative — verify in memory, write afterwards — leaves the file
+        // that was signed and the file on disk as two separate claims.
+        var manifestPath = Path.Combine(DefaultFolder, DownloadedManifestName);
+        await File.WriteAllTextAsync(manifestPath, manifest.Text!, ct);
+
+        var candidate = Verify(manifestPath);
+
+        // The installer is not there yet, so InstallerMissing is the expected
+        // verdict at this point rather than a problem. Everything else is a
+        // real answer and stops here.
+        if (candidate.State is not (UpdateState.Ready or UpdateState.InstallerMissing))
+        {
+            if (candidate.State is UpdateState.NotOurs or UpdateState.Unreadable)
+            {
+                // Nothing signed by us: do not leave it lying in the folder
+                // looking like a pending update.
+                TryDelete(manifestPath);
+            }
+            return new OnlineCheck(true, candidate, null);
+        }
+
+        if (!downloadInstaller)
+        {
+            return new OnlineCheck(true, candidate, null);
+        }
+
+        var installerName = candidate.Manifest!.InstallerFileName;
+
+        // Built from the feed's own folder, and the file name has already been
+        // forced to be a bare name — no slashes, no colon, no traversal — so a
+        // signed manifest cannot point this at another host or another path.
+        var installerUrl = new Uri(feed, installerName);
+        var installerPath = Path.Combine(DefaultFolder, installerName);
+
+        var download = await downloader.GetFileAsync(
+            installerUrl, installerPath, _options.MaxInstallerBytes, ct);
+
+        if (!download.Ok)
+        {
+            return new OnlineCheck(true, candidate, download.Problem);
+        }
+
+        // Verified again now the installer is present. This is the hash check,
+        // and a download that fails it is deleted rather than left for someone
+        // to wonder about.
+        var verified = Verify(manifestPath);
+        if (!verified.CanInstall)
+        {
+            TryDelete(installerPath);
+        }
+
+        return new OnlineCheck(true, verified, null);
+    }
+
+    /// <summary>
+    /// One fixed name, so a check that runs twice replaces the previous
+    /// manifest instead of littering the folder with near-identical files.
+    /// </summary>
+    private const string DownloadedManifestName = "downloaded.update";
 
     /// <summary>Verifies one named update file, re-reading it from disk.</summary>
     public UpdateCandidate Verify(string manifestPath)
@@ -307,6 +422,15 @@ public sealed partial class UpdateService(
 /// <param name="Version">The version being installed.</param>
 /// <param name="LogPath">Where the installer will write its log, for when it goes wrong.</param>
 /// <param name="Message">Why it was refused, when it was.</param>
+/// <summary>What came back from looking online.</summary>
+/// <param name="Reachable">False when there was nothing to ask, or nobody answered.</param>
+/// <param name="Candidate">The verdict on what was fetched, when something was.</param>
+/// <param name="Problem">Why the fetch fell short, in plain English.</param>
+public sealed record OnlineCheck(bool Reachable, UpdateCandidate? Candidate, string? Problem)
+{
+    public static OnlineCheck Unavailable(string problem) => new(false, null, problem);
+}
+
 public sealed record UpdateHandover(bool Started, string? Version, string? LogPath, string? Message)
 {
     public static UpdateHandover Refused(string message) => new(false, null, null, message);

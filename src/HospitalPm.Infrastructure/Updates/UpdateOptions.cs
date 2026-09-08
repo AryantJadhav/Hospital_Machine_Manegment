@@ -47,4 +47,37 @@ public sealed class UpdateOptions
     /// deliberately, not so anyone can skip it by accident.
     /// </summary>
     public bool BackupFirst { get; set; } = true;
+
+    /// <summary>
+    /// Where to fetch the newest update file from, if this hospital has a
+    /// route out. Empty disables checking entirely, which is the default and
+    /// is the correct setting for most installs.
+    ///
+    /// Points straight at a .update file, not at an index. A stable URL that
+    /// always serves the newest one — GitHub's
+    /// releases/latest/download/HospitalPM.update, or a hospital group's own
+    /// mirror — means there is no second format to sign, parse and get wrong.
+    /// The installer is fetched from the same folder, named by the manifest.
+    ///
+    /// HTTPS only. The signature is what makes a download safe to run, not the
+    /// transport, but there is no reason to accept a plaintext channel when
+    /// the alternative is a USB stick that already works.
+    /// </summary>
+    public string FeedUrl { get; set; } = string.Empty;
+
+    /// <summary>
+    /// A ceiling on what a download may write, because the far end is not
+    /// trusted until its signature checks out and a hostile — or simply
+    /// broken — server can otherwise fill a hospital's disk. The installer
+    /// bundles PostgreSQL and is a couple of hundred megabytes; a gigabyte is
+    /// generous.
+    /// </summary>
+    public long MaxInstallerBytes { get; set; } = 1_073_741_824;
+
+    /// <summary>
+    /// How long a download may take before it is abandoned. Generous, because
+    /// a hospital's connection is often poor and this runs when someone asked
+    /// it to, not on a schedule.
+    /// </summary>
+    public int DownloadTimeoutMinutes { get; set; } = 30;
 }

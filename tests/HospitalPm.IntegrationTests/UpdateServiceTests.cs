@@ -80,6 +80,21 @@ public sealed class UpdateServiceTests(PostgresFixture fixture) : IDisposable
         }
     }
 
+    /// <summary>
+    /// For the tests that have nothing to do with the network. Failing
+    /// loudly rather than returning an empty answer, so a code path that
+    /// starts reaching for the internet cannot do it quietly.
+    /// </summary>
+    private sealed class NeverCalledDownloader : IUpdateDownloader
+    {
+        public Task<DownloadOutcome> GetTextAsync(Uri url, int maxBytes, CancellationToken ct) =>
+            throw new InvalidOperationException("This test should not have gone online.");
+
+        public Task<DownloadOutcome> GetFileAsync(
+            Uri url, string destination, long maxBytes, CancellationToken ct) =>
+            throw new InvalidOperationException("This test should not have gone online.");
+    }
+
     private sealed record Fixture(
         UpdateService Service,
         RecordingLauncher Launcher,
@@ -97,7 +112,9 @@ public sealed class UpdateServiceTests(PostgresFixture fixture) : IDisposable
         bool backupFirst = false,
         string? backupDirectory = null,
         Action<string>? corruptInstallerAfterSigning = null,
-        Func<int>? sampleAtLaunch = null)
+        Func<int>? sampleAtLaunch = null,
+        IUpdateDownloader? downloader = null,
+        string feedUrl = "")
     {
         // Each fixture is a fresh machine. The handover guard is a static
         // that production sets once and never clears - correct for a
@@ -164,9 +181,11 @@ public sealed class UpdateServiceTests(PostgresFixture fixture) : IDisposable
                 Directory = stick,
                 StagingDirectory = staging,
                 BackupFirst = backupFirst,
+                FeedUrl = feedUrl,
             }),
             new UpdateFileSystem(),
             launcher,
+            downloader ?? new NeverCalledDownloader(),
             backups,
             NullLogger<UpdateService>.Instance);
 
