@@ -253,6 +253,24 @@ function Wait-ForProcess {
     return $p.ExitCode
 }
 
+<#
+    Setup with nothing but the silent flags - no hospital name, no
+    administrator, no ports.
+
+    This is precisely what the application's own updater runs, because on an
+    upgrade it has no answers to give and needs none. Every scenario above
+    passes a full parameter set, which is why a real in-app update could
+    never have worked and CI would never have said so.
+#>
+function Invoke-BareSetup {
+    param([string]$LogName)
+
+    $log = Join-Path $LogDir "$LogName.log"
+    return (Wait-ForProcess -FilePath $Setup `
+        -Arguments @("/VERYSILENT", "/NORESTART", "/SUPPRESSMSGBOXES", "/LOG=$log") `
+        -What "Setup" -TimeoutSeconds 300)
+}
+
 function Invoke-Uninstall([switch]$RemoveData) {
     if (-not (Test-Path $UninstallExe)) { return $null }
     $arguments = @("/VERYSILENT", "/SUPPRESSMSGBOXES")
@@ -445,6 +463,57 @@ foreach ($attempt in 1..2) {
     Assert-That (-not (Test-Path $FailureFile)) "upgrade ${attempt}: no install-failure.txt"
     Assert-That ($health -eq 200)               "upgrade ${attempt}: /health answered 200 (was $health)"
 }
+
+# --- 5b. The upgrade the application itself performs ----------------------
+# The updater launches Setup with the silent flags and nothing else. It has
+# no hospital name or password to pass and should need none: both already
+# exist in the database it is upgrading.
+#
+# This once put a modal error box on the machine - MsgBox is not covered by
+# /SUPPRESSMSGBOXES - and waited for a click. In session 0, where the
+# service runs, that click can never come, so an in-app update stopped the
+# service and hung there.
+Write-Scenario "Upgrades with no answers, the way the updater does"
+
+$code = Invoke-BareSetup -LogName "05b-bare-upgrade"
+$health = Get-Health
+
+Assert-That ($code -eq 0)                   "bare upgrade: exit 0 (was $code)"
+Assert-That (-not (Test-Path $FailureFile)) "bare upgrade: no install-failure.txt"
+Assert-That ($health -eq 200)               "bare upgrade: /health answered 200 (was $health)"
+
+# The name on every printed report. An upgrade is not told it and must not
+# lose it.
+$settingsAfter = Get-Content "$DataDirppsettings.json" -Raw | ConvertFrom-Json
+Assert-That ($settingsAfter.FirstRun.HospitalName -eq "Sahyadri Hospital, Pune") `
+    "bare upgrade: kept the hospital name (was '$($settingsAfter.FirstRun.HospitalName)')"
+
+# The port matters more than the name. The harness installs on $Port, not on
+# the 5000 default, so a bare upgrade that fell back to the default would
+# move the app - and every bookmark, shortcut and ward tablet with it.
+Assert-That ($settingsAfter.Urls -eq "http://+:$Port") `
+    "bare upgrade: still serving on $Port (Urls is '$($settingsAfter.Urls)')"
+
+$dbAfter = Get-Content "$DataDir\db.json" -Raw | ConvertFrom-Json
+Assert-That ([int]$dbAfter.port -eq $DbPort) `
+    "bare upgrade: database still on $DbPort (was $($dbAfter.port))"
+
+# --- 5c. A fresh silent install with nothing to go on ---------------------
+# The other half: with no existing database there IS no hospital name or
+# administrator to inherit, so Setup must refuse - with an exit code, in a
+# log, and without a window.
+Write-Scenario "Refuses a bare install on a clean machine, without a dialog"
+
+Reset-Machine
+
+$code = Invoke-BareSetup -LogName "05c-bare-clean"
+
+Assert-That ($code -ne 0)                   "bare clean install: refused with a non-zero code (was $code)"
+Assert-That (-not (Test-Path $FailureFile)) "bare clean install: nothing was installed"
+
+# Put the machine back for the scenarios that follow.
+$code = Invoke-Setup -LogName "05c-restore"
+Assert-That ($code -eq 0) "restored the install for later scenarios (was $code)"
 
 # --- 6. A failure after the payload has landed ----------------------------
 # The phase where Inno reports success no matter what. The exit code cannot
