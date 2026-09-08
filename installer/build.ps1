@@ -56,6 +56,21 @@ param(
     [string]$UpdatePublicKey = $env:HOSPITALPM_UPDATE_PUBLIC_KEY,
 
     <#
+        Where an installed copy will look for updates, baked into the build.
+
+        Not secret, and not a hospital's choice: it is the address our releases
+        live at. It has to be set here rather than on site because the
+        installer rewrites the machine's settings on every upgrade, and because
+        a machine that shipped without one cannot be given one remotely.
+
+        Empty is valid and means "this build never looks online" - the USB
+        stick path still works. That is the right answer for a development
+        build and the wrong one for a release, which is why the release
+        workflow supplies it.
+    #>
+    [string]$UpdateFeedUrl = $env:HOSPITALPM_UPDATE_FEED_URL,
+
+    <#
         Builds an installer that cannot verify any licence.
 
         Required to be explicit, because the failure it prevents is silent: a
@@ -181,6 +196,24 @@ if ($UpdatePublicKey) {
 }
 else {
     Write-Host "    Update public key: NONE (-NoUpdateKey) - this build cannot install an update" -ForegroundColor Yellow
+}
+
+if ($UpdateFeedUrl) {
+    # https only, and checked here rather than at run time: a typo baked into a
+    # release is permanent for every machine that installs it, and the product
+    # would refuse the address silently on a page nobody opens.
+    $parsed = $null
+    if (-not [Uri]::TryCreate($UpdateFeedUrl.Trim(), [UriKind]::Absolute, [ref]$parsed) -or
+        $parsed.Scheme -ne 'https') {
+        throw "The update feed URL must be an absolute https address. Got '$UpdateFeedUrl'."
+    }
+    if (-not $parsed.AbsolutePath.EndsWith('.update')) {
+        throw "The update feed URL must point at a .update file, not at a folder or an index. Got '$UpdateFeedUrl'."
+    }
+    Write-Host "    Update feed URL: $UpdateFeedUrl"
+}
+else {
+    Write-Host "    Update feed URL: NONE - this build will only update from a file" -ForegroundColor Yellow
 }
 
 if ($LicencePublicKey -and $UpdatePublicKey -and
@@ -353,7 +386,42 @@ function Write-PublicKey([string]$SettingsPath, [string]$Section, [string]$Value
     Write-Host "    $Section public key written into appsettings.json and read back"
 }
 
-if ($LicencePublicKey -or $UpdatePublicKey) {
+<#
+    .SYNOPSIS
+    Writes Update:FeedUrl into the published settings.
+
+    .DESCRIPTION
+    A plain anchored pattern rather than the section-scoped one above, because
+    "FeedUrl" appears once in the whole file while "PublicKey" appears twice.
+
+    This has to be baked in at build time rather than set on site. The
+    installer deletes and rewrites the machine's appsettings.json on every
+    upgrade, so a URL added by hand in ProgramData survives exactly until the
+    next update - and a machine that shipped without one can never be given
+    one remotely, which on an air-gapped PC means never.
+#>
+function Write-FeedUrl([string]$SettingsPath, [string]$Value) {
+    $settingsText = Get-Content $SettingsPath -Raw
+
+    $pattern = '("FeedUrl"\s*:\s*)""'
+    $matchCount = ([regex]::Matches($settingsText, $pattern)).Count
+    if ($matchCount -ne 1) {
+        throw "Expected exactly one empty FeedUrl setting in $SettingsPath, found $matchCount."
+    }
+
+    $settingsText = [regex]::Replace($settingsText, $pattern, "`${1}""$($Value.Trim())""")
+
+    [System.IO.File]::WriteAllText(
+        $SettingsPath, $settingsText, (New-Object System.Text.UTF8Encoding($false)))
+
+    $written = (Get-Content $SettingsPath -Raw | ConvertFrom-Json).Update.FeedUrl
+    if ($written -ne $Value.Trim()) {
+        throw "The update feed URL did not survive being written to $SettingsPath."
+    }
+    Write-Host "    Update feed URL written into appsettings.json and read back"
+}
+
+if ($LicencePublicKey -or $UpdatePublicKey -or $UpdateFeedUrl) {
     $settingsPath = Join-Path $publishDir "appsettings.json"
     if (-not (Test-Path $settingsPath)) {
         throw "No appsettings.json in the published output, so the public keys have nowhere to go."
@@ -361,6 +429,7 @@ if ($LicencePublicKey -or $UpdatePublicKey) {
 
     if ($LicencePublicKey) { Write-PublicKey $settingsPath "Licence" $LicencePublicKey }
     if ($UpdatePublicKey)  { Write-PublicKey $settingsPath "Update"  $UpdatePublicKey }
+    if ($UpdateFeedUrl)    { Write-FeedUrl   $settingsPath $UpdateFeedUrl }
 }
 
 # --- 4. Compile the installer ---------------------------------------------

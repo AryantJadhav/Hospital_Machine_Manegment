@@ -390,6 +390,50 @@ public sealed class UpdateDownloadTests(PostgresFixture fixture) : IDisposable
     }
 
     /// <summary>
+    /// The shape the release workflow actually configures.
+    ///
+    /// GitHub serves a release asset at
+    /// releases/latest/download/&lt;asset name&gt;, so a feed pointing at
+    /// HospitalPM.update in that folder puts the installer right beside it.
+    /// That is the entire reason the manifest names a bare file name and the
+    /// URL is built from the feed rather than from the manifest: get this
+    /// wrong and every installed copy fetches a 404, which is only
+    /// discoverable by shipping a release.
+    /// </summary>
+    /// <remarks>
+    /// The versions are absurd because the comparison is against this test
+    /// host's own assembly version, not against 1.0.0. A realistic-looking
+    /// "1.2.0" is older than the runner and never gets as far as fetching
+    /// an installer, which is a test that passes by doing nothing.
+    /// </remarks>
+    [Theory]
+    [InlineData("9999.2.0")]
+    [InlineData("9999.10.1")]
+    public async Task The_installer_is_fetched_from_the_releases_folder_beside_the_manifest(string version)
+    {
+        const string feed =
+            "https://github.com/AryantJadhav/Hospital_Machine_Manegment/releases/latest/download/HospitalPM.update";
+
+        var served = Sign(version: version);
+        var downloader = new ScriptedDownloader
+        {
+            ManifestText = served.ManifestText,
+            InstallerBytes = served.InstallerBytes,
+        };
+
+        var service = NewService(served.PublicKey, NewDirectory(), downloader, feed);
+
+        var result = await service.CheckOnlineAsync(downloadInstaller: true);
+
+        Assert.Equal(UpdateState.Ready, result.Candidate!.State);
+        Assert.Equal(2, downloader.Requested.Count);
+        Assert.Equal(
+            new Uri("https://github.com/AryantJadhav/Hospital_Machine_Manegment/releases/latest/"
+                    + $"download/HospitalPM-Setup-{version}.exe"),
+            downloader.Requested[1]);
+    }
+
+    /// <summary>
     /// The whole point of the design. A server we do not control serves a
     /// manifest signed by somebody else; nothing may be downloaded and nothing
     /// may be left behind.

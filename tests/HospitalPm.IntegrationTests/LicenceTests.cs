@@ -296,6 +296,36 @@ public sealed class LicenceTests : IDisposable
     }
 
     /// <summary>
+    /// The same guard for the update feed URL, which build.ps1 fills in the
+    /// same way and at the same moment.
+    ///
+    /// Here rather than with the update tests because this is about the shape
+    /// of the one file the release path rewrites, and splitting that across
+    /// two test classes is how half of it gets forgotten.
+    ///
+    /// A URL committed here would be one nobody chose per release, and every
+    /// developer build would quietly point at the real feed.
+    /// </summary>
+    [Fact]
+    public void The_shipped_settings_leave_an_empty_feed_url_for_the_release_build()
+    {
+        var settingsPath = FindRepositoryFile("src/HospitalPm.Api/appsettings.json");
+        var text = File.ReadAllText(settingsPath);
+
+        // Not section-scoped, unlike PublicKey: FeedUrl appears once in the
+        // whole file, which is what build.ps1 relies on.
+        var matches = System.Text.RegularExpressions.Regex.Matches(
+            text, "(\"FeedUrl\"\\s*:\\s*)\"\"");
+
+        Assert.Single(matches);
+
+        using var document = JsonDocument.Parse(text);
+        var feedUrl = document.RootElement.GetProperty("Update").GetProperty("FeedUrl").GetString();
+
+        Assert.Equal(string.Empty, feedUrl);
+    }
+
+    /// <summary>
     /// A key sitting in appsettings.json under "Licence" actually reaches the
     /// service that verifies licences.
     ///
