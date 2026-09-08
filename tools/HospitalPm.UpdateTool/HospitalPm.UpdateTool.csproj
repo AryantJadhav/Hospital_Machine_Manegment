@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Vendor-side only, like the licence tool and for a sharper reason: the key
+    it signs with authorises an executable that a hospital's machine will run
+    as LocalSystem. It is never shipped, and the private key never enters this
+    repository.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>hospitalpm-update</AssemblyName>
+    <RootNamespace>HospitalPm.UpdateTool</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\HospitalPm.Domain\HospitalPm.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

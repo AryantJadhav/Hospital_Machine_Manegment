@@ -401,6 +401,59 @@ Other installer behaviour worth knowing:
   goes but an empty `Hospital PM` folder stays in Program Files. Any file the
   application creates at run time inside `{app}` has this problem.
 
+## 9a. Updating an installed hospital
+
+The realistic delivery is a USB stick. A biomedical department's PC often has
+no route out, so the offline path is the one that had to work first; a
+download button would only be a different way of getting the same two files
+onto the same disk.
+
+An update is two files that travel together: the installer, and a small signed
+`.update` manifest naming it, its size and its SHA-256. Same crypto as the
+licence — ECDSA P-256, SHA-256, BCL only, payload signed as opaque bytes — and
+a **different key**. A licence signature says a hospital may use software they
+already have. This one authorises an executable to run as LocalSystem on their
+machine. Anyone trusted to issue licences should not thereby be able to push
+code to every install, so `tools/HospitalPm.UpdateTool` holds its own keypair
+and `installer/build.ps1` refuses a release where the two keys are equal.
+
+The order of operations is the design, and each step exists because of a
+specific way this goes wrong:
+
+1. **Verify the signature first**, before the installer is read at all.
+   Hashing two hundred megabytes off a stick before knowing whether the
+   manifest is even ours is work done on an attacker's say-so.
+2. **Check size, then hash.** A half-copied file is the common case, not the
+   exotic one, and a length comparison answers it for free.
+3. **Copy the installer locally, then hash the copy.** Verifying a file in
+   place and then executing it leaves a window to swap it, and a stick can be
+   pulled out mid-install. What runs must be what was verified.
+4. **Back up, and stop if it fails.** Migrations are forward-only with no
+   down-migration, so a failed update's only route back is a restore.
+5. **Hand over and stop existing.** Windows locks a running executable, so the
+   process being replaced cannot be the one replacing it. The installer
+   already knows how to stop the service, swap files and start it again, and
+   migrations run on startup.
+
+A signed manifest may only name a bare file name. A manifest that could name a
+path would turn one release into a way to run any executable on the machine,
+for as long as that signature stayed valid — the shape check, not the
+signature, is what stops that, because our own release process could produce
+it and it would be correctly signed. `UpdateVerifierTests` covers it.
+
+A build with no update public key refuses every update rather than trusting
+one. That is the safe failure and it is permanent for every machine that
+installs that build, which is why the release workflow will not cut one
+without the key.
+
+**What this does not have.** No rollback beyond restore-from-backup. No
+download-from-the-internet half yet — deliberately, because that half is a
+remote code execution channel into hospitals and is worth doing slowly. And
+the installer itself is still unsigned by any certificate authority, so
+SmartScreen will warn: our manifest signature answers "was this file
+tampered with", but a code-signing certificate is what makes running it
+defensible to a hospital's IT department.
+
 ## 10. Where I think the weaknesses are
 
 Ranked by how much I would like to be wrong about them.

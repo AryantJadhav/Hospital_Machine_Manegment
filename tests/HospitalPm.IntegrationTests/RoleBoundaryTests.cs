@@ -127,6 +127,12 @@ public sealed class RoleBoundaryTests(PostgresFixture fixture) : IAsyncLifetime,
         { "POST", $"/api/admin/backups/{Missing}/restore" },
         { "GET", "/api/admin/diagnostics" },
         { "GET", "/api/admin/licence" },
+
+        // Ends with an executable running as LocalSystem. The signature is
+        // the real gate - an Admin cannot install an unsigned update either -
+        // but there is no reason for anyone else to reach the route.
+        { "GET", "/api/admin/update" },
+        { "POST", "/api/admin/update/install" },
     };
 
     [Theory]

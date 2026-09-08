@@ -42,6 +42,20 @@ param(
     [string]$LicencePublicKey = $env:HOSPITALPM_LICENCE_PUBLIC_KEY,
 
     <#
+        The public half of the UPDATE signing key, as the update tool
+        prints it. A different key from the licence one: this signature
+        authorises an executable that a hospital runs as LocalSystem,
+        while a licence signature only authorises use of software they
+        already have.
+
+        A build without it cannot install updates at all. That is the safe
+        failure, but it is permanent for every machine that installs the
+        build - so a release refuses to be cut without it, exactly as it
+        does for the licence key.
+    #>
+    [string]$UpdatePublicKey = $env:HOSPITALPM_UPDATE_PUBLIC_KEY,
+
+    <#
         Builds an installer that cannot verify any licence.
 
         Required to be explicit, because the failure it prevents is silent: a
@@ -51,7 +65,18 @@ param(
 
         Correct for development and for the CI smoke test. Never for a release.
     #>
-    [switch]$Unlicensed
+    [switch]$Unlicensed,
+
+    <#
+        Builds an installer that cannot verify any update.
+
+        Separate from -Unlicensed because the consequences are different:
+        an unlicensed build works and nags, while a build with no update
+        key can never be updated from a file for as long as it is
+        installed. Both are correct for development and the CI smoke test,
+        and neither is ever correct for a release.
+    #>
+    [switch]$NoUpdateKey
 )
 
 $ErrorActionPreference = "Stop"
@@ -75,17 +100,17 @@ Write-Host "==> Hospital PM installer $Version ($Rid)" -ForegroundColor Cyan
     PublicKeyInfo is .NET Core only, and this script has to keep working under
     the Windows PowerShell 5.1 a release might be cut from.
 #>
-function Assert-LicencePublicKey([string]$Value) {
+function Assert-PublicKey([string]$Value, [string]$Which) {
     $bytes = $null
     try {
         $bytes = [Convert]::FromBase64String($Value.Trim())
     }
     catch {
-        throw "The licence public key is not valid base64. Pass the contents of public-key.txt exactly as keygen wrote it."
+        throw "The $Which public key is not valid base64. Pass the contents of the keygen output file exactly as it was written."
     }
 
     if ($bytes.Length -ne 91 -or $bytes[0] -ne 0x30) {
-        throw "The licence public key is not a P-256 public key: expected 91 bytes starting 0x30, got $($bytes.Length) bytes starting 0x$('{0:X2}' -f $bytes[0])."
+        throw "The $Which public key is not a P-256 public key: expected 91 bytes starting 0x30, got $($bytes.Length) bytes starting 0x$('{0:X2}' -f $bytes[0])."
     }
 }
 
@@ -115,12 +140,55 @@ pass -Unlicensed.
 "@
 }
 
+# The same shape of failure, one step worse: a build with no update key can
+# never install an update from a file, and there is no way to fix that
+# remotely on a machine with no internet.
+if (-not $UpdatePublicKey -and -not $NoUpdateKey) {
+    throw @"
+No update public key.
+
+A release build must carry the public half of the update signing key, or no
+machine that installs it can ever be updated from a file - and on an
+air-gapped hospital PC there is no second route.
+
+Pass it one of these ways:
+
+  -UpdatePublicKey <base64>              the contents of update-public-key.txt
+  `$env:HOSPITALPM_UPDATE_PUBLIC_KEY      preferred in a pipeline
+
+If no update signing key exists yet, create one ONCE. It is a different key
+from the licence one on purpose - it authorises code to run as LocalSystem -
+and losing it means no installed copy can verify an update again:
+
+  dotnet run --project tools\HospitalPm.UpdateTool -- keygen --out <dir>
+
+To build deliberately without it - development, or the CI smoke test - pass
+-NoUpdateKey.
+"@
+}
+
 if ($LicencePublicKey) {
-    Assert-LicencePublicKey $LicencePublicKey
+    Assert-PublicKey $LicencePublicKey "licence"
     Write-Host "    Licence public key: present and well-formed"
 }
 else {
     Write-Host "    Licence public key: NONE (-Unlicensed) - this build cannot verify a licence" -ForegroundColor Yellow
+}
+
+if ($UpdatePublicKey) {
+    Assert-PublicKey $UpdatePublicKey "update"
+    Write-Host "    Update public key: present and well-formed"
+}
+else {
+    Write-Host "    Update public key: NONE (-NoUpdateKey) - this build cannot install an update" -ForegroundColor Yellow
+}
+
+if ($LicencePublicKey -and $UpdatePublicKey -and
+    $LicencePublicKey.Trim() -eq $UpdatePublicKey.Trim()) {
+    # Not a style preference. One key means anyone trusted to issue a
+    # licence is thereby trusted to push code that runs as LocalSystem on
+    # every install, and rotating either one breaks the other.
+    throw "The licence and update public keys are the same. They must be different keys."
 }
 
 # --- 1. Web ---------------------------------------------------------------
@@ -251,41 +319,48 @@ Write-Host "    wwwroot assets: $assetCount file(s)"
 # The machine-specific settings the installer writes live in ProgramData and
 # layer OVER this file; they never mention Licence, so nothing downstream
 # overwrites what is set here.
-if ($LicencePublicKey) {
-    $settingsPath = Join-Path $publishDir "appsettings.json"
-    if (-not (Test-Path $settingsPath)) {
-        throw "No appsettings.json in the published output, so the licence key has nowhere to go."
-    }
-
-    $settingsText = Get-Content $settingsPath -Raw
+function Write-PublicKey([string]$SettingsPath, [string]$Section, [string]$Value) {
+    $settingsText = Get-Content $SettingsPath -Raw
 
     # A targeted replacement rather than parse-and-reserialise: ConvertTo-Json
     # reorders and reformats the whole file, and this is the file a reviewer
-    # reads to see what a build shipped. The match count is asserted, so if
-    # the setting is ever renamed or pre-filled this fails loudly instead of
-    # silently shipping a build with no key.
-    $pattern = '("PublicKey"\s*:\s*)""'
+    # reads to see what a build shipped.
+    #
+    # Scoped to its own section. There are two PublicKey settings now, and a
+    # pattern that matched either would happily write the update key into the
+    # licence slot - a build that then rejects every licence ever issued and
+    # says so only on a page nobody opens until months later.
+    $pattern = '("' + $Section + '"\s*:\s*\{\s*"PublicKey"\s*:\s*)""'
     $matchCount = ([regex]::Matches($settingsText, $pattern)).Count
     if ($matchCount -ne 1) {
-        throw "Expected exactly one empty PublicKey setting in $settingsPath, found $matchCount."
+        throw "Expected exactly one empty $Section PublicKey setting in $SettingsPath, found $matchCount."
     }
 
-    $settingsText = [regex]::Replace(
-        $settingsText, $pattern, "`${1}""$($LicencePublicKey.Trim())""")
+    $settingsText = [regex]::Replace($settingsText, $pattern, "`${1}""$($Value.Trim())""")
 
     # No BOM. PowerShell 5.1 writes one for -Encoding utf8, and a leading
     # EF BB BF has already broken one machine-written JSON file in this
     # project.
     [System.IO.File]::WriteAllText(
-        $settingsPath, $settingsText, (New-Object System.Text.UTF8Encoding($false)))
+        $SettingsPath, $settingsText, (New-Object System.Text.UTF8Encoding($false)))
 
-    # Read back rather than trust the write. This is the last moment the key
-    # can be confirmed present; after this it is inside a compressed installer.
-    $written = (Get-Content $settingsPath -Raw | ConvertFrom-Json).Licence.PublicKey
-    if ($written -ne $LicencePublicKey.Trim()) {
-        throw "The licence public key did not survive being written to $settingsPath."
+    # Read back rather than trust the write. This is the last moment a key can
+    # be confirmed present; after this it is inside a compressed installer.
+    $written = (Get-Content $SettingsPath -Raw | ConvertFrom-Json).$Section.PublicKey
+    if ($written -ne $Value.Trim()) {
+        throw "The $Section public key did not survive being written to $SettingsPath."
     }
-    Write-Host "    Licence public key written into appsettings.json and read back"
+    Write-Host "    $Section public key written into appsettings.json and read back"
+}
+
+if ($LicencePublicKey -or $UpdatePublicKey) {
+    $settingsPath = Join-Path $publishDir "appsettings.json"
+    if (-not (Test-Path $settingsPath)) {
+        throw "No appsettings.json in the published output, so the public keys have nowhere to go."
+    }
+
+    if ($LicencePublicKey) { Write-PublicKey $settingsPath "Licence" $LicencePublicKey }
+    if ($UpdatePublicKey)  { Write-PublicKey $settingsPath "Update"  $UpdatePublicKey }
 }
 
 # --- 4. Compile the installer ---------------------------------------------

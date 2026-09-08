@@ -58,6 +58,22 @@ jobs:
           }
           Write-Output "Licence public key secret is present."
 
+      # Separate secret, separate key. This one authorises an executable to
+      # run as LocalSystem on a hospital PC; the licence one only says a
+      # hospital may use software it already has. A release built without
+      # it can never be updated from a file, on any machine that installs
+      # it, and an air-gapped hospital has no second route.
+      - name: Require the update signing key
+        shell: pwsh
+        env:
+          HOSPITALPM_UPDATE_PUBLIC_KEY: ${{ secrets.UPDATE_PUBLIC_KEY }}
+        run: |
+          if (-not $env:HOSPITALPM_UPDATE_PUBLIC_KEY) {
+            Write-Output "::error::The UPDATE_PUBLIC_KEY repository secret is not set. A release cannot be built without it - no machine that installs this build could ever be updated from a file, and that cannot be fixed remotely on an air-gapped PC. Generate an update signing key once with the update tool's keygen, keep update-signing-key.pem off this machine and off this repository, and put the contents of update-public-key.txt in that secret."
+            exit 1
+          }
+          Write-Output "Update public key secret is present."
+
       - name: Work out the version
         id: version
         shell: pwsh
@@ -111,6 +127,7 @@ jobs:
         shell: pwsh
         env:
           HOSPITALPM_LICENCE_PUBLIC_KEY: ${{ secrets.LICENCE_PUBLIC_KEY }}
+          HOSPITALPM_UPDATE_PUBLIC_KEY: ${{ secrets.UPDATE_PUBLIC_KEY }}
         run: ./installer/build.ps1 -Version ${{ steps.version.outputs.version }}
 
       # The same eight scenarios build.yml runs, against the artifact that is
@@ -124,7 +141,7 @@ jobs:
 
       # Asserted against the built artifact, not against the build script's own
       # word for it. The published appsettings.json is what ships.
-      - name: Confirm the shipped build carries the licence key
+      - name: Confirm the shipped build carries both keys
         shell: pwsh
         run: |
           $settings = Get-Content artifacts/win-x64/appsettings.json -Raw | ConvertFrom-Json
@@ -132,7 +149,15 @@ jobs:
             Write-Output "::error::The published appsettings.json has no licence public key. This build must not be released."
             exit 1
           }
-          Write-Output "Shipped build carries a licence public key."
+          if (-not $settings.Update.PublicKey) {
+            Write-Output "::error::The published appsettings.json has no update public key. This build could never install an update. It must not be released."
+            exit 1
+          }
+          if ($settings.Licence.PublicKey -eq $settings.Update.PublicKey) {
+            Write-Output "::error::The licence and update public keys are identical. They must be different keys - one authorises use, the other authorises code execution as LocalSystem."
+            exit 1
+          }
+          Write-Output "Shipped build carries a licence key and a separate update key."
 
       - name: Upload installer logs
         if: always()
