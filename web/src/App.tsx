@@ -22,7 +22,7 @@ import { WorkOrdersPage } from './pages/WorkOrdersPage';
 import './App.css';
 
 function Shell() {
-  const { user, logout, can } = useAuth();
+  const { user, logout, can, signInNotice, dismissNotice } = useAuth();
   // One flag, because there is one line: an Employee records what they did,
   // an Admin decides what gets done. Everything hidden below is a decision
   // about the department rather than a record of a job.
@@ -109,6 +109,18 @@ function Shell() {
       </nav>
 
       <main>
+        {/* The login screen's chooser disagreed with the account. Said
+            once, here rather than there, because the sign-in has already
+            succeeded by the time it is known. */}
+        {signInNotice && (
+          <div className="page">
+            <p className="alert alert-info notice-row" role="status">
+              <span>{signInNotice}</span>
+              <button className="btn btn-quiet" onClick={dismissNotice}>Dismiss</button>
+            </p>
+          </div>
+        )}
+
         <Routes>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/pm" element={<PmTasksPage />} />
