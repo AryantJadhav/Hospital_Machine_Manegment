@@ -219,10 +219,21 @@ end;
 /// wrote. A deliberately small reader rather than a JSON parser: the file is
 /// machine-written, one level deep, and its values are generated
 /// alphanumerics, so there is nothing to escape and nothing to nest.
+/// Reads one field out of a small, flat JSON document.
+///
+/// Quote-aware, and it has to be. A JSON string ends at its closing quote and
+/// may hold anything in between: a hospital called "Sahyadri Hospital, Pune" has
+/// a comma in it, and a generated database password can have one too.
+/// Stopping at the first comma truncated both, in silence - the name on every
+/// printed report, and a connection string that then could not authenticate.
+///
+/// Not a JSON parser. It reads two files this installer wrote itself, both
+/// flat and with unique field names.
 function ReadJsonField(const Json, Field: String): String;
 var
   Marker: String;
   Start, Finish: Integer;
+  Quoted: Boolean;
 begin
   Result := '';
   Marker := '"' + Field + '":';
@@ -233,19 +244,40 @@ begin
 
   Start := Start + Length(Marker);
 
-  // Skip whitespace and the opening quote.
   while (Start <= Length(Json)) and
-        ((Json[Start] = ' ') or (Json[Start] = #9) or (Json[Start] = '"')) do
+        ((Json[Start] = ' ') or (Json[Start] = #9)) do
+    Start := Start + 1;
+
+  Quoted := (Start <= Length(Json)) and (Json[Start] = '"');
+  if Quoted then
     Start := Start + 1;
 
   Finish := Start;
-  while (Finish <= Length(Json)) and
-        (Json[Finish] <> '"') and (Json[Finish] <> ',') and
-        (Json[Finish] <> #13) and (Json[Finish] <> #10) and
-        (Json[Finish] <> '}') do
-    Finish := Finish + 1;
+  if Quoted then
+  begin
+    // To the closing quote, stepping over any that was escaped.
+    while (Finish <= Length(Json)) and (Json[Finish] <> '"') do
+    begin
+      if (Json[Finish] = '\') and (Finish < Length(Json)) then
+        Finish := Finish + 2
+      else
+        Finish := Finish + 1;
+    end;
+  end
+  else
+  begin
+    // A number or a keyword: to the next separator.
+    while (Finish <= Length(Json)) and
+          (Json[Finish] <> ',') and (Json[Finish] <> '}') and
+          (Json[Finish] <> #13) and (Json[Finish] <> #10) do
+      Finish := Finish + 1;
+  end;
 
   Result := Trim(Copy(Json, Start, Finish - Start));
+
+  // Undo what JsonEscape did on the way in, in the reverse order it did it.
+  StringChangeEx(Result, '\"', '"', True);
+  StringChangeEx(Result, '\\', '\', True);
 end;
 
 /// The hospital name the previous install was given, or empty.

@@ -210,7 +210,13 @@ jobs:
         with:
           name: hospitalpm-${{ matrix.rid }}
           path: artifacts/${{ matrix.rid }}/
-          retention-days: 14
+
+          # Short, because these are ~90 MB a side and every pull-request
+          # build makes a set. Two hundred and sixty of them filled the
+          # account's artifact storage and every job began failing at the
+          # upload step - not on anything it was testing. A release keeps
+          # its binaries as release assets, which do not count against this.
+          retention-days: 2
 
   # Builds the real installer and installs it, on a real Windows machine, in
   # every way that has gone wrong before.
@@ -292,11 +298,16 @@ jobs:
         with:
           name: installer-smoke-logs
           path: artifacts/smoke-logs/
-          retention-days: 14
+          retention-days: 7
 
+      # Only when something failed. The smoke test has already installed,
+      # upgraded and uninstalled this exact file on a real Windows machine
+      # by the time we get here - on a green run the artifact is 88 MB
+      # nobody will ever download.
       - name: Upload the installer
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: hospitalpm-installer
           path: artifacts/installer/HospitalPM-Setup-1.0.0.exe
-          retention-days: 14
+          retention-days: 2
