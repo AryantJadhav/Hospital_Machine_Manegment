@@ -44,6 +44,11 @@ $ServiceName  = "HospitalPM"
 $PgService    = "HospitalPM_Postgres"
 $InstallDir   = Join-Path $env:ProgramFiles $AppName
 $DataDir      = Join-Path $env:ProgramData $AppName
+
+# Spaces and a comma on purpose. An Indian hospital name has both, and the
+# quoting needed to get one past Inno is exactly what used to be wrong.
+$HospitalName  = "Sahyadri Hospital, Pune"
+$AdminFullName = "Dr S Deshmukh"
 $FailureFile  = Join-Path $InstallDir "install-failure.txt"
 $UninstallExe = Join-Path $InstallDir "unins000.exe"
 
@@ -207,18 +212,30 @@ function Test-SpaServed {
     catch { return $false }
 }
 
+<#
+    One command-line string, not an array.
+
+    Inno reads {param:NAME} up to the next SPACE, so a value containing one
+    has to carry its own quotes: /HOSPITAL="Sahyadri Hospital, Pune".
+    Handing Start-Process an array quotes the whole token instead -
+    "/HOSPITAL=Sahyadri Hospital, Pune" - which Inno truncates at the space
+    and stores as "Sahyadri".
+
+    The harness did that from the day it was written. Nothing noticed,
+    because no scenario ever asserted the name that came back out.
+#>
 function Invoke-Setup {
-    param([string[]]$Extra = @(), [string]$LogName)
+    param([string]$Extra = "", [string]$LogName)
 
     $log = Join-Path $LogDir "$LogName.log"
-    $arguments = @(
-        "/VERYSILENT", "/SUPPRESSMSGBOXES",
-        "/PORT=$Port", "/DBPORT=$DbPort",
-        "/HOSPITAL=Sahyadri Hospital, Pune",
-        "/ADMINUSER=admin", "/ADMINNAME=Dr S Deshmukh",
-        "/ADMINPASSWORD=SmokeTest12345",
-        "/LOG=$log"
-    ) + $Extra
+    $q = [char]34
+
+    $arguments =
+        "/VERYSILENT /SUPPRESSMSGBOXES /PORT=$Port /DBPORT=$DbPort " +
+        "/HOSPITAL=$q$HospitalName$q " +
+        "/ADMINUSER=admin /ADMINNAME=$q$AdminFullName$q " +
+        "/ADMINPASSWORD=SmokeTest12345 " +
+        "/LOG=$q$log$q $Extra"
 
     return (Wait-ForProcess -FilePath $Setup -Arguments $arguments -What "Setup")
 }
@@ -239,7 +256,7 @@ function Invoke-Setup {
 function Wait-ForProcess {
     param(
         [Parameter(Mandatory)][string]$FilePath,
-        [string[]]$Arguments = @(),
+        [string]$Arguments = "",
         [Parameter(Mandatory)][string]$What,
         [int]$TimeoutSeconds = 600
     )
@@ -266,15 +283,16 @@ function Invoke-BareSetup {
     param([string]$LogName)
 
     $log = Join-Path $LogDir "$LogName.log"
+    $q = [char]34
     return (Wait-ForProcess -FilePath $Setup `
-        -Arguments @("/VERYSILENT", "/NORESTART", "/SUPPRESSMSGBOXES", "/LOG=$log") `
+        -Arguments "/VERYSILENT /NORESTART /SUPPRESSMSGBOXES /LOG=$q$log$q" `
         -What "Setup" -TimeoutSeconds 300)
 }
 
 function Invoke-Uninstall([switch]$RemoveData) {
     if (-not (Test-Path $UninstallExe)) { return $null }
-    $arguments = @("/VERYSILENT", "/SUPPRESSMSGBOXES")
-    if ($RemoveData) { $arguments += "/REMOVEDATA=1" }
+    $arguments = "/VERYSILENT /SUPPRESSMSGBOXES"
+    if ($RemoveData) { $arguments += " /REMOVEDATA=1" }
     $code = Wait-ForProcess -FilePath $UninstallExe -Arguments $arguments -What "Uninstall"
 
     # The uninstaller hands the last of its own deletion to a detached process
@@ -485,7 +503,7 @@ Assert-That ($health -eq 200)               "bare upgrade: /health answered 200 
 # The name on every printed report. An upgrade is not told it and must not
 # lose it.
 $settingsAfter = Get-Content "$DataDir\appsettings.json" -Raw | ConvertFrom-Json
-Assert-That ($settingsAfter.FirstRun.HospitalName -eq "Sahyadri Hospital, Pune") `
+Assert-That ($settingsAfter.FirstRun.HospitalName -eq $HospitalName) `
     "bare upgrade: kept the hospital name (was '$($settingsAfter.FirstRun.HospitalName)')"
 
 # The port matters more than the name. The harness installs on $Port, not on
