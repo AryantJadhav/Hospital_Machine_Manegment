@@ -210,6 +210,145 @@ var
   // fails; every step afterwards is skipped.
   FailureReason: String;
 
+function DataDir: String;
+begin
+  Result := ExpandConstant('{commonappdata}\{#AppName}');
+end;
+
+/// Pulls one string field out of the credentials JSON that setup-database.ps1
+/// wrote. A deliberately small reader rather than a JSON parser: the file is
+/// machine-written, one level deep, and its values are generated
+/// alphanumerics, so there is nothing to escape and nothing to nest.
+/// Reads one field out of a small, flat JSON document.
+///
+/// Quote-aware, and it has to be. A JSON string ends at its closing quote and
+/// may hold anything in between: a hospital called "Sahyadri Hospital, Pune" has
+/// a comma in it, and a generated database password can have one too.
+/// Stopping at the first comma truncated both, in silence - the name on every
+/// printed report, and a connection string that then could not authenticate.
+///
+/// Not a JSON parser. It reads two files this installer wrote itself, both
+/// flat and with unique field names.
+function ReadJsonField(const Json, Field: String): String;
+var
+  Marker: String;
+  Start, Finish: Integer;
+  Quoted: Boolean;
+begin
+  Result := '';
+  Marker := '"' + Field + '":';
+
+  Start := Pos(Marker, Json);
+  if Start = 0 then
+    Exit;
+
+  Start := Start + Length(Marker);
+
+  while (Start <= Length(Json)) and
+        ((Json[Start] = ' ') or (Json[Start] = #9)) do
+    Start := Start + 1;
+
+  Quoted := (Start <= Length(Json)) and (Json[Start] = '"');
+  if Quoted then
+    Start := Start + 1;
+
+  Finish := Start;
+  if Quoted then
+  begin
+    // To the closing quote, stepping over any that was escaped.
+    while (Finish <= Length(Json)) and (Json[Finish] <> '"') do
+    begin
+      if (Json[Finish] = '\') and (Finish < Length(Json)) then
+        Finish := Finish + 2
+      else
+        Finish := Finish + 1;
+    end;
+  end
+  else
+  begin
+    // A number or a keyword: to the next separator.
+    while (Finish <= Length(Json)) and
+          (Json[Finish] <> ',') and (Json[Finish] <> '}') and
+          (Json[Finish] <> #13) and (Json[Finish] <> #10) do
+      Finish := Finish + 1;
+  end;
+
+  Result := Trim(Copy(Json, Start, Finish - Start));
+
+  // Undo what JsonEscape did on the way in, in the reverse order it did it.
+  StringChangeEx(Result, '\"', '"', True);
+  StringChangeEx(Result, '\\', '\', True);
+end;
+
+/// The hospital name the previous install was given, or empty.
+///
+/// Read before the settings file is rewritten, because Setup deletes and
+/// recreates it. Without this an upgrade that was not told /HOSPITAL would
+/// silently blank the name that appears on printed reports - which is
+/// every upgrade the in-app updater performs.
+function ExistingHospitalName(): String;
+var
+  Existing: AnsiString;
+begin
+  Result := '';
+  if not FileExists(DataDir + '\appsettings.json') then
+    Exit;
+
+  if LoadStringFromFile(DataDir + '\appsettings.json', Existing) then
+    Result := ReadJsonField(String(Existing), 'HospitalName');
+end;
+
+/// The port the previous install serves on, or empty.
+///
+/// Parsed out of "Urls": "http://+:5000" in the settings Setup itself wrote.
+///
+/// Inherited for the same reason as the hospital name, and it matters more:
+/// an upgrade launched by the in-app updater passes no /PORT, so without this
+/// it would quietly move a hospital off the port they chose and onto 5000 -
+/// breaking the Start Menu shortcut, every bookmark, and every tablet on the
+/// ward at once.
+function ExistingAppPort(): String;
+var
+  Existing: AnsiString;
+  Urls: String;
+  Colon: Integer;
+begin
+  Result := '';
+  if not FileExists(DataDir + '\appsettings.json') then
+    Exit;
+
+  if not LoadStringFromFile(DataDir + '\appsettings.json', Existing) then
+    Exit;
+
+  Urls := ReadJsonField(String(Existing), 'Urls');
+  if Urls = '' then
+    Exit;
+
+  // http://+:5000 - take everything after the last colon.
+  Colon := Length(Urls);
+  while (Colon > 0) and (Urls[Colon] <> ':') do
+    Colon := Colon - 1;
+
+  if Colon > 0 then
+    Result := Trim(Copy(Urls, Colon + 1, Length(Urls) - Colon));
+end;
+
+/// The port the existing bundled database actually listens on, or empty.
+///
+/// From db.json, which is what the cluster was created with. Guessing 5433 on
+/// an upgrade would check the wrong port for conflicts and point the database
+/// scripts at a cluster that is not there.
+function ExistingDbPort(): String;
+var
+  Credentials: AnsiString;
+begin
+  Result := '';
+  if not FileExists(DataDir + '\db.json') then
+    Exit;
+
+  if LoadStringFromFile(DataDir + '\db.json', Credentials) then
+    Result := Trim(ReadJsonField(String(Credentials), 'port'));
+end;
 procedure InitializeWizard;
 begin
   // Nothing is asked about the database. It is created by the installer, on a
@@ -259,7 +398,23 @@ begin
   // next space, so /HOSPITAL=Sahyadri Hospital silently becomes "Sahyadri" -
   // and a hospital name and a person's name almost always contain spaces.
   // The wizard is unaffected; this only bites an unattended install.
-  PortPage.Values[0] := ExpandConstant('{param:PORT|5000}');
+  // An explicit /PORT wins. Failing that, whatever this computer is already
+  // serving on - an upgrade must not move a hospital off the port they
+  // chose. 5000 only for a genuinely new install.
+  PortPage.Values[0] := ExpandConstant('{param:PORT|}');
+  if Trim(PortPage.Values[0]) <> '' then
+    Log('Port ' + PortPage.Values[0] + ' came from /PORT.')
+  else
+  begin
+    PortPage.Values[0] := ExistingAppPort();
+    if Trim(PortPage.Values[0]) <> '' then
+      Log('Port ' + PortPage.Values[0] + ' inherited from the existing install.')
+    else
+    begin
+      PortPage.Values[0] := '5000';
+      Log('Port 5000: no /PORT given and no existing install to inherit from.');
+    end;
+  end;
 end;
 
 function GetPort(Param: String): String;
@@ -272,13 +427,17 @@ end;
 /// fight it for the port.
 function GetDbPort(Param: String): String;
 begin
-  Result := ExpandConstant('{param:DBPORT|5433}');
+  Result := Trim(ExpandConstant('{param:DBPORT|}'));
+
+  // The cluster that exists beats any default. Guessing 5433 on a machine
+  // whose cluster is elsewhere checks the wrong port for conflicts and
+  // points the database scripts at nothing.
+  if Result = '' then
+    Result := ExistingDbPort();
+  if Result = '' then
+    Result := '5433';
 end;
 
-function DataDir: String;
-begin
-  Result := ExpandConstant('{commonappdata}\{#AppName}');
-end;
 
 /// Where a failed install explains itself.
 ///
@@ -464,12 +623,80 @@ end;
 /// exits with code 7 and writes nothing. Every check that can be made without
 /// the payload extracted belongs here rather than later, because later there
 /// is no way to fail at all.
+/// Whether this computer already has a Hospital PM database.
+///
+/// db.json is the right marker rather than the install directory: it holds
+/// the application database password, it lives in ProgramData which
+/// survives an uninstall, and it is exactly what an upgrade reuses. A
+/// machine with it has a hospital name and an administrator already, so
+/// Setup must not ask for either.
+function IsUpgrade(): Boolean;
+begin
+  Result := FileExists(DataDir + '\db.json');
+end;
+
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ResultCode: Integer;
   AppPort, DbPort: String;
 begin
   Result := '';
+
+  // Everything the wizard would have insisted on, for an install nobody is
+  // watching. Checked here rather than in NextButtonClick because a
+  // returned string is an exit code and a log line, while a MsgBox on an
+  // unattended machine is a hang.
+  //
+  // Only for a FRESH install. An upgrade already has a hospital name and
+  // an administrator in its database, and demanding them again is what
+  // stopped the in-app updater from ever working: it launches Setup with
+  // /VERYSILENT and no answers, because it has none to give.
+  if WizardSilent and (not IsUpgrade) then
+  begin
+    if Trim(HospitalPage.Values[0]) = '' then
+    begin
+      Result := 'This is a new installation and no hospital name was given.' + #13#10#13#10 +
+                'Run Setup again with /HOSPITAL="<name>", or run it without /VERYSILENT ' +
+                'and fill the pages in.' + #13#10#13#10 +
+                'Nothing has been installed.';
+      Exit;
+    end;
+
+    if Trim(AdminPage.Values[1]) = '' then
+    begin
+      Result := 'This is a new installation and no administrator username was given.' + #13#10#13#10 +
+                'Run Setup again with /ADMINUSER=<name>.' + #13#10#13#10 +
+                'Nothing has been installed.';
+      Exit;
+    end;
+
+    if Length(AdminPage.Values[2]) < 10 then
+    begin
+      Result := 'This is a new installation and no administrator password of at least ' +
+                '10 characters was given.' + #13#10#13#10 +
+                'Run Setup again with /ADMINPASSWORD=<password>.' + #13#10#13#10 +
+                'Nothing has been installed.';
+      Exit;
+    end;
+  end;
+
+  // Applies to every install, silent or not: the wizard checks this too,
+  // but a silent one skipped straight past it.
+  if StrToIntDef(Trim(PortPage.Values[0]), -1) < 1 then
+  begin
+    Result := 'The port must be a number between 1 and 65535. Got: ' +
+              Trim(PortPage.Values[0]) + #13#10#13#10 + 'Nothing has been installed.';
+    Exit;
+  end;
+
+  if Trim(PortPage.Values[0]) = GetDbPort('') then
+  begin
+    Result := 'The application and the bundled database were both given port ' +
+              Trim(PortPage.Values[0]) + '. They need different ones.' + #13#10#13#10 +
+              'Nothing has been installed.';
+    Exit;
+  end;
 
   // Without this, reinstalling over a working install fails: the running
   // service holds our own files. Inno's RestartManager prompt is no help
@@ -495,6 +722,12 @@ begin
 
   AppPort := Trim(PortPage.Values[0]);
   DbPort := GetDbPort('');
+
+  // Said out loud because it could not be worked out from the log otherwise.
+  // A silent upgrade that quietly picked the wrong port looked, in the log,
+  // exactly like one that picked the right one: Setup polls whichever port
+  // it chose and reports success either way.
+  Log('Application port: ' + AppPort + '   database port: ' + DbPort);
 
   // Ports are checked AFTER stopping our own services, so on an upgrade we
   // are not reporting a conflict with ourselves.
@@ -534,11 +767,27 @@ begin
   end;
 end;
 
+/// Validates a page the operator is looking at.
+///
+/// Returns immediately under /VERYSILENT, and that is the whole point.
+/// Inno still calls this for pages it skips, and MsgBox is NOT suppressed
+/// by /SUPPRESSMSGBOXES - that flag only governs Setup's own dialogs. So
+/// an unattended install missing a parameter used to put a modal error box
+/// on a machine with nobody at it, wait for a click that could not come,
+/// then abort with exit code 1 and no install-failure.txt.
+///
+/// Worse, the application's own updater launches Setup exactly that way -
+/// /VERYSILENT and no answers - so every in-app update stopped the service
+/// and then hung on a dialog in session 0. Silent installs are validated in
+/// PrepareToInstall instead, where a refusal is a returned string, a real
+/// exit code, and no window.
 function NextButtonClick(CurPageID: Integer): Boolean;
 var
   PortNumber: Integer;
 begin
   Result := True;
+  if WizardSilent then
+    Exit;
 
   if CurPageID = HospitalPage.ID then
   begin
@@ -605,38 +854,7 @@ begin
   Result := Value;
 end;
 
-/// Pulls one string field out of the credentials JSON that setup-database.ps1
-/// wrote. A deliberately small reader rather than a JSON parser: the file is
-/// machine-written, one level deep, and its values are generated
-/// alphanumerics, so there is nothing to escape and nothing to nest.
-function ReadJsonField(const Json, Field: String): String;
-var
-  Marker: String;
-  Start, Finish: Integer;
-begin
-  Result := '';
-  Marker := '"' + Field + '":';
 
-  Start := Pos(Marker, Json);
-  if Start = 0 then
-    Exit;
-
-  Start := Start + Length(Marker);
-
-  // Skip whitespace and the opening quote.
-  while (Start <= Length(Json)) and
-        ((Json[Start] = ' ') or (Json[Start] = #9) or (Json[Start] = '"')) do
-    Start := Start + 1;
-
-  Finish := Start;
-  while (Finish <= Length(Json)) and
-        (Json[Finish] <> '"') and (Json[Finish] <> ',') and
-        (Json[Finish] <> #13) and (Json[Finish] <> #10) and
-        (Json[Finish] <> '}') do
-    Finish := Finish + 1;
-
-  Result := Trim(Copy(Json, Start, Finish - Start));
-end;
 
 /// Records the first failure, writes it down, and shows it.
 ///
@@ -763,6 +981,13 @@ begin
     ';Database=' + JsonEscape(DbName) +
     ';Username=' + JsonEscape(DbUser) +
     ';Password=' + JsonEscape(DbPassword);
+
+  // Read before the file goes, and only used when this run was not told a
+  // name. An upgrade started by the in-app updater passes no /HOSPITAL,
+  // because it has none to pass; without this it would blank the name on
+  // every printed report the hospital produces afterwards.
+  if Trim(HospitalPage.Values[0]) = '' then
+    HospitalPage.Values[0] := ExistingHospitalName();
 
   // Deleted rather than overwritten. A file created fresh inside the locked
   // folder inherits the correct ACEs; an existing one keeps whatever it had,

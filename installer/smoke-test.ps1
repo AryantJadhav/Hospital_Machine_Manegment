@@ -44,6 +44,11 @@ $ServiceName  = "HospitalPM"
 $PgService    = "HospitalPM_Postgres"
 $InstallDir   = Join-Path $env:ProgramFiles $AppName
 $DataDir      = Join-Path $env:ProgramData $AppName
+
+# Spaces and a comma on purpose. An Indian hospital name has both, and the
+# quoting needed to get one past Inno is exactly what used to be wrong.
+$HospitalName  = "Sahyadri Hospital, Pune"
+$AdminFullName = "Dr S Deshmukh"
 $FailureFile  = Join-Path $InstallDir "install-failure.txt"
 $UninstallExe = Join-Path $InstallDir "unins000.exe"
 
@@ -207,18 +212,30 @@ function Test-SpaServed {
     catch { return $false }
 }
 
+<#
+    One command-line string, not an array.
+
+    Inno reads {param:NAME} up to the next SPACE, so a value containing one
+    has to carry its own quotes: /HOSPITAL="Sahyadri Hospital, Pune".
+    Handing Start-Process an array quotes the whole token instead -
+    "/HOSPITAL=Sahyadri Hospital, Pune" - which Inno truncates at the space
+    and stores as "Sahyadri".
+
+    The harness did that from the day it was written. Nothing noticed,
+    because no scenario ever asserted the name that came back out.
+#>
 function Invoke-Setup {
-    param([string[]]$Extra = @(), [string]$LogName)
+    param([string]$Extra = "", [string]$LogName)
 
     $log = Join-Path $LogDir "$LogName.log"
-    $arguments = @(
-        "/VERYSILENT", "/SUPPRESSMSGBOXES",
-        "/PORT=$Port", "/DBPORT=$DbPort",
-        "/HOSPITAL=Sahyadri Hospital, Pune",
-        "/ADMINUSER=admin", "/ADMINNAME=Dr S Deshmukh",
-        "/ADMINPASSWORD=SmokeTest12345",
-        "/LOG=$log"
-    ) + $Extra
+    $q = [char]34
+
+    $arguments =
+        "/VERYSILENT /SUPPRESSMSGBOXES /PORT=$Port /DBPORT=$DbPort " +
+        "/HOSPITAL=$q$HospitalName$q " +
+        "/ADMINUSER=admin /ADMINNAME=$q$AdminFullName$q " +
+        "/ADMINPASSWORD=SmokeTest12345 " +
+        "/LOG=$q$log$q $Extra"
 
     return (Wait-ForProcess -FilePath $Setup -Arguments $arguments -What "Setup")
 }
@@ -239,7 +256,7 @@ function Invoke-Setup {
 function Wait-ForProcess {
     param(
         [Parameter(Mandatory)][string]$FilePath,
-        [string[]]$Arguments = @(),
+        [string]$Arguments = "",
         [Parameter(Mandatory)][string]$What,
         [int]$TimeoutSeconds = 600
     )
@@ -253,10 +270,29 @@ function Wait-ForProcess {
     return $p.ExitCode
 }
 
+<#
+    Setup with nothing but the silent flags - no hospital name, no
+    administrator, no ports.
+
+    This is precisely what the application's own updater runs, because on an
+    upgrade it has no answers to give and needs none. Every scenario above
+    passes a full parameter set, which is why a real in-app update could
+    never have worked and CI would never have said so.
+#>
+function Invoke-BareSetup {
+    param([string]$LogName)
+
+    $log = Join-Path $LogDir "$LogName.log"
+    $q = [char]34
+    return (Wait-ForProcess -FilePath $Setup `
+        -Arguments "/VERYSILENT /NORESTART /SUPPRESSMSGBOXES /LOG=$q$log$q" `
+        -What "Setup" -TimeoutSeconds 300)
+}
+
 function Invoke-Uninstall([switch]$RemoveData) {
     if (-not (Test-Path $UninstallExe)) { return $null }
-    $arguments = @("/VERYSILENT", "/SUPPRESSMSGBOXES")
-    if ($RemoveData) { $arguments += "/REMOVEDATA=1" }
+    $arguments = "/VERYSILENT /SUPPRESSMSGBOXES"
+    if ($RemoveData) { $arguments += " /REMOVEDATA=1" }
     $code = Wait-ForProcess -FilePath $UninstallExe -Arguments $arguments -What "Uninstall"
 
     # The uninstaller hands the last of its own deletion to a detached process
@@ -445,6 +481,57 @@ foreach ($attempt in 1..2) {
     Assert-That (-not (Test-Path $FailureFile)) "upgrade ${attempt}: no install-failure.txt"
     Assert-That ($health -eq 200)               "upgrade ${attempt}: /health answered 200 (was $health)"
 }
+
+# --- 5b. The upgrade the application itself performs ----------------------
+# The updater launches Setup with the silent flags and nothing else. It has
+# no hospital name or password to pass and should need none: both already
+# exist in the database it is upgrading.
+#
+# This once put a modal error box on the machine - MsgBox is not covered by
+# /SUPPRESSMSGBOXES - and waited for a click. In session 0, where the
+# service runs, that click can never come, so an in-app update stopped the
+# service and hung there.
+Write-Scenario "Upgrades with no answers, the way the updater does"
+
+$code = Invoke-BareSetup -LogName "05b-bare-upgrade"
+$health = Get-Health
+
+Assert-That ($code -eq 0)                   "bare upgrade: exit 0 (was $code)"
+Assert-That (-not (Test-Path $FailureFile)) "bare upgrade: no install-failure.txt"
+Assert-That ($health -eq 200)               "bare upgrade: /health answered 200 (was $health)"
+
+# The name on every printed report. An upgrade is not told it and must not
+# lose it.
+$settingsAfter = Get-Content "$DataDir\appsettings.json" -Raw | ConvertFrom-Json
+Assert-That ($settingsAfter.FirstRun.HospitalName -eq $HospitalName) `
+    "bare upgrade: kept the hospital name (was '$($settingsAfter.FirstRun.HospitalName)')"
+
+# The port matters more than the name. The harness installs on $Port, not on
+# the 5000 default, so a bare upgrade that fell back to the default would
+# move the app - and every bookmark, shortcut and ward tablet with it.
+Assert-That ($settingsAfter.Urls -eq "http://+:$Port") `
+    "bare upgrade: still serving on $Port (Urls is '$($settingsAfter.Urls)')"
+
+$dbAfter = Get-Content "$DataDir\db.json" -Raw | ConvertFrom-Json
+Assert-That ([int]$dbAfter.port -eq $DbPort) `
+    "bare upgrade: database still on $DbPort (was $($dbAfter.port))"
+
+# --- 5c. A fresh silent install with nothing to go on ---------------------
+# The other half: with no existing database there IS no hospital name or
+# administrator to inherit, so Setup must refuse - with an exit code, in a
+# log, and without a window.
+Write-Scenario "Refuses a bare install on a clean machine, without a dialog"
+
+Reset-Machine
+
+$code = Invoke-BareSetup -LogName "05c-bare-clean"
+
+Assert-That ($code -ne 0)                   "bare clean install: refused with a non-zero code (was $code)"
+Assert-That (-not (Test-Path $FailureFile)) "bare clean install: nothing was installed"
+
+# Put the machine back for the scenarios that follow.
+$code = Invoke-Setup -LogName "05c-restore"
+Assert-That ($code -eq 0) "restored the install for later scenarios (was $code)"
 
 # --- 6. A failure after the payload has landed ----------------------------
 # The phase where Inno reports success no matter what. The exit code cannot
