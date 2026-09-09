@@ -207,6 +207,13 @@ jobs:
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
+        # Keeping an artifact is a convenience, not a result. When the
+        # account's storage filled, three jobs went red at this step having
+        # already built, tested and installed everything they were asked to -
+        # a red tick that said nothing about the code, on the one branch where
+        # the code was the question. An upload failure is now reported and
+        # stepped over.
+        continue-on-error: true
         with:
           name: hospitalpm-${{ matrix.rid }}
           path: artifacts/${{ matrix.rid }}/
@@ -295,6 +302,7 @@ jobs:
       - name: Upload installer logs
         if: always()
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: installer-smoke-logs
           path: artifacts/smoke-logs/
@@ -307,6 +315,7 @@ jobs:
       - name: Upload the installer
         if: failure()
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: hospitalpm-installer
           path: artifacts/installer/HospitalPM-Setup-1.0.0.exe
