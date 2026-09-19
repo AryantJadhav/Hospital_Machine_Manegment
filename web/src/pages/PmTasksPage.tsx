@@ -43,6 +43,12 @@ export function PmTasksPage() {
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState<PmTask | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // The PM just recorded, kept so the confirmation can offer its certificate.
+  // A hospital's next question after "recorded" is "where is the paper".
+  const [recorded, setRecorded] = useState<PmTask | null>(null);
+  // Whether anything has ever been completed or skipped. Only asked when the
+  // open list is empty, to tell "all caught up" from "nothing scheduled yet".
+  const [hasHistory, setHasHistory] = useState(false);
 
   const { can } = useAuth();
   // Deciding a PM will not happen is a supervisory call, not a technician's,
@@ -67,7 +73,19 @@ export function PmTasksPage() {
       const q = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
       if (status) q.set('status', status);
       if (locationId) q.set('locationId', locationId);
-      setData(await api.get<Paged<PmTask>>(`/api/pm/tasks?${q}`));
+      const result = await api.get<Paged<PmTask>>(`/api/pm/tasks?${q}`);
+      setData(result);
+
+      if (result.total === 0 && !status && !locationId) {
+        for (const finished of [40, 50]) {
+          const past = await api.get<Paged<PmTask>>(`/api/pm/tasks?status=${finished}&pageSize=1`);
+          if (past.total > 0) {
+            setHasHistory(true);
+            return;
+          }
+        }
+        setHasHistory(false);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load the PM list.');
     } finally {
@@ -85,6 +103,8 @@ export function PmTasksPage() {
     else next.delete(key);
     setParams(next, { replace: true });
     setPage(1);
+    setNotice(null);
+    setRecorded(null);
   }
 
   async function certificate(task: PmTask) {
@@ -110,9 +130,11 @@ export function PmTasksPage() {
         taskId={working.id}
         canSkip={canSkip}
         onClose={() => setWorking(null)}
-        onDone={async (message) => {
+        onDone={async (message, completed) => {
+          const task = working;
           setWorking(null);
           setNotice(message);
+          setRecorded(completed ? task : null);
           await load();
         }}
       />
@@ -131,7 +153,19 @@ export function PmTasksPage() {
       </header>
 
       {error && <p className="alert alert-error" role="alert">{error}</p>}
-      {notice && <p className="alert alert-ok" role="status">{notice}</p>}
+      {notice && (
+        <p className="alert alert-ok" role="status">
+          {notice}
+          {recorded && (
+            <>
+              {' '}
+              <button className="btn btn-quiet" onClick={() => void certificate(recorded)}>
+                Download the certificate
+              </button>
+            </>
+          )}
+        </p>
+      )}
 
       <div className="filters card">
         <select value={status} onChange={(e) => setFilter('status', e.target.value)}>
@@ -171,7 +205,11 @@ export function PmTasksPage() {
             {!loading && data?.items.length === 0 && (
               <tr>
                 <td colSpan={7} className="empty">
-                  Nothing here. Create a schedule against a machine to generate PM tasks.
+                  {status || locationId
+                    ? 'No PMs match these filters.'
+                    : hasHistory
+                      ? 'All caught up. No PM is open right now. Finished ones are under Completed.'
+                      : 'Nothing here yet. Schedule a checklist from the Checklists page to generate PM tasks.'}
                 </td>
               </tr>
             )}
@@ -195,7 +233,13 @@ export function PmTasksPage() {
                       by database trigger, so offering to reopen one would be
                       offering something the database will refuse. */}
                   {(t.status === 10 || t.status === 20 || t.status === 30) && (
-                    <button className="btn btn-quiet" onClick={() => setWorking(t)}>
+                    <button
+                      className="btn btn-quiet"
+                      onClick={() => {
+                        setRecorded(null);
+                        setWorking(t);
+                      }}
+                    >
                       Do PM
                     </button>
                   )}

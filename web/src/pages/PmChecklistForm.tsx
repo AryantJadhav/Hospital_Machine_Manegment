@@ -57,7 +57,8 @@ export function PmChecklistForm({
   taskId: number;
   canSkip: boolean;
   onClose: () => void;
-  onDone: (message: string) => void | Promise<void>;
+  /** `completed` is false for a skip: only a completed PM has a certificate. */
+  onDone: (message: string, completed: boolean) => void | Promise<void>;
 }) {
   const [form, setForm] = useState<PmForm | null>(null);
   const [answers, setAnswers] = useState<Answers>({});
@@ -158,6 +159,7 @@ export function PmChecklistForm({
         result.outOfRangeCount > 0
           ? `PM recorded, with ${result.outOfRangeCount} reading${result.outOfRangeCount === 1 ? '' : 's'} outside the acceptable range.`
           : 'PM recorded.',
+        true,
       );
     } catch (e) {
       // The server validates the whole checklist and names each offending
@@ -199,7 +201,7 @@ export function PmChecklistForm({
         reason: reason.trim(),
         clientSubmissionId: submissionId.current,
       });
-      await onDone('PM skipped, with the reason recorded.');
+      await onDone('PM skipped, with the reason recorded.', false);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not skip this PM.');
     } finally {
