@@ -2,9 +2,15 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/useAuth';
+import { ServerQrCode } from './ServerQrCode';
 
 /**
  * First-run screen. Shown only while the install has no accounts at all.
+ *
+ * After the admin account is created, shows a mobile-config QR code so the
+ * operator can point a phone at the screen and connect the mobile app without
+ * typing an IP address. This is the feature the build plan calls out as
+ * "Final screen prints the mobile-config QR."
  */
 export function SetupPage({ onDone }: { onDone: () => void }) {
   const { login } = useAuth();
@@ -14,6 +20,8 @@ export function SetupPage({ onDone }: { onDone: () => void }) {
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // null = still on the form; string = setup succeeded, holds the server URL
+  const [serverUrl, setServerUrl] = useState<string | null>(null);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -30,7 +38,8 @@ export function SetupPage({ onDone }: { onDone: () => void }) {
       // Sign straight in. Making the operator retype what they just chose
       // is the kind of friction that makes software feel unfinished.
       await login(userName, password);
-      onDone();
+      // Show the mobile-config QR before entering the main app.
+      setServerUrl(window.location.origin);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Setup failed.');
     } finally {
@@ -38,6 +47,25 @@ export function SetupPage({ onDone }: { onDone: () => void }) {
     }
   }
 
+  // --- Success screen with mobile-config QR ---
+  if (serverUrl) {
+    return (
+      <div className="login-shell">
+        <div className="card login-card setup-done">
+          <h2>✓ Hospital PM is ready</h2>
+          <p className="muted">
+            Connect phones to this server by scanning the code below with the Hospital PM app.
+          </p>
+          <ServerQrCode url={serverUrl} />
+          <button className="btn btn-primary" onClick={onDone} style={{ marginTop: '0.5rem' }}>
+            Continue to dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // --- Setup form ---
   return (
     <div className="login-shell">
       <form className="card login-card" onSubmit={onSubmit}>

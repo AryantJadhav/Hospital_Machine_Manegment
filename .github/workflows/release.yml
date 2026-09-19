@@ -139,6 +139,11 @@ jobs:
           HOSPITALPM_UPDATE_FEED_URL: >-
             ${{ vars.UPDATE_FEED_URL
                 || format('https://github.com/{0}/releases/latest/download/HospitalPM.update', github.repository) }}
+
+          # OV code-signing certificate thumbprint. When present, the
+          # installer EXE is Authenticode-signed after ISCC produces it.
+          # Without it, the build succeeds but SmartScreen warns.
+          HOSPITALPM_CODESIGN_THUMBPRINT: ${{ secrets.CODESIGN_THUMBPRINT }}
         run: ./installer/build.ps1 -Version ${{ steps.version.outputs.version }}
 
       # The same eight scenarios build.yml runs, against the artifact that is
@@ -188,6 +193,23 @@ jobs:
           }
           Write-Output "  stamped version: $stamped"
 
+      # Report whether the installer was code-signed. This is informational;
+      # the build succeeds either way, because purchasing the certificate is
+      # a separate step that should not block CI.
+      - name: Check code signature
+        shell: pwsh
+        run: |
+          $setup = "artifacts/installer/HospitalPM-Setup-${{ steps.version.outputs.version }}.exe"
+          $sig = Get-AuthenticodeSignature $setup
+          if ($sig.Status -eq 'Valid') {
+            Write-Output "Installer is code-signed: $($sig.SignerCertificate.Subject)"
+            "signed=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } else {
+            Write-Output "::warning::Installer is NOT code-signed. SmartScreen will warn."
+            "signed=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+        id: codesign
+
       # Published alongside the installer so the signing step can prove,
       # before anything is uploaded, that the manifest it just made will
       # actually verify against the key this build shipped with. Signing
@@ -232,10 +254,9 @@ jobs:
             over itself twice, a failed install reported, and an uninstall that
             keeps the hospital's data unless asked otherwise.
 
-            **This installer is not code-signed.** Windows SmartScreen will
-            warn on download and on first run, and some antivirus products
-            delete unsigned installers outright. Until an OV certificate is
-            applied, a hospital has to be told to expect that.
+            ${{ steps.codesign.outputs.signed == 'true'
+                && '✅ **This installer is code-signed.** SmartScreen will not warn.'
+                || '⚠️ **This installer is not code-signed.** Windows SmartScreen will warn on download and on first run, and some antivirus products delete unsigned installers outright. Set the CODESIGN_THUMBPRINT repository secret to sign future releases.' }}
 
             **This release has no `HospitalPM.update` asset yet, so no
             installed copy can update to it.** The manifest is signed on the

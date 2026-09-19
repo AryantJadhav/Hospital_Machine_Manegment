@@ -449,3 +449,47 @@ textarea {
   border-radius: 6px;
   padding: 0.6rem;
 }
+
+/* ---------- mobile-config QR ---------- */
+
+.qr-connect {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem 0;
+}
+
+.qr-connect canvas {
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+.qr-url {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text);
+  word-break: break-all;
+  text-align: center;
+}
+
+.qr-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  text-align: center;
+  max-width: 280px;
+}
+
+/* Setup page success state */
+.setup-done {
+  text-align: center;
+}
+
+.setup-done h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1.2rem;
+}
+
+.setup-done .muted {
+  margin: 0 0 1rem;
+}

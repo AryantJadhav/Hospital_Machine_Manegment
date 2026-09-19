@@ -1,0 +1,40 @@
+# Build artifacts
+artifacts/
+bin/
+obj/
+
+# Node
+web/node_modules/
+mobile/node_modules/
+mobile/dist/
+
+# Git
+.git/
+.github/
+.gitignore
+.gitattributes
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Installer — Windows only, not relevant to the Docker build
+installer/
+
+# Mobile — not part of the server image
+mobile/
+
+# Tests — not shipped
+tests/
+
+# Tools — vendor-only, never shipped
+tools/
+
+# Docs
+docs/
+*.md
+
+# Editor config
+.editorconfig

@@ -1,0 +1,78 @@
+# Hospital PM — Docker Compose (Linux target)
+#
+# The Linux counterpart of the Windows Inno Setup installer. Stands up the
+# application and its PostgreSQL database with one command:
+#
+#   docker compose up -d
+#
+# Data survives container removal: the database cluster and the application's
+# data directory are on named volumes.
+#
+# Access the UI at http://localhost:5000/ after startup.
+#
+# First run: the application auto-runs migrations and presents a setup page
+# for the hospital name and administrator account — identical to what the
+# Windows installer collects.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    # Port 5433 on the host, not 5432 — identical to the Windows installer,
+    # which uses a non-standard port so an existing PostgreSQL keeps working.
+    # Inside the compose network the container listens on 5432 as normal.
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: hospitalpm
+      POSTGRES_USER: hospitalpm
+      # Change this. The Windows installer generates a random password; the
+      # compose file cannot, so a default is provided. Set a real one in
+      # an .env file or with POSTGRES_PASSWORD=... on the command line.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hospitalpm_change_me}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hospitalpm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - internal
+
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      ConnectionStrings__HospitalPm: "Host=postgres;Port=5432;Database=hospitalpm;Username=hospitalpm;Password=${POSTGRES_PASSWORD:-hospitalpm_change_me}"
+      ASPNETCORE_URLS: "http://+:5000"
+      HOSPITALPM_DATA: /var/lib/hospitalpm
+      # Disable mDNS inside a container — the host network is not available
+      # in bridge mode, and multicast does not cross the Docker bridge.
+      Mdns__Enabled: "false"
+    volumes:
+      - appdata:/var/lib/hospitalpm
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - internal
+
+volumes:
+  pgdata:
+    name: hospitalpm-pgdata
+  appdata:
+    name: hospitalpm-appdata
+
+networks:
+  internal:
+    name: hospitalpm

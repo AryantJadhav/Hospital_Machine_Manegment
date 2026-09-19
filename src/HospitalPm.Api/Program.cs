@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using HospitalPm.Api.Auth;
 using HospitalPm.Api.Hosting;
 using HospitalPm.Api.Checklists;
@@ -128,6 +128,13 @@ builder.Services.Configure<FirstRunOptions>(builder.Configuration.GetSection(Fir
 builder.Services.AddSingleton<QrCodeService>();
 builder.Services.AddScoped<LabelSheetService>();
 builder.Services.AddScoped<ZplLabelService>();
+
+// mDNS: advertise "hospitalpm.local" on the LAN so phones and browsers can
+// find us without knowing the IP. A DHCP change on the server no longer
+// breaks every bookmark and every mobile config on the ward. Disabled by
+// setting Mdns:Enabled to false — for example if another mDNS responder is
+// already running on this machine.
+builder.Services.AddHostedService<MdnsAdvertiser>();
 
 // QuestPDF refuses to render until a licence type is declared. Community is
 // free for organisations under $1M USD annual revenue; past that it needs a

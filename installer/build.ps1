@@ -91,7 +91,22 @@ param(
         installed. Both are correct for development and the CI smoke test,
         and neither is ever correct for a release.
     #>
-    [switch]$NoUpdateKey
+    [switch]$NoUpdateKey,
+
+    <#
+        SHA-1 thumbprint of the OV code-signing certificate installed in the
+        Windows certificate store (CurrentUser\My or LocalMachine\My).
+
+        When provided, the built installer EXE is Authenticode-signed with
+        signtool, which removes the SmartScreen warning and the antivirus
+        false-positives that come with unsigned installers.
+
+        Defaults to the environment so the release pipeline can pass it as a
+        secret. It is not itself sensitive — the thumbprint is embedded in
+        the signed binary for anyone to read — but the certificate it points
+        to is.
+    #>
+    [string]$CertificateThumbprint = $env:HOSPITALPM_CODESIGN_THUMBPRINT
 )
 
 $ErrorActionPreference = "Stop"
@@ -481,9 +496,64 @@ if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
 $setup = Join-Path $installerDir "HospitalPM-Setup-$Version.exe"
 $sizeMb = [math]::Round((Get-Item $setup).Length / 1MB, 1)
 
+# --- 5. Code-sign the installer (optional) ---------------------------------
+#
+# Without an Authenticode signature, Windows SmartScreen warns on download,
+# warns again on first run, and some hospital antivirus products delete the
+# file outright. An OV certificate removes all of those.
+#
+# signtool is part of the Windows SDK. It ships on GitHub Actions runners and
+# on any machine with Visual Studio. The certificate must be installed in the
+# Windows certificate store and identified by its SHA-1 thumbprint.
+
+if ($CertificateThumbprint) {
+    Write-Host "==> Code-signing the installer"
+
+    $signtool = @(
+        "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe",
+        "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.0.22000.0\x64\signtool.exe",
+        "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.0.19041.0\x64\signtool.exe"
+    ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+    # Fall back to whatever is on the PATH — CI runners install the SDK in
+    # unpredictable directories, but signtool is always reachable.
+    if (-not $signtool) {
+        $signtool = (Get-Command signtool.exe -ErrorAction SilentlyContinue).Source
+    }
+    if (-not $signtool) {
+        throw "signtool.exe not found. Install the Windows SDK or add it to the PATH."
+    }
+
+    # SHA-256 signature with RFC 3161 timestamp. The timestamp is critical:
+    # without it, the signature expires when the certificate does, and every
+    # installer ever shipped stops being trusted on that date.
+    & $signtool sign `
+        /sha1 $CertificateThumbprint `
+        /fd sha256 `
+        /tr http://timestamp.digicert.com `
+        /td sha256 `
+        /d "Hospital PM" `
+        $setup
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Code signing failed (signtool exit $LASTEXITCODE). Check the certificate thumbprint and that the certificate is installed."
+    }
+
+    # Verify the signature was actually applied. signtool exits 0 even when
+    # it warns about an untrusted root, so an explicit verify catches that.
+    & $signtool verify /pa $setup | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "WARNING: the signature was applied but does not verify. The certificate chain may be incomplete." -ForegroundColor Yellow
+    }
+
+    Write-Host "    Signed with certificate $CertificateThumbprint" -ForegroundColor Green
+}
+
 Write-Host ""
 Write-Host "Installer: $setup ($sizeMb MB)" -ForegroundColor Green
-Write-Host "NOTE: unsigned. Windows SmartScreen will warn until an OV code-signing certificate is applied." -ForegroundColor Yellow
+if (-not $CertificateThumbprint) {
+    Write-Host "NOTE: unsigned. Windows SmartScreen will warn until an OV code-signing certificate is applied." -ForegroundColor Yellow
+}
 
 # Said at the end as well as the beginning. The beginning scrolls away, and
 # this is the line that distinguishes a releasable installer from one that

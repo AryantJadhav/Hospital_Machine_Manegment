@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
+import { ServerQrCode } from './ServerQrCode';
 
 type Check = {
   name: string;
@@ -120,6 +121,19 @@ export function DiagnosticsPage() {
           </>
         )}
       </div>
+
+      {/* Mobile-config QR — the permanent place to onboard a new phone.
+          Uses the first address the server reports, which is the most likely
+          to work from the hospital's Wi-Fi network. */}
+      {data.addresses.length > 0 && (
+        <div className="card">
+          <h2 className="section-h">Connect a phone</h2>
+          <p className="muted" style={{ marginTop: 0 }}>
+            Open the Hospital PM app on a phone and scan this code to connect it to this server.
+          </p>
+          <ServerQrCode url={data.addresses[0]} />
+        </div>
+      )}
 
       <div className="card">
         <h2 className="section-h">This installation</h2>
