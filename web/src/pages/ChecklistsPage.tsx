@@ -53,6 +53,61 @@ type Item = {
 type Section = { title: string; items: Item[] };
 type Definition = { sections: Section[] };
 
+/**
+ * Today on the clock of the machine the browser is on, as yyyy-mm-dd.
+ *
+ * Not `new Date().toISOString().slice(0, 10)`: that is the UTC date, which in
+ * India is still yesterday until 05:30, and the schedule's first PM then came
+ * out a day late.
+ */
+function localToday(): string {
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
+/**
+ * Gives every question without a key one, made from its wording.
+ *
+ * The key is what a reading is trended by across versions, so it matters to the
+ * software and means nothing to the engineer typing "Casing intact". Publishing
+ * used to refuse a blank one with a message about `sections[0].items[0].key`.
+ * A key an author typed is never changed, and a generated one never collides
+ * with another in the checklist, because answers are stored by key.
+ */
+function withKeys(definition: Definition): Definition {
+  const used = new Set<string>();
+  for (const section of definition.sections) {
+    for (const item of section.items) {
+      if (item.key.trim()) used.add(item.key.trim());
+    }
+  }
+
+  return {
+    ...definition,
+    sections: definition.sections.map((section) => ({
+      ...section,
+      items: section.items.map((item) => {
+        if (item.key.trim()) return item;
+
+        let base = item.label
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '_')
+          .replace(/^_+|_+$/g, '')
+          .slice(0, 50)
+          .replace(/_+$/, '');
+        if (!/^[a-z]/.test(base)) base = base ? `check_${base}` : 'check';
+
+        let key = base;
+        for (let n = 2; used.has(key); n++) key = `${base}_${n}`;
+        used.add(key);
+        return { ...item, key };
+      }),
+    })),
+  };
+}
+
 type Version = {
   id: number;
   versionNo: number;
@@ -301,7 +356,7 @@ function ScheduleForm({
   const [locations, setLocations] = useState<LocationLookup[]>([]);
   const [frequency, setFrequency] = useState(20);
   const [intervalDays, setIntervalDays] = useState('90');
-  const [anchorDate, setAnchorDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [anchorDate, setAnchorDate] = useState(localToday);
   const [graceDays, setGraceDays] = useState('7');
   const [locationId, setLocationId] = useState('');
   const [includeInStore, setIncludeInStore] = useState(false);
@@ -661,7 +716,7 @@ function DraftEditor({
     setError(null);
     try {
       await api.put(`/api/checklists/${template.id}/draft`, {
-        definition,
+        definition: withKeys(definition),
         changeNote: changeNote.trim() || null,
       });
       setDirty(false);
@@ -971,7 +1026,7 @@ function ItemRow({
       <div style={{ display: 'grid', gap: '0.5rem', gridTemplateColumns: 'minmax(0,1fr) auto' }}>
         <input
           className="field mono"
-          placeholder="key_for_trending"
+          placeholder="Key — made from the question if left blank"
           value={item.key}
           readOnly={readOnly}
           maxLength={60}

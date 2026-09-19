@@ -14,7 +14,10 @@ namespace HospitalPm.Infrastructure.Reports;
 /// findings is worse than no certificate, because it makes the whole register
 /// untrustworthy the first time someone checks one.
 /// </summary>
-public sealed class PmCertificateDocument(PmCertificateData data, ReportOptions options) : IDocument
+public sealed class PmCertificateDocument(
+    PmCertificateData data,
+    ReportOptions options,
+    TimeSpan utcOffset = default) : IDocument
 {
     // Lato, not Calibri or Arial. QuestPDF ships Lato inside the package, so it
     // renders identically on a Windows PC and a minimal Linux container with no
@@ -197,8 +200,7 @@ public sealed class PmCertificateDocument(PmCertificateData data, ReportOptions 
                 // The received time can be hours later if the phone was
                 // offline on a ward, and the auditor wants the former.
                 Field(left, "Performed on",
-                    (data.PerformedAtUtc ?? data.CompletedAtUtc)
-                        .ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture) + " (local)");
+                    ReportTime.DateTime(data.PerformedAtUtc ?? data.CompletedAtUtc, utcOffset) + " (local)");
 
                 Field(left, "Recorded at",
                     data.CompletedAtUtc.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture) + " UTC");

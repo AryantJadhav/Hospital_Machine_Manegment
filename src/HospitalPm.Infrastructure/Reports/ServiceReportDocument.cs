@@ -13,7 +13,10 @@ namespace HospitalPm.Infrastructure.Reports;
 /// the timeline shows the part was on order, which is the fact that changes
 /// a purchasing decision.
 /// </summary>
-public sealed class ServiceReportDocument(ServiceReportData data, ReportOptions options) : IDocument
+public sealed class ServiceReportDocument(
+    ServiceReportData data,
+    ReportOptions options,
+    TimeSpan utcOffset = default) : IDocument
 {
     // Lato, not Calibri or Arial. QuestPDF ships Lato inside the package, so it
     // renders identically on a Windows PC and a minimal Linux container with no
@@ -148,7 +151,7 @@ public sealed class ServiceReportDocument(ServiceReportData data, ReportOptions 
                 col.Item().PaddingBottom(4).Row(row =>
                 {
                     row.ConstantItem(30, Unit.Millimetre)
-                        .Text(at.ToString("dd/MM HH:mm", CultureInfo.InvariantCulture))
+                        .Text(ReportTime.DayAndTime(at, utcOffset))
                         .FontSize(8).FontColor(Colors.Grey.Darken1);
 
                     row.ConstantItem(28, Unit.Millimetre)
@@ -236,8 +239,8 @@ public sealed class ServiceReportDocument(ServiceReportData data, ReportOptions 
         });
     }
 
-    private static string Local(DateTime? utc)
-        => utc?.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture) ?? "—";
+    private string Local(DateTime? utc)
+        => utc is null ? "—" : ReportTime.DateTime(utc.Value, utcOffset);
 
     /// <summary>Hours and minutes, because "4380 minutes" means nothing to a reader.</summary>
     private static string Duration(int minutes)

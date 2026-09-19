@@ -10,9 +10,17 @@
 #
 # Access the UI at http://localhost:5000/ after startup.
 #
-# First run: the application auto-runs migrations and presents a setup page
-# for the hospital name and administrator account — identical to what the
-# Windows installer collects.
+# Before the first run, set the hospital's name - the Windows installer asks for
+# it, and this is the same question. It is printed at the top of every PM
+# certificate and service report, so a hospital never gets one headed with the
+# product's name. Put it in an .env file beside this one:
+#
+#   HOSPITAL_NAME=Sunrise Multispecialty Hospital
+#
+# or pass it on the command line: HOSPITAL_NAME="..." docker compose up -d
+#
+# First run: the application auto-runs migrations and presents a setup page for
+# the administrator account, as the Windows installer does.
 
 services:
   postgres:
@@ -50,6 +58,9 @@ services:
       ConnectionStrings__HospitalPm: "Host=postgres;Port=5432;Database=hospitalpm;Username=hospitalpm;Password=${POSTGRES_PASSWORD:-hospitalpm_change_me}"
       ASPNETCORE_URLS: "http://+:5000"
       HOSPITALPM_DATA: /var/lib/hospitalpm
+      # Required, and compose stops with this message if it is missing rather
+      # than starting an install whose reports carry no hospital name.
+      Reports__HospitalName: ${HOSPITAL_NAME:?Set HOSPITAL_NAME to the hospital's name, e.g. in an .env file. It is printed on every report.}
       # Disable mDNS inside a container — the host network is not available
       # in bridge mode, and multicast does not cross the Docker bridge.
       Mdns__Enabled: "false"

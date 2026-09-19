@@ -4,7 +4,7 @@ import { api } from '../api/client';
 
 type Dashboard = {
   /* Present for an administrator only. */
-  backup: { state: 'ok' | 'warn' | 'problem'; lastSuccessUtc: string | null } | null;
+  backup: { state: 'ok' | 'pending' | 'warn' | 'problem'; lastSuccessUtc: string | null } | null;
   equipment: { total: number; inService: number; underRepair: number };
   pm: {
     overdue: number;
@@ -120,9 +120,11 @@ export function DashboardPage() {
 }
 
 /* Only shown when something needs doing. A healthy backup is not news, and a
-   permanent green row would teach people to stop reading this page. */
+   permanent green row would teach people to stop reading this page. Pending is
+   a new install that has not yet reached its first overnight backup - nothing
+   is wrong, so nothing is said. */
 function BackupBanner({ backup }: { backup: NonNullable<Dashboard['backup']> }) {
-  if (backup.state === 'ok') return null;
+  if (backup.state === 'ok' || backup.state === 'pending') return null;
 
   const last = backup.lastSuccessUtc
     ? `The last good backup was on ${new Date(backup.lastSuccessUtc).toLocaleString()}.`

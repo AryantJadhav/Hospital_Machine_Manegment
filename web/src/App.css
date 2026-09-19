@@ -159,6 +159,9 @@ input:focus-visible, select:focus-visible, button:focus-visible {
 .alert-ok { background: var(--ok-bg); color: var(--ok-text); }
 .alert-info { background: var(--info-bg); color: var(--info-text); }
 .alert-warn { background: var(--warn-bg); color: var(--warn-text); }
+/* A link inside a coloured alert takes the alert's colour. The default link
+   blue on the red or amber background was close to unreadable. */
+.alert a { color: inherit; text-decoration: underline; }
 
 .notice-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .notice-row .btn { color: inherit; }

@@ -111,6 +111,44 @@ public sealed class PilotMetricsTests(PostgresFixture fixture) : IAsyncLifetime,
         Assert.Equal(Pm(before, "completedLastWeek") + 1, Pm(after, "completedLastWeek"));
     }
 
+    /// <summary>
+    /// The dashboard and the pilot numbers put a completion in the same month.
+    ///
+    /// The dashboard used to compare the stored UTC year and month, so a PM
+    /// signed at 00:30 on the 1st in India landed in the month before.
+    /// </summary>
+    [Fact]
+    public async Task A_completion_just_after_the_hospitals_month_starts_counts_this_month()
+    {
+        var clock = _factory.Services.GetRequiredService<HospitalClock>();
+        var today = clock.Today();
+        var monthStart = new DateOnly(today.Year, today.Month, 1);
+
+        var justInside = monthStart.ToDateTime(new TimeOnly(0, 30), DateTimeKind.Utc) - clock.Offset;
+        var justOutside = monthStart.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)
+            - clock.Offset - TimeSpan.FromMinutes(30);
+
+        var dashboardBefore = await DashboardCompletedThisMonthAsync();
+        var before = await MetricsAsync();
+        var (schedule, equipment, versionId, signerId) = await SeedAsync();
+
+        await using var db = fixture.CreateContext();
+        db.PmTasks.AddRange(
+            Done(schedule, equipment, monthStart, versionId, signerId, justInside),
+            Done(schedule, equipment, monthStart.AddDays(-1), versionId, signerId, justOutside));
+        await db.SaveChangesAsync();
+
+        var after = await MetricsAsync();
+
+        Assert.Equal(dashboardBefore + 1, await DashboardCompletedThisMonthAsync());
+        Assert.Equal(Pm(before, "completedThisMonth") + 1, Pm(after, "completedThisMonth"));
+        Assert.Equal(Pm(before, "completedLastMonth") + 1, Pm(after, "completedLastMonth"));
+    }
+
+    private async Task<int> DashboardCompletedThisMonthAsync() =>
+        (await _client.GetFromJsonAsync<JsonElement>("/api/dashboard"))
+            .GetProperty("pm").GetProperty("completedThisMonth").GetInt32();
+
     [Fact]
     public async Task Compliance_is_a_percentage_of_what_fell_due()
     {

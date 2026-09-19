@@ -30,6 +30,7 @@ public static class ReportEndpoints
         int taskId,
         HospitalPmDbContext db,
         IOptions<ReportOptions> options,
+        HospitalPm.Infrastructure.Maintenance.HospitalClock clock,
         CancellationToken ct)
     {
         var completion = await db.PmCompletions.AsNoTracking()
@@ -102,7 +103,7 @@ public static class ReportEndpoints
             completion.Notes,
             lines);
 
-        var pdf = new PmCertificateDocument(data, options.Value).GeneratePdf();
+        var pdf = new PmCertificateDocument(data, options.Value, clock.Offset).GeneratePdf();
 
         return Results.File(pdf, "application/pdf", $"PM-{task.AssetTag}-{task.DueDate:yyyyMMdd}.pdf");
     }
@@ -111,6 +112,7 @@ public static class ReportEndpoints
         int id,
         HospitalPmDbContext db,
         IOptions<ReportOptions> options,
+        HospitalPm.Infrastructure.Maintenance.HospitalClock clock,
         CancellationToken ct)
     {
         var order = await db.WorkOrders.AsNoTracking()
@@ -155,7 +157,7 @@ public static class ReportEndpoints
             order.DowntimeMinutes,
             notes.Select(n => (n.CreatedAtUtc, Name(names, n.AuthorUserId), n.Body)).ToList());
 
-        var pdf = new ServiceReportDocument(data, options.Value).GeneratePdf();
+        var pdf = new ServiceReportDocument(data, options.Value, clock.Offset).GeneratePdf();
 
         return Results.File(pdf, "application/pdf", $"{order.Number}.pdf");
     }
@@ -177,11 +179,17 @@ public static class ReportEndpoints
         var weekEnd = today.AddDays(7);
         var monthStart = new DateOnly(today.Year, today.Month, 1);
 
+        // The month is the hospital's, the timestamps are UTC. Comparing the
+        // stored year and month directly put a PM signed just after midnight
+        // on the 1st, India time, into the month before.
+        var monthStartUtc = monthStart.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc) - clock.Offset;
+        var nextMonthStartUtc = monthStart.AddMonths(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc) - clock.Offset;
+
         var completedThisMonth = await db.PmTasks.CountAsync(
             t => t.Status == PmTaskStatus.Completed
                  && t.CompletedAtUtc != null
-                 && t.CompletedAtUtc!.Value.Year == today.Year
-                 && t.CompletedAtUtc!.Value.Month == today.Month, ct);
+                 && t.CompletedAtUtc >= monthStartUtc
+                 && t.CompletedAtUtc < nextMonthStartUtc, ct);
 
         // Compliance compares like with like: of the PMs that actually fell due
         // this month up to today, how many have been done.
@@ -266,11 +274,18 @@ public static class ReportEndpoints
             .Select(r => (DateTime?)r.StartedAtUtc)
             .FirstOrDefaultAsync(ct);
 
-        var state = lastSuccess is null
-            ? "problem"
-            : (clock.UtcNow() - lastSuccess.Value).TotalHours > DiagnosticsService.BackupStaleHours
-                ? "problem"
-                : last == BackupStatus.Failed ? "warn" : "ok";
+        // When this installation began: its oldest account. A fresh install has
+        // no backup yet and should not be told it is failing.
+        var installedAt = await db.Users.AsNoTracking()
+            .MinAsync(u => (DateTime?)u.CreatedAtUtc, ct);
+
+        var state = BackupHealth.Evaluate(last, lastSuccess, installedAt, clock.UtcNow()) switch
+        {
+            BackupHealthState.Problem => "problem",
+            BackupHealthState.Warning => "warn",
+            BackupHealthState.Pending => "pending",
+            _ => "ok",
+        };
 
         return new { state, lastSuccessUtc = lastSuccess };
     }
