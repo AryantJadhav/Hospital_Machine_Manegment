@@ -204,6 +204,11 @@ type
 function GlobalMemoryStatusEx(var Buffer: TMemoryStatusEx): Boolean;
   external 'GlobalMemoryStatusEx@kernel32.dll stdcall';
 
+// Milliseconds since boot. Not built into Inno's scripting; used only to time
+// the install steps.
+function GetTickCount: Cardinal;
+  external 'GetTickCount@kernel32.dll stdcall';
+
 var
   HospitalPage: TInputQueryWizardPage;
   AdminPage: TInputQueryWizardPage;
@@ -218,6 +223,13 @@ var
   // scanning. Said on the Finished page and in the log, because it is
   // otherwise silent - see the exclusion step in InstallSteps.
   AvExclusionMissing: Boolean;
+
+  // What Setup has done and how long each step took, for the failure report.
+  // The service start has a 30 second limit set by Windows, and the one time
+  // it was missed nothing recorded where the time went.
+  Timeline: String;
+  StepName: String;
+  StepStartTick: Cardinal;
 
 function DataDir: String;
 begin
@@ -865,6 +877,28 @@ end;
 
 
 
+/// Whole seconds and a tenth, e.g. "12.3s". Cardinal arithmetic, so a tick
+/// counter that has wrapped still gives the right difference.
+function Elapsed(const Since: Cardinal): String;
+var
+  Ms: Cardinal;
+begin
+  Ms := GetTickCount - Since;
+  Result := IntToStr(Ms div 1000) + '.' + IntToStr((Ms mod 1000) div 100) + 's';
+end;
+
+/// Closes the step in progress and starts timing the next.
+procedure BeginStep(const Name: String);
+begin
+  if StepName <> '' then
+  begin
+    Timeline := Timeline + '  ' + Elapsed(StepStartTick) + '  ' + StepName + #13#10;
+    Log('STEP took ' + Elapsed(StepStartTick) + ': ' + StepName);
+  end;
+  StepName := Name;
+  StepStartTick := GetTickCount;
+end;
+
 /// Records the first failure, writes it down, and shows it.
 ///
 /// The message box is suppressible so an unattended install does not hang on
@@ -894,6 +928,18 @@ begin
     begin
       Lines.Add('');
       Lines.Add(Detail);
+    end;
+    // Where the time went. The step that was running when this failed is
+    // last and is still open, so its figure is how long it had been going.
+    if (Timeline <> '') or (StepName <> '') then
+    begin
+      Lines.Add('');
+      Lines.Add('How long each step took');
+      Lines.Add('-----------------------');
+      if Timeline <> '' then
+        Lines.Add(TrimRight(Timeline));
+      if StepName <> '' then
+        Lines.Add('  ' + Elapsed(StepStartTick) + '  ' + StepName + '   <-- failed here');
     end;
     Lines.Add('');
     Lines.Add('Where to look');
@@ -928,6 +974,7 @@ end;
 procedure Status(const Message: String);
 begin
   Log('STEP: ' + Message);
+  BeginStep(Message);
   if WizardForm <> nil then
   begin
     WizardForm.StatusLabel.Caption := Message;
