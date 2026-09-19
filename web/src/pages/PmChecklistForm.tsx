@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError } from '../api/client';
+import { useAuth } from '../auth/useAuth';
 
 /**
  * Filling in and recording a PM from the PC.
@@ -62,7 +63,11 @@ export function PmChecklistForm({
 }) {
   const [form, setForm] = useState<PmForm | null>(null);
   const [answers, setAnswers] = useState<Answers>({});
-  const [signedBy, setSignedBy] = useState('');
+  // The name on the certificate. Whoever is signed in is almost always the one
+  // who did the work, so it starts as their name; it stays editable for a
+  // supervisor recording a PM on someone else's behalf.
+  const { user } = useAuth();
+  const [signedBy, setSignedBy] = useState(user?.fullName ?? '');
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -290,6 +295,9 @@ export function PmChecklistForm({
             value={signedBy}
             onChange={(e) => setSignedBy(e.target.value)}
           />
+          {user?.fullName && signedBy === user.fullName && (
+            <span className="muted">From your account. Change it if someone else did the work.</span>
+          )}
         </label>
 
         <div className="stack">
