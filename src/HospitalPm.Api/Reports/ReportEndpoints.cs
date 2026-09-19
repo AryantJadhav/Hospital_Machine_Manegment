@@ -1,5 +1,9 @@
+using System.Security.Claims;
+using HospitalPm.Domain.Identity;
 using HospitalPm.Domain.Maintenance;
+using HospitalPm.Domain.Operations;
 using HospitalPm.Domain.WorkOrders;
+using HospitalPm.Infrastructure.Operations;
 using HospitalPm.Infrastructure.Persistence;
 using HospitalPm.Infrastructure.Reports;
 using Microsoft.EntityFrameworkCore;
@@ -166,6 +170,7 @@ public static class ReportEndpoints
     private static async Task<IResult> DashboardAsync(
         HospitalPmDbContext db,
         HospitalPm.Infrastructure.Maintenance.HospitalClock clock,
+        ClaimsPrincipal user,
         CancellationToken ct)
     {
         var today = clock.Today();
@@ -194,8 +199,13 @@ public static class ReportEndpoints
             t => t.DueDate >= monthStart && t.DueDate <= today
                  && t.Status == PmTaskStatus.Completed, ct);
 
+        // Admin only, like the Backups page it points at. An employee cannot act
+        // on it, and a red tile they cannot fix is just noise on their morning.
+        var backup = user.IsInRole(Roles.Admin) ? await BackupStatusAsync(db, clock, ct) : null;
+
         return Results.Ok(new
         {
+            backup,
             equipment = new
             {
                 total = await db.Equipment.CountAsync(ct),
@@ -232,6 +242,37 @@ public static class ReportEndpoints
                     w => w.OutOfServiceAtUtc != null && w.BackInServiceAtUtc == null, ct),
             },
         });
+    }
+
+    /// <summary>
+    /// The state of the last backup, in the same terms as the Diagnostics page:
+    /// none succeeded, the last good one is too old, or the newest attempt
+    /// failed while a good one is still recent.
+    /// </summary>
+    private static async Task<object> BackupStatusAsync(
+        HospitalPmDbContext db,
+        HospitalPm.Infrastructure.Maintenance.HospitalClock clock,
+        CancellationToken ct)
+    {
+        var last = await db.BackupRuns.AsNoTracking()
+            .OrderByDescending(r => r.StartedAtUtc)
+            .Select(r => r.Status)
+            .Cast<BackupStatus?>()
+            .FirstOrDefaultAsync(ct);
+
+        var lastSuccess = await db.BackupRuns.AsNoTracking()
+            .Where(r => r.Status == BackupStatus.Succeeded)
+            .OrderByDescending(r => r.StartedAtUtc)
+            .Select(r => (DateTime?)r.StartedAtUtc)
+            .FirstOrDefaultAsync(ct);
+
+        var state = lastSuccess is null
+            ? "problem"
+            : (clock.UtcNow() - lastSuccess.Value).TotalHours > DiagnosticsService.BackupStaleHours
+                ? "problem"
+                : last == BackupStatus.Failed ? "warn" : "ok";
+
+        return new { state, lastSuccessUtc = lastSuccess };
     }
 
     private static string Name(Dictionary<int, string> names, int id)

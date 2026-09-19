@@ -56,7 +56,7 @@ public sealed class DiagnosticsService(
     private const long VeryLowDiskBytes = 512L * 1024 * 1024;
 
     /// <summary>A backup older than this is stale enough to act on.</summary>
-    private const int BackupStaleHours = 48;
+    public const int BackupStaleHours = 48;
 
     private static readonly DateTime StartedAtUtc = DateTime.UtcNow;
 

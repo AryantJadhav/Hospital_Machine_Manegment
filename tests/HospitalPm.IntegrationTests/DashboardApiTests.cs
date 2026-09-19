@@ -4,6 +4,7 @@ using System.Text.Json;
 using HospitalPm.Domain.Checklists;
 using HospitalPm.Domain.Locations;
 using HospitalPm.Domain.Maintenance;
+using HospitalPm.Domain.Operations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -177,6 +178,78 @@ public sealed class DashboardApiTests(PostgresFixture fixture) : IAsyncLifetime,
             $"expected the backlog case ({completedThisMonth} completed vs {dueSoFar} due), "
             + "which is what made the old ratio exceed 100%");
     }
+
+    /// <summary>
+    /// The dashboard reports the newest backup attempt, not just the newest
+    /// good one: a failure tonight with a good backup from yesterday is a
+    /// warning, and a success after it clears it.
+    ///
+    /// The "no recent good backup" state is not asserted here. The suite shares
+    /// one database and other tests leave recent successes in it, so that
+    /// state cannot be reached without deleting their rows.
+    /// </summary>
+    [Fact]
+    public async Task Backup_status_follows_the_newest_attempt()
+    {
+        await using var db = fixture.CreateContext();
+        var now = DateTime.UtcNow;
+
+        db.BackupRuns.Add(BackupRunAt(now.AddMinutes(-2), BackupStatus.Succeeded));
+        db.BackupRuns.Add(BackupRunAt(now.AddMinutes(-1), BackupStatus.Failed));
+        await db.SaveChangesAsync();
+
+        var failed = (await _client.GetFromJsonAsync<JsonElement>("/api/dashboard")).GetProperty("backup");
+        Assert.Equal("warn", failed.GetProperty("state").GetString());
+        Assert.NotEqual(JsonValueKind.Null, failed.GetProperty("lastSuccessUtc").ValueKind);
+
+        db.BackupRuns.Add(BackupRunAt(DateTime.UtcNow, BackupStatus.Succeeded));
+        await db.SaveChangesAsync();
+
+        var recovered = (await _client.GetFromJsonAsync<JsonElement>("/api/dashboard")).GetProperty("backup");
+        Assert.Equal("ok", recovered.GetProperty("state").GetString());
+    }
+
+    /// <summary>
+    /// An employee cannot open the Backups page, so the dashboard does not
+    /// tell them about it either.
+    /// </summary>
+    [Fact]
+    public async Task Backup_status_is_for_administrators_only()
+    {
+        var userName = $"dash-emp-{_suffix}";
+        const string password = "Dashboard2026!";
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var users = scope.ServiceProvider
+                .GetRequiredService<Microsoft.AspNetCore.Identity.UserManager<Infrastructure.Identity.ApplicationUser>>();
+            var employee = new Infrastructure.Identity.ApplicationUser
+            {
+                UserName = userName, FullName = "Dashboard Employee", IsActive = true,
+            };
+            Assert.True((await users.CreateAsync(employee, password)).Succeeded);
+            await users.AddToRoleAsync(employee, Domain.Identity.Roles.Employee);
+        }
+
+        using var client = _factory.CreateClient();
+        var login = await client.PostAsJsonAsync("/api/auth/login", new { userName, password });
+        login.EnsureSuccessStatusCode();
+        var tokens = await login.Content.ReadFromJsonAsync<JsonElement>();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", tokens.GetProperty("accessToken").GetString());
+
+        var dashboard = await client.GetFromJsonAsync<JsonElement>("/api/dashboard");
+        Assert.Equal(JsonValueKind.Null, dashboard.GetProperty("backup").ValueKind);
+    }
+
+    private static BackupRun BackupRunAt(DateTime startedAtUtc, BackupStatus status) => new()
+    {
+        StartedAtUtc = startedAtUtc,
+        FinishedAtUtc = startedAtUtc.AddSeconds(5),
+        Status = status,
+        Trigger = BackupTrigger.Scheduled,
+        Error = status == BackupStatus.Failed ? "test failure" : null,
+    };
 
     private static PmTask Open(
         PmSchedule schedule, Domain.Assets.Equipment equipment, DateOnly due) => new()

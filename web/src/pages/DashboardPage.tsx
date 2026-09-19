@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 
 type Dashboard = {
+  /* Present for an administrator only. */
+  backup: { state: 'ok' | 'warn' | 'problem'; lastSuccessUtc: string | null } | null;
   equipment: { total: number; inService: number; underRepair: number };
   pm: {
     overdue: number;
@@ -48,6 +50,8 @@ export function DashboardPage() {
 
       {data && (
         <>
+          {data.backup && <BackupBanner backup={data.backup} />}
+
           {/* Ordered by what should interrupt someone's morning. A machine
               that is down and a PM that is overdue both have consequences
               today; totals do not. */}
@@ -112,6 +116,23 @@ export function DashboardPage() {
         </>
       )}
     </div>
+  );
+}
+
+/* Only shown when something needs doing. A healthy backup is not news, and a
+   permanent green row would teach people to stop reading this page. */
+function BackupBanner({ backup }: { backup: NonNullable<Dashboard['backup']> }) {
+  if (backup.state === 'ok') return null;
+
+  const last = backup.lastSuccessUtc
+    ? `The last good backup was on ${new Date(backup.lastSuccessUtc).toLocaleString()}.`
+    : 'No backup has ever completed.';
+
+  return (
+    <p className={`alert ${backup.state === 'problem' ? 'alert-error' : 'alert-warn'}`} role="alert">
+      {backup.state === 'problem' ? 'Backups are not running. ' : 'The latest backup failed. '}
+      {last} <Link to="/backups">Open Backups</Link>
+    </p>
   );
 }
 
