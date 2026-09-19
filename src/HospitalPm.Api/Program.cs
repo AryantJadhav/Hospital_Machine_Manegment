@@ -202,10 +202,16 @@ if (hasDatabase)
         .AddOrUpdate<PmScheduleGenerator>(
             "pm-generate-due-dates",
             job => job.RunAsync(CancellationToken.None),
-            // 00:15 UTC. Cron runs in UTC because the app deliberately avoids
-            // depending on OS time zone data; the generator itself applies the
-            // hospital's offset when deciding what "today" is.
-            "15 0 * * *",
+            // 18:45 UTC — 00:15 the next morning in India, a quarter of an hour
+            // into the hospital's new day, so the day's PM tasks exist before
+            // anyone could look for them and before the 02:30 backup captures
+            // them. It ran at 00:15 UTC, which is 05:45 in India.
+            //
+            // Cron runs in UTC because the app deliberately avoids depending on
+            // OS time zone data; the generator itself applies the hospital's
+            // offset when deciding what "today" is, so firing at 18:45 UTC
+            // correctly generates for the Indian day that has just begun.
+            "45 18 * * *",
             new RecurringJobOptions { TimeZone = TimeZoneInfo.Utc });
 
     // 21:00 UTC — 02:30 the next morning in India, the middle of the night on
@@ -217,11 +223,9 @@ if (hasDatabase)
     // the offset lives in ScheduleOptions, so a hospital outside India that
     // changes it must move this line too.
     //
-    // PM generation (00:15 UTC, 05:45 India) therefore now runs about three
-    // hours AFTER this rather than before it, so a dump does not contain the
-    // tasks generated that same morning. Deliberate and harmless: PM tasks are
-    // derived from the schedules, which the dump does hold, and the generator
-    // recreates them on the next run.
+    // Two hours and a quarter after PM generation, so a dump holds the tasks
+    // generated for the day that has just started. Both jobs share one Hangfire
+    // worker, and the gap is far wider than either takes.
     scope.ServiceProvider.GetRequiredService<IRecurringJobManager>()
         .AddOrUpdate<HospitalPm.Infrastructure.Operations.BackupService>(
             "nightly-backup",

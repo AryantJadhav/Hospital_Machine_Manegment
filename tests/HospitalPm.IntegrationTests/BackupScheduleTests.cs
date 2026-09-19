@@ -8,19 +8,25 @@ using Microsoft.Extensions.DependencyInjection;
 namespace HospitalPm.IntegrationTests;
 
 /// <summary>
-/// The nightly backup, as Hangfire runs it.
+/// The nightly jobs, as Hangfire runs them.
 ///
 /// BackupTests call the service directly, which proves a backup can be taken
 /// and says nothing about whether anything ever asks for one. These boot the
-/// real host, whose start-up registers the recurring job and starts the
-/// in-process Hangfire server, and check both halves: that the job is
-/// registered the way a hospital would get it, and that firing it produces a
-/// backup run.
+/// real host, whose start-up registers the recurring jobs and starts the
+/// in-process Hangfire server, and check both halves: that the jobs are
+/// registered the way a hospital would get them, and that firing one produces
+/// a backup run.
+///
+/// The times are asserted on the hospital's clock rather than as cron text.
+/// Both jobs were written in UTC and read as though they were local, so the
+/// backup ran at 08:00 and generation at 05:45 India time; a test comparing
+/// cron strings would have passed throughout.
 /// </summary>
 [Collection(nameof(PostgresCollection))]
 public sealed class BackupScheduleTests(PostgresFixture fixture) : IDisposable
 {
     private const string JobId = "nightly-backup";
+    private const string GenerateJobId = "pm-generate-due-dates";
 
     private readonly ApiFactory _factory = new(fixture.ConnectionString);
 
@@ -50,6 +56,43 @@ public sealed class BackupScheduleTests(PostgresFixture fixture) : IDisposable
 
         Assert.Equal(2, fires.Hour);
         Assert.Equal(30, fires.Minute);
+    }
+
+    /// <summary>
+    /// PM generation runs a quarter of an hour into the hospital's day, and
+    /// before that night's backup, so the dump holds the tasks just generated.
+    /// </summary>
+    [Fact]
+    public void Generation_runs_at_a_quarter_past_midnight_and_before_the_backup()
+    {
+        using var connection = _factory.Services.GetRequiredService<JobStorage>().GetConnection();
+        var jobs = connection.GetRecurringJobs();
+
+        var generate = jobs.SingleOrDefault(j => j.Id == GenerateJobId);
+        var backup = jobs.SingleOrDefault(j => j.Id == JobId);
+
+        Assert.NotNull(generate);
+        Assert.NotNull(backup);
+        Assert.NotNull(generate.NextExecution);
+        Assert.NotNull(backup.NextExecution);
+
+        var offset = _factory.Services.GetRequiredService<HospitalClock>().Offset;
+        var generateFires = generate.NextExecution!.Value + offset;
+
+        Assert.Equal(0, generateFires.Hour);
+        Assert.Equal(15, generateFires.Minute);
+
+        // And in that order within one night. Compared as minutes past the
+        // hospital's midnight, because the two next-executions can fall on
+        // different calendar days depending on when the suite happens to run.
+        var backupFires = backup.NextExecution!.Value + offset;
+        var generateMinutes = (generateFires.Hour * 60) + generateFires.Minute;
+        var backupMinutes = (backupFires.Hour * 60) + backupFires.Minute;
+
+        Assert.True(
+            generateMinutes < backupMinutes,
+            $"generation fires at {generateFires:HH:mm} and the backup at {backupFires:HH:mm}; "
+            + "the backup must follow generation so a dump holds that day's tasks");
     }
 
     /// <summary>
