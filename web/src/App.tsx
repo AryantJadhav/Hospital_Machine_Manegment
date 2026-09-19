@@ -20,6 +20,7 @@ import { PmTasksPage } from './pages/PmTasksPage';
 import { StaffPage } from './pages/StaffPage';
 import { ChecklistsPage } from './pages/ChecklistsPage';
 import { WorkOrdersPage } from './pages/WorkOrdersPage';
+import { AdminMenu } from './AdminMenu';
 import './App.css';
 
 function Shell() {
@@ -34,84 +35,60 @@ function Shell() {
       <nav className="nav">
         <span className="brand">Hospital PM</span>
 
-        <NavLink to="/dashboard" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-          Today
-        </NavLink>
-
-        <NavLink to="/pm" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-          PM
-        </NavLink>
-
-        <NavLink to="/work-orders" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-          Work orders
-        </NavLink>
-
-        <NavLink to="/equipment" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-          Equipment
-        </NavLink>
-
-        {/* Hidden rather than shown-and-rejected. The server enforces the
-            same rule, so this is presentation, not the access control. */}
-        <NavLink to="/scan" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-          Scan
-        </NavLink>
-
-        <NavLink to="/locations" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-          Locations
-        </NavLink>
-
-        {/* Visible to everyone, editable only by an Admin. Someone reading
-            the checklist they are about to work from is reasonable; the
-            server enforces who may change it. */}
-        <NavLink to="/checklists" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-          Checklists
-        </NavLink>
-
-        {isAdmin && (
-          <NavLink to="/import" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-            Import
+        <div className="nav-links">
+          <NavLink to="/dashboard" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+            Today
           </NavLink>
-        )}
 
-        {isAdmin && (
-          <NavLink to="/staff" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-            Staff
+          <NavLink to="/pm" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+            PM
           </NavLink>
-        )}
 
-        {isAdmin && (
-          <NavLink to="/backups" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-            Backups
+          <NavLink to="/work-orders" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+            Work orders
           </NavLink>
-        )}
 
-        {isAdmin && (
-          <NavLink to="/diagnostics" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-            Diagnostics
+          <NavLink to="/equipment" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+            Equipment
           </NavLink>
-        )}
 
-        {isAdmin && (
-          <NavLink to="/licence" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-            Licence
+          {/* Hidden rather than shown-and-rejected. The server enforces the
+              same rule, so this is presentation, not the access control. */}
+          <NavLink to="/scan" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+            Scan
           </NavLink>
-        )}
 
-        {isAdmin && (
-          <NavLink to="/updates" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-            Updates
+          <NavLink to="/locations" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+            Locations
           </NavLink>
-        )}
+
+          {/* Visible to everyone, editable only by an Admin. Someone reading
+              the checklist they are about to work from is reasonable; the
+              server enforces who may change it. */}
+          <NavLink to="/checklists" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+            Checklists
+          </NavLink>
+        </div>
+
+        {isAdmin && <AdminMenu />}
 
         <div className="nav-right">
           {/* The role is shown next to the name. An Employee who cannot find
               the Staff tab should be able to see why without asking. */}
           <span className="muted">
             {user?.fullName ?? user?.userName}
-            {' · '}
-            {isAdmin ? 'Administrator' : 'Employee'}
+            <span className="nav-role">
+              {' · '}
+              {isAdmin ? 'Administrator' : 'Employee'}
+            </span>
           </span>
-          <button className="btn btn-quiet" onClick={() => void logout()}>Sign out</button>
+          <button
+            className="btn btn-quiet"
+            title={`Sign out ${user?.fullName ?? user?.userName ?? ''}`.trim()}
+            onClick={() => void logout()}
+          >
+            Sign out
+          </button>
         </div>
       </nav>
 
