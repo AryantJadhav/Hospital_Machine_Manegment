@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../auth/useAuth';
 import { ROLES } from '../auth/context';
+import { EquipmentPicker } from '../EquipmentPicker';
 
 type WorkOrderRow = {
   id: number;
@@ -379,23 +380,11 @@ function ReportForm({
   onDone: () => void | Promise<void>;
   onError: (msg: string | null) => void;
 }) {
-  const [equipment, setEquipment] = useState<{ id: number; assetTag: string; equipmentTypeName: string }[]>([]);
-  const [equipmentId, setEquipmentId] = useState('');
+  const [equipmentId, setEquipmentId] = useState<number | null>(null);
   const [fault, setFault] = useState('');
   const [priority, setPriority] = useState(20);
   const [outOfService, setOutOfService] = useState(false);
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const d = await api.get<{ items: typeof equipment }>('/api/equipment?pageSize=200');
-        setEquipment(d.items);
-      } catch {
-        /* the picker degrades to empty; the page still works */
-      }
-    })();
-  }, []);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -403,7 +392,7 @@ function ReportForm({
     onError(null);
     try {
       await api.post('/api/work-orders', {
-        equipmentId: Number(equipmentId),
+        equipmentId,
         faultDescription: fault,
         priority,
         outOfService,
@@ -421,15 +410,7 @@ function ReportForm({
       <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Report a fault</h2>
 
       <div className="filters">
-        <label className="field">
-          <span>Machine</span>
-          <select value={equipmentId} onChange={(e) => setEquipmentId(e.target.value)} required>
-            <option value="">Choose…</option>
-            {equipment.map((e) => (
-              <option key={e.id} value={e.id}>{e.assetTag} — {e.equipmentTypeName}</option>
-            ))}
-          </select>
-        </label>
+        <EquipmentPicker value={equipmentId} onChange={setEquipmentId} />
 
         <label className="field">
           <span>Priority</span>
@@ -464,7 +445,7 @@ function ReportForm({
       </label>
 
       <div className="row">
-        <button className="btn btn-primary" type="submit" disabled={busy || !equipmentId || !fault.trim()}>
+        <button className="btn btn-primary" type="submit" disabled={busy || equipmentId === null || !fault.trim()}>
           {busy ? 'Reporting…' : 'Report fault'}
         </button>
         <button className="btn" type="button" onClick={onCancel}>Cancel</button>
