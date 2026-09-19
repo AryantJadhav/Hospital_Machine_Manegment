@@ -135,6 +135,10 @@ Source: "setup-database.ps1"; DestDir: "{app}"; Flags: ignoreversion
 ; a process connected to the database cannot drop and recreate it.
 Source: "restore-database.ps1"; DestDir: "{app}"; Flags: ignoreversion
 
+; The manual antivirus steps, next to the program so the Finished page can name
+; a file that is actually on the machine.
+Source: "..\docs\ANTIVIRUS.md"; DestDir: "{app}"; Flags: ignoreversion
+
 [Dirs]
 ; Data lives outside the install directory so uninstalling the program cannot
 ; delete the hospital's backups, licence or configuration.
@@ -209,6 +213,11 @@ var
   // Empty means nothing has failed yet. Set once, by the first step that
   // fails; every step afterwards is skipped.
   FailureReason: String;
+
+  // True when the database folder could not be excluded from antivirus
+  // scanning. Said on the Finished page and in the log, because it is
+  // otherwise silent - see the exclusion step in InstallSteps.
+  AvExclusionMissing: Boolean;
 
 function DataDir: String;
 begin
@@ -1131,9 +1140,22 @@ begin
   // should fail an install. Note that this therefore does nothing at all on a
   // machine running third-party antivirus, where the exclusion has to be
   // added by hand. Called out in docs/REVIEW.md.
+  //
+  // The result is recorded rather than ignored. The command exits 0 only when
+  // the exclusion was added AND Defender's real-time protection is on, i.e.
+  // Defender is the product doing the scanning. Anything else - Defender
+  // switched off because another product took over, a managed policy refusing
+  // the change, PowerShell unavailable - means the operator has to act, and
+  // the Finished page says so. It never fails the install.
   Status('Configuring antivirus exclusion...');
-  RunPowerShell('try { Add-MpPreference -ExclusionPath ''' + DataDir +
-                '\pgdata'' -ErrorAction Stop } catch { }');
+  AvExclusionMissing :=
+    RunPowerShell('try { Add-MpPreference -ExclusionPath ''' + DataDir +
+                  '\pgdata'' -ErrorAction Stop; ' +
+                  'if ((Get-MpComputerStatus).RealTimeProtectionEnabled) { exit 0 } else { exit 1 } } ' +
+                  'catch { exit 1 }') <> 0;
+  if AvExclusionMissing then
+    Log('NOTE: antivirus exclusion for ' + DataDir + '\pgdata was not applied. ' +
+        'See ANTIVIRUS.md in the install folder; it must be added by hand.');
 
   // --- 3. Create the bundled database --------------------------------------
   // initdb, register the PostgreSQL service, generate credentials, create the
@@ -1238,6 +1260,21 @@ begin
   end;
 
   Status('Hospital PM is running.');
+end;
+
+/// Adds the antivirus notice to the Finished page after a successful install.
+///
+/// Appended to Inno's own text rather than shown as a box, so it is read at
+/// the moment the operator is deciding they are done, and so a silent install
+/// - which never reaches this page - is not blocked by it.
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if (CurPageID = wpFinished) and AvExclusionMissing and InstallSucceeded then
+    WizardForm.FinishedLabel.Caption := WizardForm.FinishedLabel.Caption + #13#10#13#10 +
+      'One step is left for you: exclude the database folder from your antivirus.' + #13#10 +
+      ExpandConstant('{commonappdata}\{#AppName}\pgdata') + #13#10 +
+      'Without it the app can slow down or appear to hang. Steps:' + #13#10 +
+      ExpandConstant('{app}\ANTIVIRUS.md');
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);

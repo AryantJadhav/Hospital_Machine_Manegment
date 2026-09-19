@@ -14,7 +14,8 @@ becomes slow or appears to hang, sometimes only at busy moments.
 The installer adds an exclusion automatically **only if Windows Defender is the
 active antivirus**. If the PC runs anything else (McAfee, Quick Heal, Kaspersky,
 Norton, ESET, Bitdefender, or a hospital-managed product), the installer cannot
-do it, does not report a failure, and **you must add it by hand**. Do this
+do it, and **you must add it by hand**. When this happens the last page of the
+installer says so, and the install log records it. Do this
 after installing, and again if the antivirus is replaced.
 
 ## What to exclude
