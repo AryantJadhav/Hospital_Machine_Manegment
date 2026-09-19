@@ -285,6 +285,7 @@ app.MapDiagnosticsEndpoints();
 app.MapRestoreEndpoints();
 app.MapLicenceEndpoints();
 app.MapUpdateEndpoints();
+app.MapPilotMetricsEndpoints();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
