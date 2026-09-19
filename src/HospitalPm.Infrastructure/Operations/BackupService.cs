@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using HospitalPm.Domain.Operations;
 using HospitalPm.Infrastructure.Persistence;
@@ -29,6 +30,7 @@ public sealed partial class BackupService(
     IConfiguration configuration,
     IOptions<BackupOptions> options,
     TimeProvider clock,
+    HospitalPm.Infrastructure.Maintenance.HospitalClock hospital,
     ILogger<BackupService> logger)
 {
     private readonly BackupOptions _options = options.Value;
@@ -98,9 +100,14 @@ public sealed partial class BackupService(
         var directory = ResolveDirectory();
         Directory.CreateDirectory(directory);
 
-        // Sortable, unambiguous, and safe on both filesystems. Local time
-        // would reorder itself twice a year.
-        var fileName = $"hospitalpm-{run.StartedAtUtc:yyyyMMdd-HHmmss}.dump";
+        // Sortable, unambiguous, and safe on both filesystems, on the
+        // hospital's clock so the name agrees with the time shown beside it, and
+        // ending in the zone so it is never a guess. Names written before this
+        // carry a UTC stamp and no zone; both still match the pruning pattern,
+        // and a newer file always sorts after an older one because the hospital
+        // clock is ahead of UTC, never behind it.
+        var stamp = (run.StartedAtUtc + hospital.Offset).ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
+        var fileName = $"hospitalpm-{stamp}-{Reports.ReportTime.Zone(hospital.Offset)}.dump";
         var fullPath = Path.Combine(directory, fileName);
 
         // Custom format: compressed, and pg_restore can pull single tables out

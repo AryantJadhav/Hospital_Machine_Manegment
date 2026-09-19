@@ -32,17 +32,21 @@ public sealed class DiagnosticsTests(PostgresFixture fixture)
 
         var db = fixture.CreateContext();
         var locator = new PgToolLocator(wrapped);
+        var hospital = new HospitalPm.Infrastructure.Maintenance.HospitalClock(
+            TimeProvider.System,
+            Options.Create(new HospitalPm.Infrastructure.Maintenance.ScheduleOptions()));
 
         return new DiagnosticsService(
             db,
-            new BackupService(db, locator, configuration, wrapped, TimeProvider.System,
+            new BackupService(db, locator, configuration, wrapped, TimeProvider.System, hospital,
                 NullLogger<BackupService>.Instance),
             locator,
             new HospitalPm.Infrastructure.Licensing.LicenceService(
                 Options.Create(new HospitalPm.Infrastructure.Licensing.LicenceOptions()),
                 TimeProvider.System),
             wrapped,
-            TimeProvider.System);
+            TimeProvider.System,
+            hospital);
     }
 
     private static Check Find(Diagnostics d, string name) =>
@@ -188,8 +192,8 @@ public sealed class DiagnosticsTests(PostgresFixture fixture)
         Assert.Contains("free", disk.Detail, StringComparison.OrdinalIgnoreCase);
 
         // PM due dates are dates, not instants, so a drifted clock marks work
-        // overdue on the wrong day.
-        Assert.Contains("UTC", Find(result, "Clock").Detail, StringComparison.Ordinal);
+        // overdue on the wrong day. The time is the hospital's, named as such.
+        Assert.Contains("IST", Find(result, "Clock").Detail, StringComparison.Ordinal);
     }
 
     [Fact]

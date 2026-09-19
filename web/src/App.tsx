@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { BrowserRouter, Navigate, NavLink, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom';
 import { api } from './api/client';
 import { AuthProvider } from './auth/AuthContext';
 import { useAuth } from './auth/useAuth';
@@ -21,6 +21,7 @@ import { StaffPage } from './pages/StaffPage';
 import { ChecklistsPage } from './pages/ChecklistsPage';
 import { WorkOrdersPage } from './pages/WorkOrdersPage';
 import { AdminMenu } from './AdminMenu';
+import { titleForPath, usePageTitle } from './pageTitle';
 import './App.css';
 
 function Shell() {
@@ -29,6 +30,8 @@ function Shell() {
   // an Admin decides what gets done. Everything hidden below is a decision
   // about the department rather than a record of a job.
   const isAdmin = can(ROLES.admin);
+  const { pathname } = useLocation();
+  usePageTitle(titleForPath(pathname));
 
   return (
     <div className="shell">
@@ -149,6 +152,8 @@ function Shell() {
 function Gate() {
   const { user, loading } = useAuth();
   const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
+  // Once signed in the shell names the page; before that, this names the screen.
+  usePageTitle(user ? undefined : needsSetup ? 'Set up' : 'Sign in');
 
   useEffect(() => {
     let cancelled = false;

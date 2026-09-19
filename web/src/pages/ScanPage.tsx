@@ -4,6 +4,7 @@ import type { FormEvent } from 'react';
 import { api, ApiError } from '../api/client';
 import { useQrScanner } from '../scan/useQrScanner';
 import { extractAssetTag } from '../scan/assetTag';
+import { formatDate } from '../time';
 
 type Equipment = {
   id: number;
@@ -105,6 +106,7 @@ export function ScanPage() {
             <div className="row">
               {cameras.length > 1 && (
                 <select
+                  aria-label="Camera"
                   onChange={(e) => {
                     stop();
                     void start(e.target.value);
@@ -126,6 +128,7 @@ export function ScanPage() {
               value={manual}
               onChange={(e) => setManual(e.target.value)}
               placeholder="Or type an asset tag, e.g. BME-0001"
+              aria-label="Asset tag"
             />
             <button className="btn" type="submit" disabled={!manual.trim() || busy}>
               Find
@@ -264,11 +267,3 @@ function Row({
   );
 }
 
-/** Day-first, matching how dates are written in an Indian hospital. */
-function formatDate(iso: string | null): string | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
-}

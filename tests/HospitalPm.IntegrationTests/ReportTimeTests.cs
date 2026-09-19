@@ -22,6 +22,16 @@ public sealed class ReportTimeTests
         Assert.Equal("20/09 00:27", ReportTime.DayAndTime(utc, India));
     }
 
+    [Theory]
+    [InlineData(330, "IST")]
+    [InlineData(0, "UTC")]
+    [InlineData(240, "UTC+04:00")]
+    [InlineData(-300, "UTC-05:00")]
+    public void The_zone_is_always_named(int offsetMinutes, string expected)
+    {
+        Assert.Equal(expected, ReportTime.Zone(TimeSpan.FromMinutes(offsetMinutes)));
+    }
+
     [Fact]
     public void A_zero_offset_leaves_the_time_alone()
     {

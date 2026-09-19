@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
+import { formatDate } from '../time';
 
 type LicenceDetail = {
   id: string;
@@ -141,6 +142,7 @@ export function LicencePage() {
 
         <input
           type="file"
+          aria-label="Licence file"
           accept=".licence,.txt"
           onChange={(e) => {
             const file = e.target.files?.[0];
@@ -153,6 +155,7 @@ export function LicencePage() {
           rows={8}
           spellCheck={false}
           placeholder={'-----BEGIN HOSPITALPM LICENCE-----'}
+          aria-label="Licence text"
           value={text}
           onChange={(e) => setText(e.target.value)}
         />
@@ -176,10 +179,3 @@ export function LicencePage() {
   );
 }
 
-/** Day-first, as every date in an Indian hospital is written. */
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
-}

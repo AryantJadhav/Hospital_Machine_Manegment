@@ -203,11 +203,12 @@ export function EquipmentListPage() {
         <input
           className="grow"
           placeholder="Search asset tag, serial, manufacturer or model…"
+          aria-label="Search the register"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
 
-        <select value={locationId} onChange={(e) => { setLocationId(e.target.value); setPage(1); }}>
+        <select aria-label="Filter by location" value={locationId} onChange={(e) => { setLocationId(e.target.value); setPage(1); }}>
           <option value="">All locations</option>
           {locations.map((l) => (
             <option key={l.id} value={l.id}>
@@ -218,14 +219,14 @@ export function EquipmentListPage() {
           ))}
         </select>
 
-        <select value={typeId} onChange={(e) => { setTypeId(e.target.value); setPage(1); }}>
+        <select aria-label="Filter by type" value={typeId} onChange={(e) => { setTypeId(e.target.value); setPage(1); }}>
           <option value="">All types</option>
           {types.map((t) => (
             <option key={t.id} value={t.id}>{t.name}</option>
           ))}
         </select>
 
-        <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}>
+        <select aria-label="Filter by status" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}>
           <option value="">Any status</option>
           {Object.entries(STATUS).map(([v, label]) => (
             <option key={v} value={v}>{label}</option>

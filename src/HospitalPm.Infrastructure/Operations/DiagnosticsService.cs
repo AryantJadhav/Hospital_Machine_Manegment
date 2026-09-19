@@ -48,7 +48,8 @@ public sealed class DiagnosticsService(
     PgToolLocator locator,
     HospitalPm.Infrastructure.Licensing.LicenceService licences,
     IOptions<BackupOptions> backupOptions,
-    TimeProvider clock)
+    TimeProvider clock,
+    HospitalPm.Infrastructure.Maintenance.HospitalClock hospital)
 {
     /// <summary>Below this, a backup or an import is about to start failing.</summary>
     private const long LowDiskBytes = 2L * 1024 * 1024 * 1024;
@@ -300,11 +301,15 @@ public sealed class DiagnosticsService(
         var local = TimeZoneInfo.Local;
         var offset = local.GetUtcOffset(utc);
 
+        var now = utc + hospital.Offset;
+
         return new Check(
             "Clock",
             CheckState.Ok,
-            $"{utc:yyyy-MM-dd HH:mm} UTC, machine time zone {local.Id} "
-            + $"(UTC{(offset < TimeSpan.Zero ? "-" : "+")}{offset:hh\\:mm}).");
+            $"{now:yyyy-MM-dd HH:mm} {Reports.ReportTime.Zone(hospital.Offset)}. "
+            + $"This machine's own time zone is {local.Id} "
+            + $"(UTC{(offset < TimeSpan.Zero ? "-" : "+")}{offset:hh\\:mm}); "
+            + "Hospital PM keeps hospital time itself, so that setting changes nothing you see here.");
     }
 
     private static string Age(TimeSpan span) => span.TotalHours switch

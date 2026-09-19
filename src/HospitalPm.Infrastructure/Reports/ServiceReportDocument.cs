@@ -144,7 +144,7 @@ public sealed class ServiceReportDocument(
     {
         container.Column(col =>
         {
-            col.Item().PaddingBottom(4).Text("Timeline").FontSize(11).Bold();
+            col.Item().PaddingBottom(4).Text($"Timeline ({ReportTime.Zone(utcOffset)})").FontSize(11).Bold();
 
             foreach (var (at, author, body) in data.Timeline)
             {
@@ -240,7 +240,7 @@ public sealed class ServiceReportDocument(
     }
 
     private string Local(DateTime? utc)
-        => utc is null ? "—" : ReportTime.DateTime(utc.Value, utcOffset);
+        => utc is null ? "—" : $"{ReportTime.DateTime(utc.Value, utcOffset)} {ReportTime.Zone(utcOffset)}";
 
     /// <summary>Hours and minutes, because "4380 minutes" means nothing to a reader.</summary>
     private static string Duration(int minutes)

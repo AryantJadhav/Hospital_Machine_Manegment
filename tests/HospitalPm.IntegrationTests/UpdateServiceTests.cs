@@ -172,6 +172,7 @@ public sealed class UpdateServiceTests(PostgresFixture fixture) : IDisposable
             configuration,
             wrappedBackup,
             TimeProvider.System,
+            new HospitalPm.Infrastructure.Maintenance.HospitalClock(TimeProvider.System, Options.Create(new HospitalPm.Infrastructure.Maintenance.ScheduleOptions())),
             NullLogger<BackupService>.Instance);
 
         var service = new UpdateService(

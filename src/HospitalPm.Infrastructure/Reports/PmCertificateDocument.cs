@@ -199,11 +199,15 @@ public sealed class PmCertificateDocument(
                 // The device time, which is when the work actually happened.
                 // The received time can be hours later if the phone was
                 // offline on a ward, and the auditor wants the former.
-                Field(left, "Performed on",
-                    ReportTime.DateTime(data.PerformedAtUtc ?? data.CompletedAtUtc, utcOffset) + " (local)");
+                var zone = ReportTime.Zone(utcOffset);
 
+                Field(left, "Performed on",
+                    $"{ReportTime.DateTime(data.PerformedAtUtc ?? data.CompletedAtUtc, utcOffset)} {zone}");
+
+                // Also on the hospital's clock. It used to print UTC, which put a
+                // second, different time beside the first for no reader's benefit.
                 Field(left, "Recorded at",
-                    data.CompletedAtUtc.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture) + " UTC");
+                    $"{ReportTime.DateTime(data.CompletedAtUtc, utcOffset)} {zone}");
 
                 if (!string.IsNullOrWhiteSpace(data.Notes))
                 {

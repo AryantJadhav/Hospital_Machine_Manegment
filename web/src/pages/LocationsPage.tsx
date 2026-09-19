@@ -215,6 +215,7 @@ export function LocationsPage() {
         <input
           className="grow"
           placeholder="Search by name or code…"
+          aria-label="Search locations"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />

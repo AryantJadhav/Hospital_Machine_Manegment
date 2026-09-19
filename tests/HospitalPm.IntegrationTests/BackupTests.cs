@@ -59,6 +59,9 @@ public sealed class BackupTests(PostgresFixture fixture) : IDisposable
             configuration,
             wrapped,
             TimeProvider.System,
+            new HospitalPm.Infrastructure.Maintenance.HospitalClock(
+                TimeProvider.System,
+                Options.Create(new HospitalPm.Infrastructure.Maintenance.ScheduleOptions())),
             NullLogger<BackupService>.Instance);
     }
 
@@ -123,6 +126,31 @@ public sealed class BackupTests(PostgresFixture fixture) : IDisposable
         }
 
         Assert.Equal("PGDMP"u8.ToArray(), header);
+    }
+
+    /// <summary>
+    /// The file name carries the hospital's time, and says so.
+    ///
+    /// It carried the UTC stamp with no zone, so a dump taken at 00:15 on the
+    /// 20th in India was named for 18:45 on the 19th - beside a Backups page
+    /// that showed the time as 00:15.
+    /// </summary>
+    [Fact]
+    public async Task The_file_name_is_on_the_hospitals_clock_and_names_the_zone()
+    {
+        var options = new BackupOptions { Directory = NewDirectory() };
+
+        var run = await CreateService(options).RunAsync(BackupTrigger.Manual);
+
+        if (!ToolsUsable(options))
+        {
+            // Without pg_dump no file is written; the run records why instead.
+            Assert.Equal(BackupStatus.Failed, run.Status);
+            return;
+        }
+
+        var expectedStamp = run.StartedAtUtc.AddMinutes(330).ToString("yyyyMMdd-HHmmss");
+        Assert.Equal($"hospitalpm-{expectedStamp}-IST.dump", run.FileName);
     }
 
     [Fact]

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
+import { formatDateTime } from '../time';
 
 type Dashboard = {
   /* Present for an administrator only. */
@@ -127,7 +128,7 @@ function BackupBanner({ backup }: { backup: NonNullable<Dashboard['backup']> }) 
   if (backup.state === 'ok' || backup.state === 'pending') return null;
 
   const last = backup.lastSuccessUtc
-    ? `The last good backup was on ${new Date(backup.lastSuccessUtc).toLocaleString()}.`
+    ? `The last good backup was on ${formatDateTime(backup.lastSuccessUtc)}.`
     : 'No backup has ever completed.';
 
   return (

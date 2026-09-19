@@ -333,6 +333,7 @@ public sealed class UpdateDownloadTests(PostgresFixture fixture) : IDisposable
                 configuration,
                 backupOptions,
                 TimeProvider.System,
+                new HospitalPm.Infrastructure.Maintenance.HospitalClock(TimeProvider.System, Options.Create(new HospitalPm.Infrastructure.Maintenance.ScheduleOptions())),
                 NullLogger<BackupService>.Instance),
             NullLogger<UpdateService>.Instance);
     }

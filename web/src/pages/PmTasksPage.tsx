@@ -168,14 +168,14 @@ export function PmTasksPage() {
       )}
 
       <div className="filters card">
-        <select value={status} onChange={(e) => setFilter('status', e.target.value)}>
+        <select aria-label="Filter by status" value={status} onChange={(e) => setFilter('status', e.target.value)}>
           <option value="">Open (scheduled, due, overdue)</option>
           {Object.entries(STATUS).map(([v, label]) => (
             <option key={v} value={v}>{label}</option>
           ))}
         </select>
 
-        <select value={locationId} onChange={(e) => setFilter('locationId', e.target.value)}>
+        <select aria-label="Filter by location" value={locationId} onChange={(e) => setFilter('locationId', e.target.value)}>
           <option value="">All locations</option>
           {locations.map((l) => (
             <option key={l.id} value={l.id}>

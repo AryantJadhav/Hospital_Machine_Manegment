@@ -4,6 +4,7 @@ import { api, ApiError } from '../api/client';
 import { useAuth } from '../auth/useAuth';
 import { ROLES } from '../auth/context';
 import { EquipmentForm } from './EquipmentForm';
+import { formatDate, formatDateTime, todayAtHospital } from '../time';
 
 type History = {
   equipment: {
@@ -142,8 +143,11 @@ export function EquipmentDetailPage() {
   if (!data) return null;
 
   const e = data.equipment;
-  const warranty = e.warrantyExpiryDate ? new Date(e.warrantyExpiryDate) : null;
-  const inWarranty = warranty !== null && warranty.getTime() >= Date.now();
+  // Calendar days compared as yyyy-mm-dd, which sort correctly as text. A
+  // warranty runs to the end of its last day; comparing its midnight to the
+  // current moment called it expired from the morning of that day.
+  const warranty = e.warrantyExpiryDate;
+  const inWarranty = warranty !== null && warranty >= todayAtHospital();
 
   return (
     <div className="page">
@@ -393,23 +397,6 @@ function Stat({ label, value, tone }: { label: string; value: number | string; t
       <span className="tile-label">{label}</span>
     </div>
   );
-}
-
-/** Day-first, as every date in an Indian hospital is written. */
-function formatDate(iso: string | null): string | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
-}
-
-function formatDateTime(iso: string | null): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 /** Hours and days: "4380 minutes" means nothing to a reader. */

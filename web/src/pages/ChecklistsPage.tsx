@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/useAuth';
 import { ROLES } from '../auth/context';
+import { formatDate, todayAtHospital } from '../time';
 
 /**
  * Authoring the checklists a PM round is worked from.
@@ -52,20 +53,6 @@ type Item = {
 
 type Section = { title: string; items: Item[] };
 type Definition = { sections: Section[] };
-
-/**
- * Today on the clock of the machine the browser is on, as yyyy-mm-dd.
- *
- * Not `new Date().toISOString().slice(0, 10)`: that is the UTC date, which in
- * India is still yesterday until 05:30, and the schedule's first PM then came
- * out a day late.
- */
-function localToday(): string {
-  const d = new Date();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${mm}-${dd}`;
-}
 
 /**
  * Gives every question without a key one, made from its wording.
@@ -262,6 +249,7 @@ export function ChecklistsPage() {
         <input
           className="field"
           placeholder="Search by name, code or equipment type"
+          aria-label="Search checklists"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -356,7 +344,7 @@ function ScheduleForm({
   const [locations, setLocations] = useState<LocationLookup[]>([]);
   const [frequency, setFrequency] = useState(20);
   const [intervalDays, setIntervalDays] = useState('90');
-  const [anchorDate, setAnchorDate] = useState(localToday);
+  const [anchorDate, setAnchorDate] = useState(todayAtHospital);
   const [graceDays, setGraceDays] = useState('7');
   const [locationId, setLocationId] = useState('');
   const [includeInStore, setIncludeInStore] = useState(false);
@@ -932,6 +920,7 @@ function SectionCard({
         <input
           className="field"
           style={{ fontWeight: 600 }}
+          aria-label="Section title"
           value={section.title}
           readOnly={readOnly}
           maxLength={120}
@@ -1005,6 +994,7 @@ function ItemRow({
         <input
           className="field"
           placeholder="What the technician reads"
+          aria-label="What the technician reads"
           value={item.label}
           readOnly={readOnly}
           maxLength={200}
@@ -1012,6 +1002,7 @@ function ItemRow({
         />
         <select
           className="field"
+          aria-label="Type of answer"
           value={item.type}
           disabled={readOnly}
           onChange={(e) => onChange({ ...item, type: Number(e.target.value) as ItemType })}
@@ -1027,6 +1018,7 @@ function ItemRow({
         <input
           className="field mono"
           placeholder="Key — made from the question if left blank"
+          aria-label="Key"
           value={item.key}
           readOnly={readOnly}
           maxLength={60}
@@ -1055,7 +1047,8 @@ function ItemRow({
         <div style={{ display: 'grid', gap: '0.5rem', gridTemplateColumns: 'repeat(3, minmax(0,1fr))' }}>
           <input
             className="field"
-            placeholder="Unit (mA)"
+            placeholder="Unit, e.g. mA"
+            aria-label="Unit"
             value={item.unit ?? ''}
             readOnly={readOnly}
             onChange={(e) => onChange({ ...item, unit: e.target.value || null })}
@@ -1064,6 +1057,7 @@ function ItemRow({
             className="field"
             type="number"
             placeholder="Min"
+            aria-label="Lowest acceptable reading"
             value={item.min ?? ''}
             readOnly={readOnly}
             onChange={(e) => onChange({ ...item, min: e.target.value === '' ? null : Number(e.target.value) })}
@@ -1072,6 +1066,7 @@ function ItemRow({
             className="field"
             type="number"
             placeholder="Max"
+            aria-label="Highest acceptable reading"
             value={item.max ?? ''}
             readOnly={readOnly}
             onChange={(e) => onChange({ ...item, max: e.target.value === '' ? null : Number(e.target.value) })}
@@ -1100,6 +1095,7 @@ function ItemRow({
       <input
         className="field"
         placeholder="Guidance (optional) — the how, where it is not obvious"
+        aria-label="Guidance"
         value={item.guidance ?? ''}
         readOnly={readOnly}
         maxLength={400}
@@ -1109,10 +1105,3 @@ function ItemRow({
   );
 }
 
-/** Day-first, as every date in an Indian hospital is written. */
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
-}

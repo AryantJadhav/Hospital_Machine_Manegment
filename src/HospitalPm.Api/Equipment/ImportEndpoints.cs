@@ -67,17 +67,20 @@ public static class ImportEndpoints
     /// it.
     /// </summary>
     private static Task<IResult> EquipmentReportAsync(
-        IFormFile file, EquipmentImportService importer, CancellationToken ct)
-        => ReportCoreAsync(file, (s, c) => importer.ValidateAsync(s, c), "equipment", ct);
+        IFormFile file, EquipmentImportService importer, HospitalPm.Infrastructure.Maintenance.HospitalClock clock,
+        CancellationToken ct)
+        => ReportCoreAsync(file, (s, c) => importer.ValidateAsync(s, c), "equipment", clock, ct);
 
     private static Task<IResult> LocationReportAsync(
-        IFormFile file, LocationImportService importer, CancellationToken ct)
-        => ReportCoreAsync(file, (s, c) => importer.ValidateAsync(s, c), "locations", ct);
+        IFormFile file, LocationImportService importer, HospitalPm.Infrastructure.Maintenance.HospitalClock clock,
+        CancellationToken ct)
+        => ReportCoreAsync(file, (s, c) => importer.ValidateAsync(s, c), "locations", clock, ct);
 
     private static async Task<IResult> ReportCoreAsync(
         IFormFile file,
         Func<Stream, CancellationToken, Task<ImportResult>> validate,
         string kind,
+        HospitalPm.Infrastructure.Maintenance.HospitalClock clock,
         CancellationToken ct)
     {
         var guard = GuardUpload(file);
@@ -126,7 +129,7 @@ public static class ImportEndpoints
         return Results.File(
             annotated,
             XlsxContentType,
-            $"{kind}-problems-{DateTime.UtcNow:yyyyMMdd-HHmm}.xlsx");
+            $"{kind}-problems-{(clock.UtcNow() + clock.Offset):yyyyMMdd-HHmm}.xlsx");
     }
 
     private static Task<IResult> CommitAsync(

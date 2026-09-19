@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../api/client';
+import { formatDateTime } from '../time';
 
 /**
  * The hospital's staff.
@@ -340,10 +341,3 @@ function StaffForm({
   );
 }
 
-/** Day-first, as every date in an Indian hospital is written. */
-function formatDateTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}

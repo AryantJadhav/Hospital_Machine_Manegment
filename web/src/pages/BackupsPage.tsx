@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
+import { formatDateTime } from '../time';
 
 type Run = {
   id: number;
@@ -118,7 +119,7 @@ export function BackupsPage() {
         <div>
           <h1>Backups</h1>
           <p className="muted">
-            The database is dumped nightly at 02:30 UTC and each dump is read back to confirm it
+            The database is dumped every morning at 08:00 IST and each dump is read back to confirm it
             opens.
           </p>
         </div>
@@ -215,15 +216,6 @@ export function BackupsPage() {
       </div>
     </div>
   );
-}
-
-/** Day-first, as every date in an Indian hospital is written. */
-function formatDateTime(iso: string | null): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function formatAge(hours: number): string {

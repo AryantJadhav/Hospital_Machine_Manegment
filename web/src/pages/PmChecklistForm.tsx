@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../auth/useAuth';
+import { formatDate } from '../time';
 
 /**
  * Filling in and recording a PM from the PC.
@@ -275,6 +276,7 @@ export function PmChecklistForm({
               <input
                 className="field"
                 placeholder="Note (optional)"
+                aria-label={`Note for: ${item.label}`}
                 value={answers[item.key]?.note ?? ''}
                 onChange={(e) => setNote(item.key, e.target.value)}
               />
@@ -357,11 +359,12 @@ function AnswerControl({
       : [{ v: 'yes', label: 'Yes' }, { v: 'no', label: 'No' }, { v: 'na', label: 'N/A' }];
 
     return (
-      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+      <div role="group" aria-label={item.label} style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
         {options.map((o) => (
           <button
             key={o.v}
             type="button"
+            aria-pressed={value === o.v}
             className={value === o.v ? 'btn btn-primary' : 'btn'}
             onClick={() => onChange(o.v)}
           >
@@ -374,11 +377,12 @@ function AnswerControl({
 
   if (item.type === 50) {
     return (
-      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+      <div role="group" aria-label={item.label} style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
         {(item.options ?? []).map((o) => (
           <button
             key={o}
             type="button"
+            aria-pressed={value === o}
             className={value === o ? 'btn btn-primary' : 'btn'}
             onClick={() => onChange(o)}
           >
@@ -394,6 +398,7 @@ function AnswerControl({
       <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
         <input
           className="field"
+          aria-label={item.label}
           type="number"
           step="any"
           inputMode="decimal"
@@ -414,6 +419,7 @@ function AnswerControl({
   return (
     <input
       className="field"
+      aria-label={item.label}
       value={value}
       maxLength={1000}
       onChange={(e) => onChange(e.target.value)}
@@ -510,10 +516,3 @@ function SignaturePad({ ref }: { ref: React.RefObject<SignaturePadHandle | null>
   );
 }
 
-/** Day-first, as every date in an Indian hospital is written. */
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
-}

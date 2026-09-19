@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { ServerQrCode } from './ServerQrCode';
+import { formatDateTime } from '../time';
 
 type Check = {
   name: string;
@@ -149,7 +150,7 @@ export function DiagnosticsPage() {
           <dt>Running for</dt>
           <dd>{formatUptime(data.uptimeSeconds)}</dd>
           <dt>Server time</dt>
-          <dd className="mono">{data.utcNow.replace('T', ' ').replace(/\..*$/, '')} UTC</dd>
+          <dd className="mono">{formatDateTime(data.utcNow)}</dd>
         </dl>
       </div>
     </div>

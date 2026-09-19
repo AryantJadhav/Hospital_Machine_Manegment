@@ -119,6 +119,7 @@ export function WorkOrdersPage() {
 
       <div className="filters card">
         <select
+          aria-label="Filter by status"
           value={status}
           onChange={(e) => {
             const next = new URLSearchParams(params);
@@ -301,6 +302,7 @@ function Detail({
               else to assign to. Now it offers the actual engineers. */}
           {canAssign && order.assignedToUserId === null && staff.length > 0 && (
             <select
+              aria-label="Assign to"
               className="field"
               style={{ maxWidth: '14rem' }}
               defaultValue=""
@@ -344,6 +346,7 @@ function Detail({
         <input
           className="grow"
           placeholder="Add a note"
+          aria-label="Add a note"
           value={note}
           onChange={(e) => setNote(e.target.value)}
         />
