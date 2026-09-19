@@ -1,7 +1,10 @@
-# Build artifacts
+# Build artifacts.
+# Recursive on purpose: a bare "obj/" only matches at the root of the context,
+# so a developer's src/*/obj (holding a restore done with Windows paths) was
+# copied into the image and overrode the container's own restore.
 artifacts/
-bin/
-obj/
+**/bin/
+**/obj/
 
 # Node
 web/node_modules/

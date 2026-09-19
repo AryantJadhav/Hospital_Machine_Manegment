@@ -27,17 +27,22 @@ COPY src/HospitalPm.Infrastructure/HospitalPm.Infrastructure.csproj src/Hospital
 RUN dotnet restore src/HospitalPm.Api/HospitalPm.Api.csproj -r linux-x64
 
 # Build the web UI.
+#
+# Vite does not write to web/dist: vite.config.ts sends the build to
+# ../src/HospitalPm.Api/wwwroot so the published binary carries the UI. The
+# stage therefore keeps the repository's own layout (web/ beside src/) so that
+# relative path resolves, and the next stage copies from where Vite really wrote.
 FROM node:24-slim AS web-build
-WORKDIR /web
+WORKDIR /repo/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web/ .
-RUN npm run build
+RUN npm run build && test -f /repo/src/HospitalPm.Api/wwwroot/index.html
 
 # Copy source and publish.
 FROM build AS publish
 COPY src/ src/
-COPY --from=web-build /web/dist src/HospitalPm.Api/wwwroot/
+COPY --from=web-build /repo/src/HospitalPm.Api/wwwroot src/HospitalPm.Api/wwwroot/
 RUN dotnet publish src/HospitalPm.Api/HospitalPm.Api.csproj \
     -c Release \
     -r linux-x64 \
@@ -50,6 +55,18 @@ RUN dotnet publish src/HospitalPm.Api/HospitalPm.Api.csproj \
 # runtime, which is already inside the binary.
 FROM mcr.microsoft.com/dotnet/runtime-deps:10.0 AS runtime
 WORKDIR /app
+
+# Two things the runtime-deps image does not carry, installed at build time
+# only - nothing here reaches the network when the container runs:
+#
+#  - curl, because the health checks (here and in docker-compose.yml) call it.
+#    Without it every check fails and the container reports unhealthy while
+#    serving perfectly well.
+#  - pg_dump, because nightly backups shell out to it. Without it a Linux
+#    install has no backups at all. It must be at least as new as the server
+#    (compose runs PostgreSQL 17), and Ubuntu's own client is 16, so this
+#    comes from the PostgreSQL project's apt repository.
+RUN apt-get update     && apt-get install -y --no-install-recommends ca-certificates curl gnupg     && install -d /usr/share/keyrings     && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc         | gpg --dearmor -o /usr/share/keyrings/pgdg.gpg     && . /etc/os-release     && echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main"         > /etc/apt/sources.list.d/pgdg.list     && apt-get update     && apt-get install -y --no-install-recommends postgresql-client-17     && apt-get purge -y --auto-remove gnupg     && rm -rf /var/lib/apt/lists/*
 
 # The data directory for keys, licence, backups — mounted as a volume.
 ENV HOSPITALPM_DATA=/var/lib/hospitalpm
