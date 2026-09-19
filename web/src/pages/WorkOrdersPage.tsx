@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -192,6 +192,8 @@ function Detail({
 }) {
   const [note, setNote] = useState('');
   const [resolution, setResolution] = useState('');
+  const [resolveProblem, setResolveProblem] = useState<string | null>(null);
+  const resolutionBox = useRef<HTMLTextAreaElement>(null);
   const [staff, setStaff] = useState<{ id: number; fullName: string }[]>([]);
 
   // Only the people who can actually be sent to a machine. Loaded here rather
@@ -208,6 +210,25 @@ function Detail({
       }
     })();
   }, [canAssign]);
+
+  // The button stays clickable when the box is empty and says what is missing.
+  // A greyed-out button explained only by a placeholder reads as broken: the
+  // engineer clicks it, nothing happens, and nothing says why.
+  function resolve() {
+    if (!resolution.trim()) {
+      setResolveProblem(
+        'Say what was wrong and what you did before resolving. It goes on the service report.',
+      );
+      resolutionBox.current?.focus();
+      return;
+    }
+    void act(() =>
+      api.post(`/api/work-orders/${order.id}/resolve`, {
+        resolutionNotes: resolution,
+        returnToService: true,
+      }),
+    );
+  }
 
   // Only what the server will actually accept. Offering a button that
   // returns 409 teaches people to distrust the buttons.
@@ -299,24 +320,20 @@ function Detail({
       {canResolve && (
         <div className="stack">
           <textarea
+            ref={resolutionBox}
             className="grow"
             rows={3}
             placeholder="What was wrong and what you did (required to resolve)"
+            aria-label="What was wrong and what you did"
+            aria-invalid={resolveProblem !== null}
             value={resolution}
-            onChange={(e) => setResolution(e.target.value)}
+            onChange={(e) => {
+              setResolution(e.target.value);
+              if (e.target.value.trim()) setResolveProblem(null);
+            }}
           />
-          <button
-            className="btn btn-primary"
-            disabled={!resolution.trim()}
-            onClick={() =>
-              void act(() =>
-                api.post(`/api/work-orders/${order.id}/resolve`, {
-                  resolutionNotes: resolution,
-                  returnToService: true,
-                }),
-              )
-            }
-          >
+          {resolveProblem && <p className="alert alert-error" role="alert">{resolveProblem}</p>}
+          <button className="btn btn-primary" onClick={resolve}>
             Resolve and return to service
           </button>
         </div>
