@@ -1,6 +1,7 @@
 using Hangfire;
 using Hangfire.Storage;
 using HospitalPm.Domain.Operations;
+using HospitalPm.Infrastructure.Maintenance;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -34,9 +35,21 @@ public sealed class BackupScheduleTests(PostgresFixture fixture) : IDisposable
         var job = connection.GetRecurringJobs().SingleOrDefault(j => j.Id == JobId);
 
         Assert.NotNull(job);
-        Assert.Equal("30 2 * * *", job.Cron);
+        // 21:00 UTC is 02:30 in India — the middle of the hospital's night.
+        // At 02:30 UTC it ran at 08:00 India time, as the day shift arrived.
+        Assert.Equal("0 21 * * *", job.Cron);
         Assert.Equal("UTC", job.TimeZoneId);
+
+        // Asserted as the time it will actually fire on the hospital's clock,
+        // not just as the cron text: the whole point of the change was the hour
+        // a technician experiences, and an arithmetic slip in a cron string is
+        // exactly the mistake a matching-string test cannot catch.
         Assert.NotNull(job.NextExecution);
+        var hospital = _factory.Services.GetRequiredService<HospitalClock>();
+        var fires = job.NextExecution!.Value + hospital.Offset;
+
+        Assert.Equal(2, fires.Hour);
+        Assert.Equal(30, fires.Minute);
     }
 
     /// <summary>

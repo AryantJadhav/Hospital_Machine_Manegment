@@ -242,8 +242,12 @@ challenged rather than assumed.
 
 ## 8. Backups, restore, diagnostics
 
-Nightly `pg_dump --format=custom` at 02:30 UTC — 08:00 in India, after the
-night's PM generation and before the day shift starts writing. Each dump is
+Nightly `pg_dump --format=custom` at 21:00 UTC — 02:30 in India, the middle
+of the hospital's night. It ran at 02:30 UTC until the times were made
+consistent, which is 08:00 in India: the moment the day shift arrives. PM
+generation (00:15 UTC, 05:45 India) now follows the backup rather than
+preceding it, so a dump lacks the tasks generated that morning — they are
+derived from the schedules the dump does contain. Each dump is
 read back with `pg_restore --list` to confirm it opens; a dump that has never
 been read is not a backup. Retention deletes only files matching
 `hospitalpm-*.dump`. The password goes through the child process environment,

@@ -119,7 +119,7 @@ export function BackupsPage() {
         <div>
           <h1>Backups</h1>
           <p className="muted">
-            The database is dumped every morning at 08:00 IST and each dump is read back to confirm it
+            The database is dumped every night at 02:30 IST and each dump is read back to confirm it
             opens.
           </p>
         </div>

@@ -208,13 +208,25 @@ if (hasDatabase)
             "15 0 * * *",
             new RecurringJobOptions { TimeZone = TimeZoneInfo.Utc });
 
-    // 02:30 UTC — 08:00 in India, after the night's PM generation and before
-    // the day shift starts writing. A hospital PC is not busy at either.
+    // 21:00 UTC — 02:30 the next morning in India, the middle of the night on
+    // the hospital's own clock and the quietest the PC ever is. It ran at 02:30
+    // UTC, which is 08:00 in India: the start of the day shift, exactly when a
+    // biomedical department begins writing.
+    //
+    // The cron is UTC because the app deliberately carries no OS time zone data;
+    // the offset lives in ScheduleOptions, so a hospital outside India that
+    // changes it must move this line too.
+    //
+    // PM generation (00:15 UTC, 05:45 India) therefore now runs about three
+    // hours AFTER this rather than before it, so a dump does not contain the
+    // tasks generated that same morning. Deliberate and harmless: PM tasks are
+    // derived from the schedules, which the dump does hold, and the generator
+    // recreates them on the next run.
     scope.ServiceProvider.GetRequiredService<IRecurringJobManager>()
         .AddOrUpdate<HospitalPm.Infrastructure.Operations.BackupService>(
             "nightly-backup",
             job => job.RunScheduledAsync(CancellationToken.None),
-            "30 2 * * *",
+            "0 21 * * *",
             new RecurringJobOptions { TimeZone = TimeZoneInfo.Utc });
 }
 
