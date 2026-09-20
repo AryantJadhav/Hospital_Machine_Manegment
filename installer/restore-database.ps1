@@ -13,9 +13,15 @@
     The application service is therefore stopped first and started again at
     the end.
 
-    Before anything is dropped, the current database is dumped to
+    The backup is restored into a separate staging database first, and only
+    swapped in once every table has arrived. A file that opens but is cut
+    short (a copy interrupted on a USB drive, a full disk) therefore fails
+    while the real database is still untouched. It used to be dropped first,
+    and such a file left a hospital with an empty database and a note.
+
+    Before the swap, the current database is also dumped to
     pre-restore-<timestamp>.dump. Restoring is the one operation in this
-    system that destroys data on purpose, and it must not be a one-way door:
+    system that replaces data on purpose, and it must not be a one-way door:
     if someone restores the wrong file, the state they just replaced is still
     on disk.
 
@@ -77,6 +83,22 @@ function Invoke-Native {
     }
 }
 
+# Runs one statement against the maintenance database as the superuser.
+function Invoke-Sql {
+    param([string]$Sql, [string]$What)
+    Invoke-Native -Exe $psql -What $What -Arguments @(
+        "--host=$dbHost", "--port=$dbPort", "--username=$($creds.superuser)",
+        "--dbname=postgres", "--no-password", "--quiet", "--set=ON_ERROR_STOP=1",
+        "--command=$Sql") | Out-Null
+}
+
+function Close-Connections {
+    param([string]$Database)
+    Invoke-Sql -What "closing connections to $Database" -Sql (
+        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity " +
+        "WHERE datname = '$Database' AND pid <> pg_backend_pid()")
+}
+
 $pgRestore = Join-Path $PgRoot "bin\pg_restore.exe"
 $pgDump    = Join-Path $PgRoot "bin\pg_dump.exe"
 $psql      = Join-Path $PgRoot "bin\psql.exe"
@@ -127,7 +149,9 @@ $appUser = $creds.username
 # certainly is, and a child process's environment can be read.
 $passFile = Join-Path ([System.IO.Path]::GetTempPath()) ([Guid]::NewGuid().ToString("N"))
 $safetyDump = $null
-$dropped = $false
+$stageName = "${dbName}_restoring"
+$oldName = "${dbName}_replaced"
+$swapped = $false
 
 try {
     Set-Content -Path $passFile -Encoding ascii -Value @(
@@ -148,9 +172,11 @@ try {
     if ($service -and $service.Status -ne "Stopped") {
         Write-Log "Stopping $AppServiceName..."
         Stop-Service -Name $AppServiceName -Force
-        # Stop-Service returns before the process has fully exited; the
-        # connections it holds would block the DROP below.
-        Start-Sleep -Seconds 8
+        # Stop-Service can return before the process has fully exited, and its
+        # connections would block the rename below. Waited for rather than
+        # slept for: a fixed pause is too short on a slow machine and wasted
+        # on a fast one.
+        (Get-Service -Name $AppServiceName).WaitForStatus('Stopped', [TimeSpan]::FromSeconds(90))
         Write-Log "Stopped."
     }
 
@@ -169,31 +195,10 @@ try {
     }
     Write-Log "Safety backup written ($([math]::Round((Get-Item $safetyDump).Length / 1KB)) KB)."
 
-    # --- 4. Disconnect everything else -------------------------------------
-    # A single leftover connection makes DROP DATABASE fail.
-    Write-Log "Closing other connections..."
-    Invoke-Native -Exe $psql -What "closing connections" -Arguments @(
-        "--host=$dbHost", "--port=$dbPort", "--username=$($creds.superuser)",
-        "--dbname=postgres", "--no-password", "--quiet",
-        "--command=SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$dbName' AND pid <> pg_backend_pid()") | Out-Null
-
-    # --- 5. Replace the database -------------------------------------------
-    # Dropped and recreated rather than restored with --clean: --clean leaves
-    # anything the dump does not mention, so a restore would silently inherit
-    # tables and triggers from the database being replaced.
-    Write-Log "Recreating the database..."
-    Invoke-Native -Exe $psql -What "dropping the database" -Arguments @(
-        "--host=$dbHost", "--port=$dbPort", "--username=$($creds.superuser)",
-        "--dbname=postgres", "--no-password", "--quiet", "--set=ON_ERROR_STOP=1",
-        "--command=DROP DATABASE IF EXISTS $dbName") | Out-Null
-    $dropped = $true
-
-    Invoke-Native -Exe $psql -What "creating the database" -Arguments @(
-        "--host=$dbHost", "--port=$dbPort", "--username=$($creds.superuser)",
-        "--dbname=postgres", "--no-password", "--quiet", "--set=ON_ERROR_STOP=1",
-        "--command=CREATE DATABASE $dbName OWNER $appUser") | Out-Null
-
-    # --- 6. Restore ---------------------------------------------------------
+    # --- 4. Restore into a staging database --------------------------------
+    # Not into the live one. Nothing that goes wrong from here until the swap
+    # in step 6 can touch what the hospital is running on.
+    #
     # Restored AS the application's own role, not as the superuser.
     #
     # The superuser can restore too, but then every table, trigger and
@@ -201,19 +206,22 @@ try {
     # possible: REASSIGN OWNED BY postgres is refused outright because system
     # objects are owned by that role too. Restoring as the database's owner
     # means the ownership is right the moment the restore finishes.
-    Write-Log "Restoring..."
+    Write-Log "Restoring into a staging database ($stageName)..."
+    Close-Connections -Database $stageName
+    Invoke-Sql -What "clearing an old staging database" -Sql "DROP DATABASE IF EXISTS $stageName"
+    Invoke-Sql -What "creating the staging database" -Sql "CREATE DATABASE $stageName OWNER $appUser"
+
     Invoke-Native -Exe $pgRestore -What "the restore" -Arguments @(
         "--host=$dbHost", "--port=$dbPort", "--username=$appUser",
-        "--dbname=$dbName", "--no-owner", "--no-privileges", "--exit-on-error",
+        "--dbname=$stageName", "--no-owner", "--no-privileges", "--exit-on-error",
         $DumpFile) | Out-Null
 
-    # --- 7. Did anything actually arrive? ----------------------------------
-    # pg_restore can exit zero having restored an empty archive.
-    # Counted as the application's role, which also proves that role can
-    # actually see what was restored.
+    # --- 5. Did everything actually arrive? --------------------------------
+    # pg_restore can exit zero having restored an empty archive. Counted as the
+    # application's role, which also proves that role can see what was restored.
     $tables = Invoke-Native -Exe $psql -What "counting the restored tables" -Arguments @(
         "--host=$dbHost", "--port=$dbPort", "--username=$appUser",
-        "--dbname=$dbName", "--no-password", "--quiet", "--tuples-only", "--no-align",
+        "--dbname=$stageName", "--no-password", "--quiet", "--tuples-only", "--no-align",
         "--command=SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'")
 
     $tableCount = [int](($tables -join "").Trim())
@@ -222,23 +230,51 @@ try {
     }
     Write-Log "Restored $tableCount tables."
 
+    # --- 6. Swap it in -------------------------------------------------------
+    # Renamed, not dropped and recreated: the old database keeps its name-plus-
+    # suffix until the new one is in place, and is put back if the second
+    # rename fails. It is dropped only once the new one is live.
+    Write-Log "Swapping the restored database in..."
+    Close-Connections -Database $dbName
+    Close-Connections -Database $stageName
+    Invoke-Sql -What "clearing an old replaced database" -Sql "DROP DATABASE IF EXISTS $oldName"
+    Invoke-Sql -What "setting the current database aside" -Sql "ALTER DATABASE $dbName RENAME TO $oldName"
+    try {
+        Invoke-Sql -What "putting the restored database in place" -Sql "ALTER DATABASE $stageName RENAME TO $dbName"
+        $swapped = $true
+    }
+    catch {
+        Write-Log "The swap failed; putting the original database back."
+        Invoke-Sql -What "putting the original database back" -Sql "ALTER DATABASE $oldName RENAME TO $dbName"
+        throw
+    }
+
+    try {
+        Invoke-Sql -What "removing the replaced database" -Sql "DROP DATABASE IF EXISTS $oldName"
+    }
+    catch {
+        # Not worth failing a finished restore over: the old data is also in
+        # the safety backup.
+        Write-Log "Could not remove the old database ($oldName): $($_.Exception.Message)"
+    }
+
     Write-Log "=== Restore finished successfully ==="
 }
 catch {
     Write-Log "RESTORE FAILED: $($_.Exception.Message)"
 
-    if ($dropped -and $safetyDump) {
-        # The worst moment this script has: the old database is gone and the
-        # new one did not arrive. Say exactly how to get back, in the log the
-        # operator is already looking at.
-        Write-Log ""
-        Write-Log "The database was replaced and the restore did not complete."
-        Write-Log "The state from before this attempt is saved at:"
-        Write-Log "    $safetyDump"
-        Write-Log "Run this script again with -DumpFile pointing at that file to put it back."
-    }
-    elseif ($safetyDump) {
-        Write-Log "Nothing was destroyed. The database is as it was."
+    if (-not $swapped) {
+        # The live database is never touched before the swap, so a failure
+        # anywhere earlier leaves it exactly as it was.
+        Write-Log "Nothing was changed. The database is as it was."
+
+        # The half-built staging copy is no use to anyone.
+        try {
+            Invoke-Sql -What "removing the staging database" -Sql "DROP DATABASE IF EXISTS $stageName"
+        }
+        catch {
+            Write-Log "Could not remove the staging database ($stageName): $($_.Exception.Message)"
+        }
     }
 
     throw

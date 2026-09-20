@@ -256,9 +256,14 @@ never the command line.
 
 Restore runs from a script outside the application, because a process
 connected to a database cannot drop and recreate it. It validates the dump
-first, stops the app service, takes a `pre-restore-<timestamp>.dump` safety
-copy, then drops and recreates — so a restore can itself be undone. It
-restores as the database owner rather than as superuser, because restoring as
+first, stops the app service (waiting for it to stop rather than for a fixed
+8 seconds), takes a `pre-restore-<timestamp>.dump` safety copy, restores into a
+staging database, checks the tables arrived, and only then swaps it in by
+rename — so a restore can itself be undone, and a dump that opens but is cut
+short fails with the live database untouched. (It used to drop first; a
+truncated file that passed `pg_restore --list` left an empty database and a
+note. Found by testing that case at 15,000 machines and 113k PM tasks, where a
+good restore takes about 3 s.) It restores as the database owner rather than as superuser, because restoring as
 superuser leaves `permission denied for table __EFMigrationsHistory`.
 
 Proven end to end on a real install: back up with 3 machines, add 2, restore
