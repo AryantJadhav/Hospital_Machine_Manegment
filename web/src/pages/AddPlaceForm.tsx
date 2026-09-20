@@ -42,12 +42,17 @@ export function AddPlaceForm({
   const [floor, setFloor] = useState('');
   const [floorOther, setFloorOther] = useState('');
   const [level, setLevel] = useState(50);
-  const [name, setName] = useState('');
+  // The name is a list like the Block and the Level/Floor: the usual names for
+  // this kind of place, then Other to type one that is not on it.
+  const [nameChoice, setNameChoice] = useState('');
+  const [nameOther, setNameOther] = useState('');
   const [typedCode, setTypedCode] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const pickedBlock = useMemo(() => parsePicked(block), [block]);
   const pickedFloor = useMemo(() => parsePicked(floor), [floor]);
+  const pickedName = useMemo(() => parsePicked(nameChoice), [nameChoice]);
+  const name = pickedName.kind === 'suggest' ? pickedName.name : pickedName.kind === 'other' ? nameOther : '';
 
   const blocks = useMemo(() => blockChoices(all), [all]);
   const floors = useMemo(() => floorChoices(all, pickedBlock), [all, pickedBlock]);
@@ -77,7 +82,11 @@ export function AddPlaceForm({
         ? 'Type the name of the block.'
         : (pickedFloor.kind === 'other' && !floorOther.trim())
           ? 'Type the name of the level or floor.'
-          : null;
+          : pickedName.kind === 'unset' || pickedName.kind === 'none'
+            ? 'Choose a name, or Other to type one.'
+            : !name.trim()
+              ? 'Type the name.'
+              : null;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -157,7 +166,7 @@ export function AddPlaceForm({
       <div className="filters">
         <label className="field">
           <span>Block</span>
-          <select aria-label="Block" value={block} onChange={(e) => { setBlock(e.target.value); setFloor(''); }} required>
+          <select aria-label="Block" value={block} onChange={(e) => { setBlock(e.target.value); setFloor(''); setNameChoice(''); }} required>
             <option value="">Choose…</option>
             {blocks.map((c) => (
               <option key={c.value} value={c.value}>{c.label}</option>
@@ -180,7 +189,7 @@ export function AddPlaceForm({
 
         <label className="field">
           <span>Level / Floor</span>
-          <select aria-label="Level or floor" value={floor} onChange={(e) => setFloor(e.target.value)} required>
+          <select aria-label="Level or floor" value={floor} onChange={(e) => { setFloor(e.target.value); setNameChoice(''); }} required>
             <option value="">Choose…</option>
             {floors.map((c) => (
               <option key={c.value} value={c.value}>{c.label}</option>
@@ -203,31 +212,42 @@ export function AddPlaceForm({
       </div>
 
       <div className="filters">
-        <label className="field grow">
-          <span>Name</span>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-            list="place-name-suggestions"
-            autoComplete="off"
-            placeholder="Type a name, or pick one from the list"
-          />
-          <datalist id="place-name-suggestions">
-            {nameSuggestions.map((n) => (
-              <option key={n} value={n} />
-            ))}
-          </datalist>
-        </label>
-
         <label className="field">
           <span>Is a</span>
-          <select aria-label="Kind of place" value={level} onChange={(e) => setLevel(Number(e.target.value))}>
+          <select
+            aria-label="Kind of place"
+            value={level}
+            onChange={(e) => { setLevel(Number(e.target.value)); setNameChoice(''); }}
+          >
             {PLACE_LEVELS.map((l) => (
               <option key={l.value} value={l.value}>{l.label}</option>
             ))}
           </select>
         </label>
+
+        <label className="field">
+          <span>Name</span>
+          <select aria-label="Name" value={nameChoice} onChange={(e) => setNameChoice(e.target.value)} required>
+            <option value="">Choose…</option>
+            {nameSuggestions.map((n) => (
+              <option key={n} value={`suggest:${n}`}>{n}</option>
+            ))}
+            <option value="other">Other (type a name)</option>
+          </select>
+        </label>
+
+        {pickedName.kind === 'other' && (
+          <label className="field grow">
+            <span>Name of the place</span>
+            <input
+              value={nameOther}
+              onChange={(e) => setNameOther(e.target.value)}
+              placeholder="For example Dialysis Bay"
+              autoComplete="off"
+              required
+            />
+          </label>
+        )}
 
         <label className="field">
           <span>Code</span>
