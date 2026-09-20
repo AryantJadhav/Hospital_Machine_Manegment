@@ -401,6 +401,11 @@ input:focus-visible, select:focus-visible, button:focus-visible {
 .detail dd { margin: 0; }
 .detail dd.strong { font-weight: 600; }
 
+/* ---------- reports ---------- */
+
+.table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.table-caption { text-align: left; padding: 0.7rem 0.9rem 0.3rem; font-weight: 600; }
+
 /* ---------- dashboard ---------- */
 
 .tiles {

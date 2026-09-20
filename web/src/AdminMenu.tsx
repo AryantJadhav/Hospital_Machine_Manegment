@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 
 const ITEMS = [
+  { to: '/compliance', label: 'Compliance report' },
   { to: '/import', label: 'Import' },
   { to: '/staff', label: 'Staff' },
   { to: '/backups', label: 'Backups' },
@@ -15,7 +16,7 @@ const ITEMS = [
  *
  * There were thirteen links in one row. At the width of an ordinary hospital
  * PC window the row ran off the edge, taking the account name and Sign out
- * with it. These six are the ones used least and only by an Administrator, so
+ * with it. These are the ones used least and only by an Administrator, so
  * they go here; the daily work stays one click away in the bar.
  */
 export function AdminMenu() {

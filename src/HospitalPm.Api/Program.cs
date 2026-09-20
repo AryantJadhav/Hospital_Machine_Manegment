@@ -302,6 +302,7 @@ app.MapRestoreEndpoints();
 app.MapLicenceEndpoints();
 app.MapUpdateEndpoints();
 app.MapPilotMetricsEndpoints();
+app.MapPmComplianceEndpoints();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
