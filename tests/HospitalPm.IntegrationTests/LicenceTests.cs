@@ -143,16 +143,16 @@ public sealed class LicenceTests : IDisposable
     public void An_expired_licence_says_so_but_still_names_the_hospital()
     {
         var status = new LicenceVerifier(PublicKey)
-            .Verify(Sign(Sample(new DateOnly(2026, 3, 31))), Today);
+            .Verify(Sign(Sample(new DateOnly(2026, 5, 25))), Today);
 
         Assert.Equal(LicenceState.Expired, status.State);
         Assert.False(status.IsLicensed);
 
         // Kept, because the hospital name and support id stay useful after
-        // expiry — and because nothing here stops the software.
+        // expiry - and because nothing has stopped working yet.
         Assert.NotNull(status.Licence);
-        Assert.Contains("62 days ago", status.Message, StringComparison.Ordinal);
-        Assert.Contains("keeps working", status.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("7 days ago", status.Message, StringComparison.Ordinal);
+        Assert.Contains("still works", status.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

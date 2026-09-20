@@ -27,9 +27,12 @@ static int Usage()
               Licence:PublicKey setting.
 
           sign    --key <signing-key.pem> --hospital "<name>" --out <file.licence>
-                  [--expires yyyy-MM-dd] [--modules a,b,c]
+                  [--expires yyyy-MM-dd | --days <n>] [--modules a,b,c]
                   [--max-equipment <n>] [--notes "<text>"]
-              Omit --expires for a perpetual licence.
+              --expires ends the licence on a calendar date. --days runs it
+              for that many days from the day it is first installed, so a pilot
+              key can be issued before the install date is known.
+              Omit both for a perpetual licence.
 
           verify  --public-key <base64|file> --file <file.licence>
               Checks a licence the way the product will.
@@ -94,6 +97,23 @@ static int Sign(string[] args)
         expires = parsed;
     }
 
+    int? durationDays = null;
+    if (Arg(args, "--days") is { } daysRaw)
+    {
+        if (expires is not null)
+        {
+            Console.Error.WriteLine("Use --expires or --days, not both.");
+            return 1;
+        }
+
+        if (!int.TryParse(daysRaw, CultureInfo.InvariantCulture, out var d) || d <= 0)
+        {
+            Console.Error.WriteLine($"--days must be a positive number, got '{daysRaw}'.");
+            return 1;
+        }
+        durationDays = d;
+    }
+
     int? maxEquipment = null;
     if (Arg(args, "--max-equipment") is { } cap)
     {
@@ -116,7 +136,8 @@ static int Sign(string[] args)
         ExpiresOn: expires,
         Modules: modules,
         MaxEquipment: maxEquipment,
-        Notes: Arg(args, "--notes"));
+        Notes: Arg(args, "--notes"),
+        DurationDays: durationDays);
 
     var payload = LicenceFile.Serialise(licence);
 
@@ -131,7 +152,7 @@ static int Sign(string[] args)
     Console.WriteLine($"Licence  : {outPath}");
     Console.WriteLine($"Id       : {licence.LicenceId}");
     Console.WriteLine($"Hospital : {licence.HospitalName}");
-    Console.WriteLine($"Expires  : {(expires is null ? "never" : expires.Value.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture))}");
+    Console.WriteLine($"Expires  : {(durationDays is { } n2 ? $"{n2} days after it is first installed" : expires is null ? "never" : expires.Value.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture))}");
     Console.WriteLine($"Modules  : {(modules.Count == 0 ? "core only" : string.Join(", ", modules))}");
     return 0;
 }

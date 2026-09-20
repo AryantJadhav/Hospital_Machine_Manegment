@@ -14,7 +14,8 @@ namespace HospitalPm.IntegrationTests;
 /// authorised the way it looks — all of those compile, pass DbContext-level
 /// tests, and then throw on the first real request.
 /// </summary>
-public sealed class ApiFactory(string connectionString) : WebApplicationFactory<Program>
+public sealed class ApiFactory(string connectionString, IReadOnlyDictionary<string, string?>? extraSettings = null)
+    : WebApplicationFactory<Program>
 {
     protected override IHost CreateHost(IHostBuilder builder)
     {
@@ -34,9 +35,16 @@ public sealed class ApiFactory(string connectionString) : WebApplicationFactory<
         builder.UseEnvironment("Production");
 
         builder.ConfigureAppConfiguration(config =>
+        {
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:HospitalPm"] = connectionString,
-            }));
+            });
+
+            if (extraSettings is not null)
+            {
+                config.AddInMemoryCollection(extraSettings);
+            }
+        });
     }
 }

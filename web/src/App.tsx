@@ -23,6 +23,7 @@ import { CompliancePage } from './pages/CompliancePage';
 import { ChecklistsPage } from './pages/ChecklistsPage';
 import { WorkOrdersPage } from './pages/WorkOrdersPage';
 import { AdminMenu } from './AdminMenu';
+import { LicenceBanner } from './LicenceBanner';
 import { titleForPath, usePageTitle } from './pageTitle';
 import './App.css';
 
@@ -113,6 +114,8 @@ function Shell() {
         {/* The login screen's chooser disagreed with the account. Said
             once, here rather than there, because the sign-in has already
             succeeded by the time it is known. */}
+        <LicenceBanner />
+
         {signInNotice && (
           <div className="page">
             <p className="alert alert-info notice-row" role="status">

@@ -281,6 +281,7 @@ app.MapGet("/health", () => Results.Ok(new
 // This is what makes "one binary" literally true.
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseMiddleware<HospitalPm.Api.Hosting.LicenceReadOnlyMiddleware>();
 
 app.MapSetupEndpoints();
 app.MapAuthEndpoints();

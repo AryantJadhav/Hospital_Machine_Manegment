@@ -7,6 +7,7 @@ type LicenceDetail = {
   hospitalName: string;
   issuedOn: string;
   expiresOn: string | null;
+  durationDays: number | null;
   modules: string[];
   maxEquipment: number | null;
   notes: string | null;
@@ -15,6 +16,8 @@ type LicenceDetail = {
 type Status = {
   state: number;
   message: string;
+  effectiveExpiry: string | null;
+  readOnlyFrom: string | null;
   path: string;
   licence: LicenceDetail | null;
 };
@@ -22,12 +25,14 @@ type Status = {
 const VALID = 10;
 const MISSING = 20;
 const EXPIRED = 30;
+const READ_ONLY = 35;
 const INVALID = 40;
 
 const STATE_LABEL: Record<number, string> = {
   [VALID]: 'Licensed',
   [MISSING]: 'Unlicensed',
   [EXPIRED]: 'Expired',
+  [READ_ONLY]: 'Read-only',
   [INVALID]: 'Not valid',
 };
 
@@ -98,8 +103,9 @@ export function LicencePage() {
       {/* Said plainly, because the fear this answers is "will it stop working". */}
       {data && data.state !== VALID && (
         <p className="muted" style={{ marginTop: '-0.4rem' }}>
-          Every feature stays available. Hospital PM does not lock you out of your own maintenance
-          records over a licence.
+          {data.state === READ_ONLY
+            ? 'Every record can still be opened and printed. Nothing new can be recorded until a renewal key is installed below.'
+            : 'Everything keeps working. Hospital PM does not lock you out of your own maintenance records over a licence.'}
         </p>
       )}
 
@@ -111,8 +117,19 @@ export function LicencePage() {
             <dd className="strong">{data.licence.hospitalName}</dd>
             <dt>Issued</dt>
             <dd>{formatDate(data.licence.issuedOn)}</dd>
-            <dt>Expires</dt>
-            <dd>{data.licence.expiresOn ? formatDate(data.licence.expiresOn) : 'Never'}</dd>
+            <dt>Runs until</dt>
+            <dd>
+              {data.effectiveExpiry ? formatDate(data.effectiveExpiry) : 'Never'}
+              {data.licence.durationDays !== null && (
+                <span className="muted"> ({data.licence.durationDays} days from installation)</span>
+              )}
+            </dd>
+            {data.readOnlyFrom && (
+              <>
+                <dt>Read-only from</dt>
+                <dd>{formatDate(data.readOnlyFrom)}</dd>
+              </>
+            )}
             <dt>Modules</dt>
             <dd>{data.licence.modules.length > 0 ? data.licence.modules.join(', ') : 'Core only'}</dd>
             <dt>Equipment limit</dt>

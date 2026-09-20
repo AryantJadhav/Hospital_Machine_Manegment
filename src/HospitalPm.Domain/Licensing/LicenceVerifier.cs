@@ -17,11 +17,38 @@ namespace HospitalPm.Domain.Licensing;
 public sealed class LicenceVerifier(string publicKeyBase64)
 {
     /// <summary>
+    /// Days after the end date during which everything keeps working. Two weeks
+    /// covers a purchase order that is a few days late.
+    /// </summary>
+    public const int DefaultGraceDays = 14;
+
+    /// <summary>
+    /// The licence in a file, if its signature is good; null for anything else.
+    /// Used to find out which licence a file is before deciding when it began.
+    /// </summary>
+    public Licence? Trusted(string? fileText)
+    {
+        if (string.IsNullOrWhiteSpace(fileText)) return null;
+
+        var parsed = LicenceFile.Parse(fileText);
+        return parsed is not null && SignatureIsGood(parsed) ? LicenceFile.Deserialise(parsed.Payload) : null;
+    }
+
+    /// <summary>
     /// Decides the verdict for a licence file's contents.
     /// </summary>
     /// <param name="fileText">The file, or null when there is no licence installed.</param>
     /// <param name="today">The hospital's today, for the expiry comparison.</param>
-    public LicenceStatus Verify(string? fileText, DateOnly today)
+    /// <param name="activatedOn">
+    /// The day a duration-based licence began. Left out, it begins today, which
+    /// is what a licence being installed for the first time should do.
+    /// </param>
+    /// <param name="graceDays">Days after the end date before the software turns read-only.</param>
+    public LicenceStatus Verify(
+        string? fileText,
+        DateOnly today,
+        DateOnly? activatedOn = null,
+        int graceDays = DefaultGraceDays)
     {
         if (string.IsNullOrWhiteSpace(fileText))
         {
@@ -55,24 +82,66 @@ public sealed class LicenceVerifier(string publicKeyBase64)
                 + "It may have been issued for a newer version.");
         }
 
-        if (licence.ExpiresOn is { } expiry && today > expiry)
-        {
-            var days = today.DayNumber - expiry.DayNumber;
+        var expiry = EffectiveExpiry(licence, activatedOn ?? today);
 
-            // Expired, and still returning the licence: the hospital name and
-            // support id stay useful, and nothing here stops the app.
-            return new LicenceStatus(LicenceState.Expired, licence,
-                $"The licence for {licence.HospitalName} expired on "
-                + $"{expiry:dd/MM/yyyy}, {days} day{(days == 1 ? "" : "s")} ago. "
-                + "The software keeps working — contact your supplier to renew.");
+        if (expiry is null)
+        {
+            return new LicenceStatus(LicenceState.Valid, licence,
+                $"Licensed to {licence.HospitalName}, perpetual.");
         }
 
-        var until = licence.ExpiresOn is { } e
-            ? $"valid until {e:dd/MM/yyyy}"
-            : "perpetual";
+        var end = expiry.Value;
+        var readOnlyFrom = end.AddDays(graceDays + 1);
+
+        if (today >= readOnlyFrom)
+        {
+            // Still returning the licence: the hospital name and support id stay
+            // useful, and reading the records must keep working.
+            return new LicenceStatus(LicenceState.ReadOnly, licence,
+                $"The licence for {licence.HospitalName} expired on {end:dd/MM/yyyy} and the "
+                + $"{graceDays}-day grace period has ended. The software is now read-only: records can be "
+                + "viewed and printed, but nothing new can be recorded. Install a renewal key on the "
+                + "Licence page to carry on.",
+                end, readOnlyFrom);
+        }
+
+        if (today > end)
+        {
+            var days = today.DayNumber - end.DayNumber;
+
+            return new LicenceStatus(LicenceState.Expired, licence,
+                $"The licence for {licence.HospitalName} expired on "
+                + $"{end:dd/MM/yyyy}, {days} day{(days == 1 ? "" : "s")} ago. "
+                + $"Everything still works until {readOnlyFrom.AddDays(-1):dd/MM/yyyy}; after that the "
+                + "software is read-only. Contact your supplier for a renewal key.",
+                end, readOnlyFrom);
+        }
+
+        var left = end.DayNumber - today.DayNumber;
+        var soon = left <= 30
+            ? $", {left} day{(left == 1 ? "" : "s")} left"
+            : string.Empty;
 
         return new LicenceStatus(LicenceState.Valid, licence,
-            $"Licensed to {licence.HospitalName}, {until}.");
+            $"Licensed to {licence.HospitalName}, valid until {end:dd/MM/yyyy}{soon}.",
+            end, readOnlyFrom);
+    }
+
+    /// <summary>
+    /// The last day a licence is current, or null if it never ends. A licence
+    /// with a fixed date and a duration ends at whichever comes first.
+    /// </summary>
+    public static DateOnly? EffectiveExpiry(Licence licence, DateOnly startedOn)
+    {
+        DateOnly? byDuration = licence.DurationDays is { } d and > 0 ? startedOn.AddDays(d) : null;
+
+        return (licence.ExpiresOn, byDuration) switch
+        {
+            ({ } a, { } b) => a < b ? a : b,
+            ({ } a, null) => a,
+            (null, { } b) => b,
+            _ => null,
+        };
     }
 
     private bool SignatureIsGood(LicenceFile.Parsed parsed)

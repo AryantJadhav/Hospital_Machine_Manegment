@@ -24,6 +24,46 @@ public static class LicenceEndpoints
 
         group.MapGet("/", Current);
         group.MapPost("/", Install);
+
+        // What every signed-in person needs to know, and nothing more: a ward
+        // technician is told that recording is refused and why, without being
+        // shown the licence itself.
+        app.MapGet("/api/licence/banner", Banner)
+            .WithTags("Licence")
+            .RequireAuthorization();
+    }
+
+    /// <summary>
+    /// Days before the end date at which administrators start being told. The
+    /// rest of the staff hear nothing until it has actually run out.
+    /// </summary>
+    private const int WarnAdministratorsDays = 14;
+
+    private static IResult Banner(LicenceService licences, TimeProvider clock, System.Security.Claims.ClaimsPrincipal user)
+    {
+        var status = licences.Current();
+        var today = DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
+
+        var daysLeft = status.EffectiveExpiry is { } end ? end.DayNumber - today.DayNumber : (int?)null;
+
+        var show = status.State switch
+        {
+            LicenceState.ReadOnly or LicenceState.Expired => true,
+            LicenceState.Valid => daysLeft is <= WarnAdministratorsDays
+                                  && user.IsInRole(HospitalPm.Domain.Identity.Roles.Admin),
+            _ => false,
+        };
+
+        return Results.Ok(new
+        {
+            show,
+            state = status.State,
+            readOnly = status.IsReadOnly,
+            message = status.Message,
+            expiresOn = status.EffectiveExpiry,
+            readOnlyFrom = status.ReadOnlyFrom,
+            daysLeft,
+        });
     }
 
     private static IResult Current(LicenceService licences)
@@ -49,6 +89,8 @@ public static class LicenceEndpoints
     {
         state = status.State,
         message = status.Message,
+        effectiveExpiry = status.EffectiveExpiry,
+        readOnlyFrom = status.ReadOnlyFrom,
         path,
         licence = status.Licence is null
             ? null
@@ -58,6 +100,7 @@ public static class LicenceEndpoints
                 hospitalName = status.Licence.HospitalName,
                 issuedOn = status.Licence.IssuedOn,
                 expiresOn = status.Licence.ExpiresOn,
+                durationDays = status.Licence.DurationDays,
                 modules = status.Licence.Modules,
                 maxEquipment = status.Licence.MaxEquipment,
                 notes = status.Licence.Notes,

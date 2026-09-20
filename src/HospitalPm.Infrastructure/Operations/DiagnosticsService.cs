@@ -279,8 +279,9 @@ public sealed class DiagnosticsService(
     }
 
     /// <summary>
-    /// Licence state, reported and never enforced. This row exists so nobody
-    /// is surprised at renewal, not so the software can refuse to work.
+    /// Licence state. A lapse is a warning while everything still works, and a
+    /// problem once the software has turned read-only, because that is when a
+    /// ward would notice.
     /// </summary>
     private Check Licence()
     {
@@ -293,7 +294,11 @@ public sealed class DiagnosticsService(
             // A lapsed licence is a billing conversation. The software keeps
             // running, so this is a warning rather than a problem.
             LicenceState.Expired => new Check("Licence", CheckState.Warning, status.Message,
-                "Contact your supplier to renew. Nothing stops working in the meantime."),
+                "Contact your supplier for a renewal key. Nothing stops working until the grace period ends."),
+
+            LicenceState.ReadOnly => new Check("Licence", CheckState.Problem, status.Message,
+                "Records can be viewed and printed but nothing new can be recorded. "
+                + "Install a renewal key on the Licence page."),
 
             LicenceState.Invalid => new Check("Licence", CheckState.Warning, status.Message,
                 "Install the original file you were sent, or ask for it again."),
