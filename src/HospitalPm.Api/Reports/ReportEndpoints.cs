@@ -179,6 +179,12 @@ public static class ReportEndpoints
         var today = clock.Today();
         var weekEnd = today.AddDays(7);
         var monthStart = new DateOnly(today.Year, today.Month, 1);
+        var myId = int.TryParse(
+            user.FindFirstValue(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)
+                ?? user.FindFirstValue(ClaimTypes.NameIdentifier),
+            System.Globalization.NumberStyles.Integer,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out var parsed) ? parsed : 0;
 
         // The month is the hospital's, the timestamps are UTC. Comparing the
         // stored year and month directly put a PM signed just after midnight
@@ -247,6 +253,10 @@ public static class ReportEndpoints
                          && w.Status != WorkOrderStatus.Closed
                          && w.Status != WorkOrderStatus.Cancelled, ct),
                 unassigned = await db.WorkOrders.CountAsync(w => w.Status == WorkOrderStatus.Reported, ct),
+                // Work waiting on the person looking at the page.
+                mine = await db.WorkOrders.CountAsync(
+                    w => w.AssignedToUserId == myId
+                         && HospitalPm.Api.WorkOrders.WorkOrderEndpoints.OnTheAssigneesPlate.Contains(w.Status), ct),
                 machinesDown = await db.WorkOrders.CountAsync(
                     w => w.OutOfServiceAtUtc != null && w.BackInServiceAtUtc == null, ct),
             },

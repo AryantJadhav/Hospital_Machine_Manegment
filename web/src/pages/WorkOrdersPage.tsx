@@ -18,6 +18,7 @@ type WorkOrderRow = {
   locationName: string;
   reportedAtUtc: string;
   assignedToUserId: number | null;
+  assignedToName: string | null;
   outOfServiceAtUtc: string | null;
   backInServiceAtUtc: string | null;
 };
@@ -52,6 +53,8 @@ export function WorkOrdersPage() {
 
   const [params, setParams] = useSearchParams();
   const status = params.get('status') ?? '';
+  // "me" is worked out by the server from who is signed in.
+  const mine = params.get('assignee') === 'me';
 
   const [rows, setRows] = useState<WorkOrderRow[]>([]);
   const [selected, setSelected] = useState<WorkOrderDetail | null>(null);
@@ -73,6 +76,7 @@ export function WorkOrdersPage() {
     try {
       const q = new URLSearchParams({ pageSize: '100' });
       if (status) q.set('status', status);
+      if (mine) q.set('assignee', 'me');
       const data = await api.get<{ items: WorkOrderRow[] }>(`/api/work-orders?${q}`);
       setRows(data.items);
     } catch (e) {
@@ -80,7 +84,7 @@ export function WorkOrdersPage() {
     } finally {
       setLoading(false);
     }
-  }, [status]);
+  }, [status, mine]);
 
   useEffect(() => {
     void load();
@@ -144,8 +148,12 @@ export function WorkOrdersPage() {
     <div className="page">
       <header className="page-head">
         <div>
-          <h1>Work orders</h1>
-          <p className="muted">Breakdowns and unscheduled repairs.</p>
+          <h1>{mine ? 'My work orders' : 'Work orders'}</h1>
+          <p className="muted">
+            {mine
+              ? 'Faults assigned to you that are still to be done.'
+              : 'Breakdowns and unscheduled repairs.'}
+          </p>
         </div>
         <button className="btn btn-primary" onClick={() => setReporting(true)}>Report a fault</button>
       </header>
@@ -172,6 +180,19 @@ export function WorkOrdersPage() {
 
       <div className="filters card">
         <select
+          aria-label="Whose work orders"
+          value={mine ? 'me' : ''}
+          onChange={(e) => {
+            const next = new URLSearchParams(params);
+            if (e.target.value) next.set('assignee', e.target.value);
+            else next.delete('assignee');
+            setParams(next, { replace: true });
+          }}
+        >
+          <option value="">Everyone's</option>
+          <option value="me">Assigned to me</option>
+        </select>
+        <select
           aria-label="Filter by status"
           value={status}
           onChange={(e) => {
@@ -181,7 +202,7 @@ export function WorkOrdersPage() {
             setParams(next, { replace: true });
           }}
         >
-          <option value="">Open only</option>
+          <option value="">{mine ? 'Still to do' : 'Open only'}</option>
           {Object.entries(STATUS).map(([v, label]) => (
             <option key={v} value={v}>{label}</option>
           ))}
@@ -198,13 +219,18 @@ export function WorkOrdersPage() {
                 <th>Asset</th>
                 <th>Fault</th>
                 <th>Status</th>
+                {!mine && <th>Assigned to</th>}
               </tr>
             </thead>
             <tbody>
-              {loading && <tr><td colSpan={5} className="empty">Loading…</td></tr>}
+              {loading && <tr><td colSpan={mine ? 5 : 6} className="empty">Loading…</td></tr>}
 
               {!loading && rows.length === 0 && (
-                <tr><td colSpan={5} className="empty">No work orders match.</td></tr>
+                <tr>
+                  <td colSpan={mine ? 5 : 6} className="empty">
+                    {mine && !status ? 'Nothing is assigned to you right now.' : 'No work orders match.'}
+                  </td>
+                </tr>
               )}
 
               {!loading && rows.map((w) => (
@@ -218,6 +244,8 @@ export function WorkOrdersPage() {
                   <td className="mono">{w.assetTag}</td>
                   <td className="truncate">{w.faultDescription}</td>
                   <td><span className={`pill wo-${w.status}`}>{STATUS[w.status]}</span></td>
+                  {/* On "my work" every row is the reader's own: a column saying so is noise. */}
+                  {!mine && <td>{w.assignedToName ?? <span className="muted">Unassigned</span>}</td>}
                 </tr>
               ))}
             </tbody>

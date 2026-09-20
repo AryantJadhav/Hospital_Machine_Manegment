@@ -14,7 +14,7 @@ type Dashboard = {
     completedThisMonth: number;
     complianceThisMonth: number | null;
   };
-  workOrders: { open: number; critical: number; unassigned: number; machinesDown: number };
+  workOrders: { open: number; critical: number; unassigned: number; mine: number; machinesDown: number };
 };
 
 export function DashboardPage() {
@@ -79,6 +79,15 @@ export function DashboardPage() {
           </div>
 
           <div className="tiles">
+            {/* First, and for everyone: it is the one number on this page that is
+                about the person reading it. Assigned, being worked, or waiting on
+                a part - the same set the page behind it lists. */}
+            <Tile
+              label="Assigned to me"
+              value={data.workOrders.mine}
+              tone={data.workOrders.mine > 0 ? 'warn' : 'ok'}
+              to="/work-orders?assignee=me"
+            />
             <Tile
               label="Unassigned faults"
               value={data.workOrders.unassigned}

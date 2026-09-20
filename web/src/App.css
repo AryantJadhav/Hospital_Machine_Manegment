@@ -459,9 +459,15 @@ a.tile:hover { border-color: #c6ccd4; }
 .wo-grid {
   display: grid;
   gap: 1rem;
-  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  grid-template-columns: minmax(0, 7fr) minmax(0, 3fr);
   align-items: start;
 }
+
+/* The list has six columns and used to run under the detail panel's edge, with
+   Status cut off and reachable only by scrolling sideways. The fault text is
+   the one column that can give: it is a hint to which order this is, and the
+   panel beside it has the whole text. */
+.wo-grid .truncate { max-width: 13rem; }
 
 @media (max-width: 980px) {
   .wo-grid { grid-template-columns: 1fr; }

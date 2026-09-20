@@ -47,11 +47,23 @@ public static class WorkOrderEndpoints
                 Roles.Admin));
     }
 
+    /// <summary>
+    /// A work order is on its assignee's plate while it is assigned, being
+    /// worked, or waiting on a part. Resolved is the engineer's own "done":
+    /// what is left is an administrator accepting it, which is not their work
+    /// any more. The dashboard's count and the list behind it use the same set,
+    /// so the number on the tile is the number of rows they land on.
+    /// </summary>
+    public static readonly WorkOrderStatus[] OnTheAssigneesPlate =
+        [WorkOrderStatus.Assigned, WorkOrderStatus.InProgress, WorkOrderStatus.OnHold];
+
     private static async Task<IResult> ListAsync(
         HospitalPmDbContext db,
+        ClaimsPrincipal principal,
         [FromQuery] WorkOrderStatus? status,
         [FromQuery] int? equipmentId,
         [FromQuery] int? assignedToUserId,
+        [FromQuery] string? assignee,
         [FromQuery] bool openOnly = true,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
@@ -62,9 +74,21 @@ public static class WorkOrderEndpoints
 
         var query = db.WorkOrders.AsNoTracking();
 
+        // "me" is resolved here, from the token, so the page needs no idea what
+        // its user's number is and cannot ask for someone else's by mistake.
+        var mine = string.Equals(assignee, "me", StringComparison.OrdinalIgnoreCase);
+        if (mine)
+        {
+            assignedToUserId = UserId(principal);
+        }
+
         if (status is not null)
         {
             query = query.Where(w => w.Status == status);
+        }
+        else if (mine && openOnly)
+        {
+            query = query.Where(w => OnTheAssigneesPlate.Contains(w.Status));
         }
         else if (openOnly)
         {
@@ -105,6 +129,9 @@ public static class WorkOrderEndpoints
                 LocationName = w.Equipment!.Location!.Name,
                 w.ReportedAtUtc,
                 w.AssignedToUserId,
+                AssignedToName = w.AssignedToUserId == null
+                    ? null
+                    : db.Users.Where(u => u.Id == w.AssignedToUserId).Select(u => u.FullName).FirstOrDefault(),
                 w.OutOfServiceAtUtc,
                 w.BackInServiceAtUtc,
             })
