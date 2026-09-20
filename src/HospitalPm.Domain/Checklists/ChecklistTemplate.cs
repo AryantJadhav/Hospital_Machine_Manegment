@@ -29,6 +29,9 @@ public sealed class ChecklistTemplate
 
     public string? Description { get; set; }
 
+    /// <summary>What the checklist is for: a scheduled PM, or the everyday check of a machine.</summary>
+    public ChecklistKind Kind { get; set; } = ChecklistKind.Pm;
+
     public bool IsActive { get; set; } = true;
 
     public DateTime CreatedAtUtc { get; set; }
@@ -38,6 +41,15 @@ public sealed class ChecklistTemplate
     public EquipmentType? EquipmentType { get; set; }
 
     public ICollection<ChecklistTemplateVersion> Versions { get; set; } = [];
+}
+
+public enum ChecklistKind
+{
+    /// <summary>Preventive maintenance, run from a schedule and signed.</summary>
+    Pm = 10,
+
+    /// <summary>The everyday check an engineer makes of a machine on a round.</summary>
+    Diagnosis = 20,
 }
 
 public enum ChecklistVersionStatus

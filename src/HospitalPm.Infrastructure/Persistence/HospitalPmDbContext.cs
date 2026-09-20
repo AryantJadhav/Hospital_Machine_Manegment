@@ -35,6 +35,8 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
 
     public DbSet<EquipmentMove> EquipmentMoves => Set<EquipmentMove>();
 
+    public DbSet<Diagnosis> Diagnoses => Set<Diagnosis>();
+
     public DbSet<ChecklistTemplate> ChecklistTemplates => Set<ChecklistTemplate>();
 
     public DbSet<ChecklistTemplateVersion> ChecklistTemplateVersions => Set<ChecklistTemplateVersion>();
@@ -126,6 +128,7 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
             e.Property(x => x.Code).HasColumnName("code").HasMaxLength(64).IsRequired();
             e.Property(x => x.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
             e.Property(x => x.Description).HasColumnName("description");
+            e.Property(x => x.Kind).HasColumnName("kind").HasConversion<int>().HasDefaultValue(ChecklistKind.Pm);
             e.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(true);
             e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").HasDefaultValueSql("now()");
             e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").HasDefaultValueSql("now()");
@@ -417,6 +420,51 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
             e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasDatabaseName("ux_location_tenant_code");
             e.HasIndex(x => x.ParentId).HasDatabaseName("ix_location_parent");
             e.HasIndex(x => x.Path).HasDatabaseName("ix_location_path");
+        });
+
+        builder.Entity<Diagnosis>(e =>
+        {
+            e.ToTable("diagnosis");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.EquipmentId).HasColumnName("equipment_id");
+            e.Property(x => x.ChecklistTemplateVersionId).HasColumnName("checklist_template_version_id");
+            e.Property(x => x.Outcome).HasColumnName("outcome").HasConversion<int>();
+            e.Property(x => x.Notes).HasColumnName("notes");
+            e.Property(x => x.LocationId).HasColumnName("location_id");
+            e.Property(x => x.PerformedByUserId).HasColumnName("performed_by_user_id");
+            e.Property(x => x.PerformedAtUtc).HasColumnName("performed_at_utc");
+            e.Property(x => x.ClientSubmissionId).HasColumnName("client_submission_id");
+
+            e.Property(x => x.Answers)
+                .HasColumnName("answers")
+                .HasColumnType("jsonb")
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, ChecklistJson),
+                    v => JsonSerializer.Deserialize<Dictionary<string, ChecklistAnswer>>(v, ChecklistJson)
+                         ?? new Dictionary<string, ChecklistAnswer>(),
+                    new ValueComparer<Dictionary<string, ChecklistAnswer>>(
+                        (a, b) => JsonSerializer.Serialize(a, ChecklistJson) == JsonSerializer.Serialize(b, ChecklistJson),
+                        v => JsonSerializer.Serialize(v, ChecklistJson).GetHashCode(StringComparison.Ordinal),
+                        v => JsonSerializer.Deserialize<Dictionary<string, ChecklistAnswer>>(
+                                 JsonSerializer.Serialize(v, ChecklistJson), ChecklistJson)!))
+                .IsRequired();
+
+            e.Ignore(x => x.OutOfRangeCount);
+            e.Ignore(x => x.FailedCheckCount);
+
+            e.HasOne<Equipment>().WithMany().HasForeignKey(x => x.EquipmentId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<ChecklistTemplateVersion>().WithMany().HasForeignKey(x => x.ChecklistTemplateVersionId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Location>().WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.Restrict);
+
+            // A repeated submission from a device that lost the reply is the same diagnosis.
+            e.HasIndex(x => x.ClientSubmissionId).IsUnique().HasFilter("client_submission_id IS NOT NULL")
+                .HasDatabaseName("ux_diagnosis_client_submission");
+
+            // "This machine's checks, newest first", and "who was checked today".
+            e.HasIndex(x => new { x.EquipmentId, x.PerformedAtUtc }).HasDatabaseName("ix_diagnosis_equipment");
+            e.HasIndex(x => x.PerformedAtUtc).HasDatabaseName("ix_diagnosis_performed_at");
         });
 
         builder.Entity<EquipmentMove>(e =>

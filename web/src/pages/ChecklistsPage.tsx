@@ -36,7 +36,11 @@ type Template = {
   publishedVersionNo: number | null;
   hasDraft: boolean;
   versionCount: number;
+  /** 10 a PM checklist, 20 the everyday check of a machine. */
+  kind: number;
 };
+
+const DIAGNOSIS = 20;
 
 type ItemType = 10 | 20 | 30 | 40 | 50;
 
@@ -203,8 +207,9 @@ export function ChecklistsPage() {
         <div>
           <h1>Checklists</h1>
           <p className="muted">
-            What a technician is asked to check on a PM round. One checklist per equipment
-            type; publishing freezes it so past records stay readable.
+            What a technician is asked to check: on a PM round, and in the everyday check of a
+            machine. A type can have one of each. Publishing freezes a checklist so past records
+            stay readable.
           </p>
         </div>
         {canAuthor && (
@@ -283,7 +288,10 @@ export function ChecklistsPage() {
               <tr key={t.id}>
                 <td>{t.equipmentTypeName}</td>
                 <td>
-                  <div>{t.name}</div>
+                  <div>
+                    {t.name}
+                    {t.kind === DIAGNOSIS && <StatusPill tone="info" className="hist-flag">Daily check</StatusPill>}
+                  </div>
                   <div className="mono muted">{t.code}</div>
                 </td>
                 <td>
@@ -303,7 +311,7 @@ export function ChecklistsPage() {
                       action belongs beside the thing it acts on. Only once
                       published — scheduling a draft would promise a technician
                       work with no questions in it. */}
-                  {canAuthor && t.publishedVersionNo !== null && (
+                  {canAuthor && t.publishedVersionNo !== null && t.kind !== DIAGNOSIS && (
                     <button className="btn btn-quiet" onClick={() => setScheduling(t)}>
                       Schedule…
                     </button>
@@ -536,16 +544,20 @@ function TemplateForm({
   onSaved: (createdId: number) => void | Promise<void>;
   onError: (msg: string | null) => void;
 }) {
+  const [kind, setKind] = useState(10);
   const [equipmentTypeId, setEquipmentTypeId] = useState('');
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [busy, setBusy] = useState(false);
 
-  // A type that already has a checklist is not offered again. The server has
-  // its own rule; this stops the operator picking something that can only be
-  // rejected.
-  const taken = useMemo(() => new Set(existing.map((t) => t.equipmentTypeId)), [existing]);
+  // A type that already has a checklist of this kind is not offered again. The
+  // server has its own rule; this stops the operator picking something that can
+  // only be rejected.
+  const taken = useMemo(
+    () => new Set(existing.filter((t) => t.kind === kind).map((t) => t.equipmentTypeId)),
+    [existing, kind],
+  );
   const available = types.filter((t) => !taken.has(t.id));
 
   async function submit(e: FormEvent) {
@@ -555,6 +567,7 @@ function TemplateForm({
     try {
       const created = await api.post<{ id: number }>("/api/checklists", {
         equipmentTypeId: Number(equipmentTypeId),
+        kind,
         code: code.trim(),
         name: name.trim(),
         description: description.trim() || null,
@@ -572,6 +585,19 @@ function TemplateForm({
       <h2 style={{ margin: 0, fontSize: '1.05rem' }}>New checklist</h2>
 
       <label className="stack">
+        <span>What it is for</span>
+        <select
+          className="field"
+          aria-label="What it is for"
+          value={kind}
+          onChange={(e) => { setKind(Number(e.target.value)); setEquipmentTypeId(''); }}
+        >
+          <option value={10}>A PM, done on a schedule</option>
+          <option value={20}>The everyday check of a machine (diagnosis)</option>
+        </select>
+      </label>
+
+      <label className="stack">
         <span>Equipment type</span>
         <select
           className="field"
@@ -585,7 +611,7 @@ function TemplateForm({
           ))}
         </select>
         {available.length === 0 && (
-          <span className="muted">Every equipment type already has a checklist.</span>
+          <span className="muted">Every equipment type already has one of these.</span>
         )}
       </label>
 

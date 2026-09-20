@@ -284,7 +284,8 @@ public static class PmEndpoints
         CancellationToken ct)
     {
         var template = await db.ChecklistTemplates
-            .Where(t => t.Id == request.ChecklistTemplateId)
+            // A diagnosis checklist is for the everyday round, not for a PM schedule.
+            .Where(t => t.Id == request.ChecklistTemplateId && t.Kind == ChecklistKind.Pm)
             .Select(t => new
             {
                 t.Id,
@@ -416,7 +417,7 @@ public static class PmEndpoints
         }
 
         var template = await db.ChecklistTemplates
-            .Where(t => t.Id == request.ChecklistTemplateId)
+            .Where(t => t.Id == request.ChecklistTemplateId && t.Kind == ChecklistKind.Pm)
             .Select(t => new { t.Id, t.EquipmentTypeId })
             .SingleOrDefaultAsync(ct);
 

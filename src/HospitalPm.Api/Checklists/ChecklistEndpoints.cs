@@ -11,7 +11,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace HospitalPm.Api.Checklists;
 
-public sealed record TemplateRequest(int EquipmentTypeId, string Code, string Name, string? Description);
+public sealed record TemplateRequest(
+    int EquipmentTypeId, string Code, string Name, string? Description, ChecklistKind? Kind = null);
 
 public sealed record DefinitionRequest(ChecklistDefinition Definition, string? ChangeNote);
 
@@ -25,7 +26,8 @@ public sealed record TemplateResponse(
     bool IsActive,
     int? PublishedVersionNo,
     bool HasDraft,
-    int VersionCount);
+    int VersionCount,
+    ChecklistKind Kind);
 
 public sealed record VersionResponse(
     int Id,
@@ -63,9 +65,14 @@ public static class ChecklistEndpoints
     }
 
     private static async Task<IResult> ListAsync(
-        HospitalPmDbContext db, [FromQuery] int? equipmentTypeId, CancellationToken ct)
+        HospitalPmDbContext db, [FromQuery] int? equipmentTypeId, [FromQuery] ChecklistKind? kind, CancellationToken ct)
     {
         var query = db.ChecklistTemplates.AsNoTracking();
+
+        if (kind is not null)
+        {
+            query = query.Where(t => t.Kind == kind);
+        }
 
         if (equipmentTypeId is not null)
         {
@@ -87,7 +94,8 @@ public static class ChecklistEndpoints
                     .Select(v => (int?)v.VersionNo)
                     .FirstOrDefault(),
                 t.Versions.Any(v => v.Status == ChecklistVersionStatus.Draft),
-                t.Versions.Count))
+                t.Versions.Count,
+                t.Kind))
             .ToListAsync(ct);
 
         return Results.Ok(items);
@@ -110,7 +118,8 @@ public static class ChecklistEndpoints
                     .Select(v => (int?)v.VersionNo)
                     .FirstOrDefault(),
                 t.Versions.Any(v => v.Status == ChecklistVersionStatus.Draft),
-                t.Versions.Count))
+                t.Versions.Count,
+                t.Kind))
             .SingleOrDefaultAsync(ct);
 
         return item is null ? Results.NotFound() : Results.Ok(item);
@@ -156,6 +165,11 @@ public static class ChecklistEndpoints
             return Results.BadRequest(new { error = "Code and name are required." });
         }
 
+        if (request.Kind is { } kind && !Enum.IsDefined(kind))
+        {
+            return Results.BadRequest(new { error = "Unknown kind of checklist." });
+        }
+
         if (!await db.EquipmentTypes.AnyAsync(t => t.Id == request.EquipmentTypeId, ct))
         {
             return Results.BadRequest(new { error = "Unknown equipment type." });
@@ -170,6 +184,7 @@ public static class ChecklistEndpoints
         var template = new ChecklistTemplate
         {
             EquipmentTypeId = request.EquipmentTypeId,
+            Kind = request.Kind ?? ChecklistKind.Pm,
             Code = code,
             Name = request.Name.Trim(),
             Description = request.Description?.Trim(),
