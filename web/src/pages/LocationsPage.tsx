@@ -424,14 +424,16 @@ function LocationForm({
       </h2>
 
       <div className="filters">
-        <label className="field">
-          <span>Code</span>
-          <input value={code} onChange={(e) => setCode(e.target.value)} required />
-        </label>
-
+        {/* Name first: it is what the person knows and reads off the door. The
+            code is the short handle for it, and comes second. */}
         <label className="field grow">
           <span>Name</span>
           <input value={name} onChange={(e) => setName(e.target.value)} required />
+        </label>
+
+        <label className="field">
+          <span>Code</span>
+          <input value={code} onChange={(e) => setCode(e.target.value)} required />
         </label>
 
         <label className="field">

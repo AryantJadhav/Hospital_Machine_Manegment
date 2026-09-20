@@ -38,6 +38,7 @@ public sealed partial class UpdateService(
     IUpdateLauncher launcher,
     IUpdateDownloader downloader,
     BackupService backups,
+    HospitalPm.Infrastructure.Maintenance.HospitalClock hospital,
     ILogger<UpdateService> logger)
 {
     private readonly UpdateOptions _options = options.Value;
@@ -327,7 +328,8 @@ public sealed partial class UpdateService(
 
         var logPath = Path.Combine(
             Resolve(_options.StagingDirectory),
-            $"install-{manifest.Version}-{DateTime.UtcNow:yyyyMMdd-HHmmss}.log");
+            $"install-{manifest.Version}-{hospital.UtcNow().Add(hospital.Offset):yyyyMMdd-HHmmss}-"
+            + $"{Reports.ReportTime.Zone(hospital.Offset)}.log");
 
         Log.HandingOver(logger, manifest.Version);
 

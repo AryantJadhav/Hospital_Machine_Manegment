@@ -202,8 +202,10 @@ export function PmChecklistForm({
         { problems?: { item: string; message: string }[] } | undefined : undefined;
 
       if (body?.problems?.length) {
+        // Said by the banner below, which counts what is still wrong. It was set
+        // here as fixed text, so it stayed on screen, red, after the last problem
+        // had been corrected.
         setProblems(Object.fromEntries(body.problems.map((p) => [p.item, p.message])));
-        setError('Some answers need attention.');
       } else {
         setError(e instanceof Error ? e.message : 'Could not record this PM.');
       }
@@ -289,6 +291,14 @@ export function PmChecklistForm({
       </header>
 
       {error && <p className="alert alert-error" role="alert">{error}</p>}
+
+      {Object.keys(problems).length > 0 && (
+        <p className="alert alert-error" role="alert">
+          {Object.keys(problems).length === 1
+            ? '1 answer needs attention.'
+            : `${Object.keys(problems).length} answers need attention.`}
+        </p>
+      )}
 
       <p className="alert alert-ok">
         {requiredDone} of {requiredTotal} required check{requiredTotal === 1 ? '' : 's'} answered.

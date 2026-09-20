@@ -32,7 +32,10 @@ export type EquipmentDraft = {
 };
 
 type Lookup = { id: number; code: string; name: string };
-type LocationLookup = Lookup & { depth: number };
+type LocationLookup = Lookup & { depth: number; level: number };
+
+/** Building is the shallowest level a machine may stand in; the server refuses the two above it. */
+const FIRST_PLACEABLE_LEVEL = 30;
 
 // InStore and InService are the ones anyone picks by hand. Condemned and
 // Disposed are deliberately absent: retiring a machine stops its PM programme,
@@ -176,7 +179,12 @@ export function EquipmentForm({
         >
           <option value="">Choose…</option>
           {locations.map((l) => (
-            <option key={l.id} value={l.id}>{' '.repeat(l.depth * 2)}{l.name}</option>
+            // The organisation and its sites stay in the list, so the tree still
+            // reads as a tree, but cannot be chosen: the server refuses them, and
+            // it used to be discovered only after filling in the rest of the form.
+            <option key={l.id} value={l.id} disabled={l.level < FIRST_PLACEABLE_LEVEL}>
+              {' '.repeat(l.depth * 2)}{l.name}
+            </option>
           ))}
         </select>
 

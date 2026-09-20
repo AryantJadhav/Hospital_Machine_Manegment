@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { formatDateTime } from '../time';
+import { HandoffNotice } from '../HandoffNotice';
+import { useHandoff } from '../handoff';
 
 type Dashboard = {
   /* Present for an administrator only. */
@@ -20,6 +22,8 @@ type Dashboard = {
 export function DashboardPage() {
   const [data, setData] = useState<Dashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Set when we were sent here from a page that is not theirs, or not there.
+  const [handoff] = useHandoff();
 
   useEffect(() => {
     let cancelled = false;
@@ -44,6 +48,8 @@ export function DashboardPage() {
           <p className="muted">Where the department stands right now.</p>
         </div>
       </header>
+
+      <HandoffNotice handoff={handoff} />
 
       {error && <p className="alert alert-error" role="alert">{error}</p>}
 

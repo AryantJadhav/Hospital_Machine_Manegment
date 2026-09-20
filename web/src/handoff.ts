@@ -12,7 +12,12 @@ export type RecordedPm = { id: number; assetTag: string; dueDate: string };
  * page - and it returns them there. The place they come back to is the one that
  * says what happened.
  */
-export type Handoff = { notice: string; recorded: RecordedPm | null };
+export type Handoff = {
+  notice: string;
+  recorded: RecordedPm | null;
+  /** Success by default; `info` is for "you were sent here" rather than "that worked". */
+  tone?: 'ok' | 'info';
+};
 
 /**
  * Reads the handoff left in the navigation state, once.

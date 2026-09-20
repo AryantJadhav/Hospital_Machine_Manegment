@@ -108,6 +108,14 @@ public sealed class DiagnosticsTests(PostgresFixture fixture)
         await using (var db = fixture.CreateContext())
         {
             await db.Database.ExecuteSqlRawAsync("delete from backup_run;");
+
+            // An installation older than the backup window. On one set up this
+            // afternoon, having no backup yet is expected and is only a warning
+            // (see BackupHealthTests for that side), and every account in this
+            // shared database was created minutes ago.
+            await db.Database.ExecuteSqlRawAsync(
+                "update app_user set created_at_utc = now() - interval '30 days' "
+                + "where id = (select min(id) from app_user);");
         }
 
         var result = await CreateService().RunAsync([]);

@@ -25,6 +25,18 @@ import { AdminMenu } from './AdminMenu';
 import { titleForPath, usePageTitle } from './pageTitle';
 import './App.css';
 
+const ADMIN_ONLY = 'That page is for administrators.';
+const NO_SUCH_PAGE = 'There is no page at that address.';
+
+/**
+ * Where someone is sent when the page they asked for is not theirs, or not
+ * there. It says so on arrival: bouncing to the dashboard with nothing said
+ * looked like the link was broken.
+ */
+function Elsewhere({ notice }: { notice: string }) {
+  return <Navigate to="/dashboard" replace state={{ handoff: { notice, recorded: null, tone: 'info' } }} />;
+}
+
 function Shell() {
   const { user, logout, can, signInNotice, dismissNotice } = useAuth();
   // One flag, because there is one line: an Employee records what they did,
@@ -110,6 +122,7 @@ function Shell() {
         )}
 
         <Routes>
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/pm" element={<PmTasksPage />} />
           <Route path="/pm/:taskId/do" element={<PmDoPage />} />
@@ -121,30 +134,30 @@ function Shell() {
           <Route path="/scan" element={<ScanPage />} />
           <Route
             path="/import"
-            element={isAdmin ? <ImportPage /> : <Navigate to="/dashboard" replace />}
+            element={isAdmin ? <ImportPage /> : <Elsewhere notice={ADMIN_ONLY} />}
           />
           <Route
             path="/staff"
-            element={isAdmin ? <StaffPage /> : <Navigate to="/dashboard" replace />}
+            element={isAdmin ? <StaffPage /> : <Elsewhere notice={ADMIN_ONLY} />}
           />
 
           <Route
             path="/backups"
-            element={isAdmin ? <BackupsPage /> : <Navigate to="/dashboard" replace />}
+            element={isAdmin ? <BackupsPage /> : <Elsewhere notice={ADMIN_ONLY} />}
           />
           <Route
             path="/diagnostics"
-            element={isAdmin ? <DiagnosticsPage /> : <Navigate to="/dashboard" replace />}
+            element={isAdmin ? <DiagnosticsPage /> : <Elsewhere notice={ADMIN_ONLY} />}
           />
           <Route
             path="/licence"
-            element={isAdmin ? <LicencePage /> : <Navigate to="/dashboard" replace />}
+            element={isAdmin ? <LicencePage /> : <Elsewhere notice={ADMIN_ONLY} />}
           />
           <Route
             path="/updates"
-            element={isAdmin ? <UpdatesPage /> : <Navigate to="/dashboard" replace />}
+            element={isAdmin ? <UpdatesPage /> : <Elsewhere notice={ADMIN_ONLY} />}
           />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<Elsewhere notice={NO_SUCH_PAGE} />} />
         </Routes>
       </main>
     </div>

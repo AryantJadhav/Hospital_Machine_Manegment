@@ -165,8 +165,21 @@ public sealed class DiagnosticsService(
 
             if (last is null)
             {
-                return new Check("Backups", CheckState.Problem, "No backup has ever run.",
-                    "Open Backups and run one now.");
+                // The first scheduled backup is overnight, so an installation
+                // set up this afternoon has, correctly, none yet. Red on its
+                // first visit to this page taught the first thing a hospital
+                // saw here to be ignored. An older installation with none is
+                // the real failure.
+                var installedAt = await db.Users.AsNoTracking()
+                    .MinAsync(u => (DateTime?)u.CreatedAtUtc, ct);
+
+                return BackupHealth.Evaluate(null, null, installedAt, clock.GetUtcNow().UtcDateTime)
+                       == BackupHealthState.Pending
+                    ? new Check("Backups", CheckState.Warning,
+                        "No backup has run yet. This installation is new.",
+                        "The first one runs overnight. To have one now, open Backups and run one.")
+                    : new Check("Backups", CheckState.Problem, "No backup has ever run.",
+                        "Open Backups and run one now.");
             }
 
             var lastSuccess = await db.BackupRuns.AsNoTracking()

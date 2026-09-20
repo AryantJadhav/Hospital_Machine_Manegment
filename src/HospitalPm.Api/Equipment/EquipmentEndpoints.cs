@@ -21,7 +21,11 @@ public sealed record EquipmentRequest(
     int LocationId,
     string? Manufacturer,
     string? Model,
-    EquipmentStatus Status,
+    // Optional. Left out, a new machine is In service and an existing one keeps
+    // the status it has. It used to be required by type only, so a request
+    // without it arrived as 0 - a status that is not one of the five - and was
+    // stored.
+    EquipmentStatus? Status,
     DateOnly? PurchaseDate,
     DateOnly? InstallationDate,
     DateOnly? WarrantyExpiryDate,
@@ -237,7 +241,7 @@ public static class EquipmentEndpoints
             LocationId = request.LocationId,
             Manufacturer = request.Manufacturer?.Trim(),
             Model = request.Model?.Trim(),
-            Status = request.Status,
+            Status = request.Status ?? EquipmentStatus.InService,
             PurchaseDate = request.PurchaseDate,
             InstallationDate = request.InstallationDate,
             WarrantyExpiryDate = request.WarrantyExpiryDate,
@@ -280,7 +284,7 @@ public static class EquipmentEndpoints
         entity.LocationId = request.LocationId;
         entity.Manufacturer = request.Manufacturer?.Trim();
         entity.Model = request.Model?.Trim();
-        entity.Status = request.Status;
+        entity.Status = request.Status ?? entity.Status;
         entity.PurchaseDate = request.PurchaseDate;
         entity.InstallationDate = request.InstallationDate;
         entity.WarrantyExpiryDate = request.WarrantyExpiryDate;
@@ -315,6 +319,11 @@ public static class EquipmentEndpoints
         if (string.IsNullOrWhiteSpace(request.AssetTag))
         {
             return Results.BadRequest(new { error = "Asset tag is required." });
+        }
+
+        if (request.Status is { } status && !Enum.IsDefined(status))
+        {
+            return Results.BadRequest(new { error = "Unknown status." });
         }
 
         if (!await db.EquipmentTypes.AnyAsync(t => t.Id == request.EquipmentTypeId, ct))

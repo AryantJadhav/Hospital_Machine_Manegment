@@ -188,6 +188,7 @@ public sealed class UpdateServiceTests(PostgresFixture fixture) : IDisposable
             launcher,
             downloader ?? new NeverCalledDownloader(),
             backups,
+            new HospitalPm.Infrastructure.Maintenance.HospitalClock(TimeProvider.System, Options.Create(new HospitalPm.Infrastructure.Maintenance.ScheduleOptions())),
             NullLogger<UpdateService>.Instance);
 
         return new Fixture(service, launcher, stick, manifestPath, installerPath, staging);

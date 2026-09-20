@@ -26,7 +26,7 @@ export function HandoffNotice({ handoff }: { handoff: Handoff | null }) {
 
   return (
     <>
-      <p className="alert alert-ok" role="status">
+      <p className={`alert ${handoff.tone === 'info' ? 'alert-info' : 'alert-ok'}`} role="status">
         {handoff.notice}
         {handoff.recorded && (
           <>
