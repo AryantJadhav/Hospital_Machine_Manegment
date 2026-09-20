@@ -68,6 +68,7 @@ builder.Services.Configure<ScheduleOptions>(builder.Configuration.GetSection(Sch
 builder.Services.Configure<ReportOptions>(builder.Configuration.GetSection(ReportOptions.SectionName));
 builder.Services.AddSingleton<HospitalClock>();
 builder.Services.AddScoped<PmScheduleGenerator>();
+builder.Services.AddScoped<HospitalPm.Infrastructure.Export.DataExportService>();
 builder.Services.Configure<HospitalPm.Infrastructure.Operations.BackupOptions>(
     builder.Configuration.GetSection(HospitalPm.Infrastructure.Operations.BackupOptions.Section));
 builder.Services.AddSingleton<HospitalPm.Infrastructure.Operations.PgToolLocator>();
@@ -304,6 +305,7 @@ app.MapLicenceEndpoints();
 app.MapUpdateEndpoints();
 app.MapPilotMetricsEndpoints();
 app.MapPmComplianceEndpoints();
+app.MapExportEndpoints();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();

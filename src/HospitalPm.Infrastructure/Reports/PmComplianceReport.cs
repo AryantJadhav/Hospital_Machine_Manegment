@@ -261,33 +261,6 @@ public static class PmCompliance
 
     private static void Row(StringBuilder sb, params string[] cells)
     {
-        for (var i = 0; i < cells.Length; i++)
-        {
-            if (i > 0)
-            {
-                sb.Append(',');
-            }
-
-            sb.Append(Cell(cells[i]));
-        }
-
-        sb.Append("\r\n");
-    }
-
-    /// <summary>
-    /// A spreadsheet treats a cell starting with = + - or @ as a formula, and an
-    /// asset tag or a skip reason is typed by a person. Prefixing a quote keeps
-    /// the text as text.
-    /// </summary>
-    private static string Cell(string value)
-    {
-        if (value.Length > 0 && value[0] is '=' or '+' or '-' or '@' or '\t' or '\r')
-        {
-            value = "'" + value;
-        }
-
-        return value.IndexOfAny([',', '"', '\r', '\n']) >= 0
-            ? "\"" + value.Replace("\"", "\"\"") + "\""
-            : value;
+        sb.Append(Export.Csv.Line(cells)).Append("\r\n");
     }
 }

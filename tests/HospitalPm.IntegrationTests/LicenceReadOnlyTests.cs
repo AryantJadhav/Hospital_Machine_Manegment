@@ -403,6 +403,16 @@ public sealed class LicenceReadOnlyApiTests(PostgresFixture fixture) : IAsyncLif
     }
 
     [Fact]
+    public async Task Taking_your_data_out_still_works()
+    {
+        // A lapsed payment must never be what stops a hospital leaving with its records.
+        var response = await _admin.GetAsync("/api/admin/export");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("application/zip", response.Content.Headers.ContentType?.MediaType);
+    }
+
+    [Fact]
     public async Task A_backup_can_still_be_taken()
     {
         var response = await _admin.PostAsync("/api/admin/backups/run", null);

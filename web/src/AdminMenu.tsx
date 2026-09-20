@@ -4,6 +4,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 const ITEMS = [
   { to: '/compliance', label: 'Compliance report' },
   { to: '/import', label: 'Import' },
+  { to: '/export', label: 'Export data' },
   { to: '/staff', label: 'Staff' },
   { to: '/backups', label: 'Backups' },
   { to: '/diagnostics', label: 'Diagnostics' },
