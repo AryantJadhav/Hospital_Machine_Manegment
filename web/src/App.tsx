@@ -17,6 +17,7 @@ import { UpdatesPage } from './pages/UpdatesPage';
 import { ScanPage } from './pages/ScanPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { PmTasksPage } from './pages/PmTasksPage';
+import { PmDoPage } from './pages/PmDoPage';
 import { StaffPage } from './pages/StaffPage';
 import { ChecklistsPage } from './pages/ChecklistsPage';
 import { WorkOrdersPage } from './pages/WorkOrdersPage';
@@ -111,6 +112,7 @@ function Shell() {
         <Routes>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/pm" element={<PmTasksPage />} />
+          <Route path="/pm/:taskId/do" element={<PmDoPage />} />
           <Route path="/work-orders" element={<WorkOrdersPage />} />
           <Route path="/equipment" element={<EquipmentListPage />} />
           <Route path="/equipment/:id" element={<EquipmentDetailPage />} />

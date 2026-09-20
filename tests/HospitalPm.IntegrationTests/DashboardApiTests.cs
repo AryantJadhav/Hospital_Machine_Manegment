@@ -153,6 +153,24 @@ public sealed class DashboardApiTests(PostgresFixture fixture) : IAsyncLifetime,
             Done(schedule, equipment, monthStart.AddYears(-1), version.Id, signer.Id));
         await db.SaveChangesAsync();
 
+        // The backlog case is a precondition of this test, and it cannot be left to
+        // whatever other tests have put in the shared database: with the rows
+        // above alone, completions and due tasks can come out level, or the wrong
+        // way round, depending on which classes ran first. Top the backlog up
+        // until completions this month outnumber what fell due, using tasks that
+        // fell due long ago and were cleared today, as the scenario describes.
+        var dueNow = await db.PmTasks.CountAsync(t => t.DueDate >= monthStart && t.DueDate <= today);
+        var doneNow = (await _client.GetFromJsonAsync<JsonElement>("/api/dashboard"))
+            .GetProperty("pm").GetProperty("completedThisMonth").GetInt32();
+        var missing = dueNow - doneNow + 1;
+
+        for (var k = 0; k < missing; k++)
+        {
+            db.PmTasks.Add(Done(schedule, equipment, monthStart.AddYears(-2).AddDays(k), version.Id, signer.Id));
+        }
+
+        await db.SaveChangesAsync();
+
         var dashboard = await _client.GetFromJsonAsync<JsonElement>("/api/dashboard");
         var pm = dashboard.GetProperty("pm");
 

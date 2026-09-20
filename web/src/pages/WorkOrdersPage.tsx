@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../auth/useAuth';
 import { ROLES } from '../auth/context';
@@ -56,6 +56,14 @@ export function WorkOrdersPage() {
   const [rows, setRows] = useState<WorkOrderRow[]>([]);
   const [selected, setSelected] = useState<WorkOrderDetail | null>(null);
   const [reporting, setReporting] = useState(false);
+  // The machine to report against when we were sent here from its own page, and
+  // the page to go back to afterwards. Both are absent when someone simply
+  // pressed Report a fault on this list.
+  const [reportFor, setReportFor] = useState<{ id: number; label: string } | null>(null);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const from = (location.state as { from?: string } | null)?.from ?? null;
+  const reportParam = params.get('report');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -77,6 +85,41 @@ export function WorkOrdersPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Arriving from a machine's page with ?report=<id>: open the form with that
+  // machine already in it. It used to land on the plain list and leave the
+  // technician to press Report a fault and search for the machine they were
+  // standing at.
+  useEffect(() => {
+    if (!reportParam) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const m = await api.get<{ id: number; assetTag: string; equipmentTypeName: string }>(
+          `/api/equipment/${reportParam}`,
+        );
+        if (cancelled) return;
+        setReportFor({ id: m.id, label: `${m.assetTag} — ${m.equipmentTypeName}` });
+        setReporting(true);
+      } catch {
+        // Unknown machine: fall back to the plain form rather than a dead end.
+        if (!cancelled) setReporting(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [reportParam]);
+
+  function closeReport() {
+    setReporting(false);
+    setReportFor(null);
+    if (reportParam) {
+      const next = new URLSearchParams(params);
+      next.delete('report');
+      setParams(next, { replace: true });
+    }
+  }
 
   async function open(id: number) {
     try {
@@ -111,8 +154,18 @@ export function WorkOrdersPage() {
 
       {reporting && (
         <ReportForm
-          onCancel={() => setReporting(false)}
-          onDone={async () => { setReporting(false); await load(); }}
+          initial={reportFor}
+          onCancel={() => (from ? navigate(from) : closeReport())}
+          onDone={async () => {
+            // Back where they were standing, with the fault said there. Anywhere
+            // else, the list, which now shows it.
+            if (from) {
+              navigate(from, { replace: true, state: { handoff: { notice: 'Fault reported.', recorded: null } } });
+              return;
+            }
+            closeReport();
+            await load();
+          }}
           onError={setError}
         />
       )}
@@ -375,15 +428,18 @@ function Detail({
 }
 
 function ReportForm({
+  initial,
   onCancel,
   onDone,
   onError,
 }: {
+  /** A machine already chosen, when the form was opened from its own page. */
+  initial: { id: number; label: string } | null;
   onCancel: () => void;
   onDone: () => void | Promise<void>;
   onError: (msg: string | null) => void;
 }) {
-  const [equipmentId, setEquipmentId] = useState<number | null>(null);
+  const [equipmentId, setEquipmentId] = useState<number | null>(initial?.id ?? null);
   const [fault, setFault] = useState('');
   const [priority, setPriority] = useState(20);
   const [outOfService, setOutOfService] = useState(false);
@@ -413,7 +469,7 @@ function ReportForm({
       <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Report a fault</h2>
 
       <div className="filters">
-        <EquipmentPicker value={equipmentId} onChange={setEquipmentId} />
+        <EquipmentPicker value={equipmentId} onChange={setEquipmentId} initialLabel={initial?.label} />
 
         <label className="field">
           <span>Priority</span>

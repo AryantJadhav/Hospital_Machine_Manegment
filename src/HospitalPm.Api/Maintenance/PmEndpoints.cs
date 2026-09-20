@@ -100,6 +100,7 @@ public static class PmEndpoints
         [FromQuery] PmTaskStatus? status,
         [FromQuery] int? locationId,
         [FromQuery] int? equipmentId,
+        [FromQuery] string? q,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
         CancellationToken ct = default)
@@ -119,6 +120,23 @@ public static class PmEndpoints
         if (equipmentId is not null)
         {
             query = query.Where(t => t.EquipmentId == equipmentId);
+        }
+
+        // Whatever a technician can read off the machine in front of them or the
+        // row they are looking for. The work list is hundreds of rows long at a
+        // real hospital, and there was no way to find one machine in it but to
+        // page through, 25 at a time.
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var term = q.Trim().ToLowerInvariant();
+            query = query.Where(t =>
+                t.Equipment!.AssetTag.ToLower().Contains(term) ||
+                (t.Equipment!.SerialNumber != null && t.Equipment!.SerialNumber.ToLower().Contains(term)) ||
+                (t.Equipment!.Manufacturer != null && t.Equipment!.Manufacturer.ToLower().Contains(term)) ||
+                (t.Equipment!.Model != null && t.Equipment!.Model.ToLower().Contains(term)) ||
+                t.Equipment!.EquipmentType!.Name.ToLower().Contains(term) ||
+                t.Equipment!.Location!.Name.ToLower().Contains(term) ||
+                t.Schedule!.ChecklistTemplate!.Name.ToLower().Contains(term));
         }
 
         if (locationId is not null)

@@ -55,12 +55,23 @@ export function PmChecklistForm({
   canSkip,
   onClose,
   onDone,
+  backLabel = 'the PM list',
 }: {
   taskId: number;
   canSkip: boolean;
   onClose: () => void;
-  /** `completed` is false for a skip: only a completed PM has a certificate. */
-  onDone: (message: string, completed: boolean) => void | Promise<void>;
+  /**
+   * `completed` is false for a skip: only a completed PM has a certificate.
+   * `task` names what was recorded, so the page it returns to can offer the
+   * certificate without having had the row to hand.
+   */
+  onDone: (
+    message: string,
+    completed: boolean,
+    task: { id: number; assetTag: string; dueDate: string },
+  ) => void | Promise<void>;
+  /** Where "back" goes, said in words: the PM list, or the machine. */
+  backLabel?: string;
 }) {
   const [form, setForm] = useState<PmForm | null>(null);
   const [answers, setAnswers] = useState<Answers>({});
@@ -90,7 +101,9 @@ export function PmChecklistForm({
         setError(
           e instanceof ApiError && e.status === 409
             ? 'This checklist has no published version, so the PM cannot be recorded yet.'
-            : e instanceof Error ? e.message : 'Could not load this PM.',
+            : e instanceof ApiError && e.status === 404
+              ? 'That PM could not be found. It may have been removed, or the address is wrong.'
+              : e instanceof Error ? e.message : 'Could not load this PM.',
         );
       } finally {
         setLoading(false);
@@ -179,6 +192,7 @@ export function PmChecklistForm({
           ? `PM recorded, with ${findings.join(' and ')}. ${result.failedCheckCount > 0 ? 'Report a fault so the machine is followed up. ' : ''}`.trim()
           : 'PM recorded.',
         true,
+        { id: form.id, assetTag: form.assetTag, dueDate: form.dueDate },
       );
     } catch (e) {
       // The server validates the whole checklist and names each offending
@@ -220,7 +234,11 @@ export function PmChecklistForm({
         reason: reason.trim(),
         clientSubmissionId: submissionId.current,
       });
-      await onDone('PM skipped, with the reason recorded.', false);
+      await onDone('PM skipped, with the reason recorded.', false, {
+        id: form!.id,
+        assetTag: form!.assetTag,
+        dueDate: form!.dueDate,
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not skip this PM.');
     } finally {
@@ -233,8 +251,26 @@ export function PmChecklistForm({
   if (!form) {
     return (
       <div className="page">
-        <button className="btn btn-quiet" onClick={onClose}>← Back to the PM list</button>
+        <button className="btn btn-quiet" onClick={onClose}>← Back to {backLabel}</button>
         <p className="alert alert-error">{error ?? 'Could not load this PM.'}</p>
+      </div>
+    );
+  }
+
+  // Reachable by address now, not only from a row that offers it for open work.
+  // A PM someone has already recorded (or skipped) would otherwise open as a
+  // blank form, and the technician would fill in every check before the server
+  // refused the second completion.
+  if (form.status === 40 || form.status === 50) {
+    return (
+      <div className="page">
+        <button className="btn btn-quiet" onClick={onClose}>← Back to {backLabel}</button>
+        <p className="alert alert-info" role="status">
+          {form.status === 40
+            ? `This PM on ${form.assetTag} has already been recorded, so there is nothing left to fill in.`
+            : `This PM on ${form.assetTag} was skipped, so it is not open for recording.`}
+          {' '}Its certificate and history are on the machine&apos;s page.
+        </p>
       </div>
     );
   }
@@ -243,7 +279,7 @@ export function PmChecklistForm({
     <div className="page">
       <header className="page-head">
         <div>
-          <button className="btn btn-quiet" onClick={onClose}>← Back to the PM list</button>
+          <button className="btn btn-quiet" onClick={onClose}>← Back to {backLabel}</button>
           <h1 style={{ marginBottom: 0 }}>{form.checklistName}</h1>
           <p className="muted">
             <span className="mono">{form.assetTag}</span> · {form.equipmentTypeName} ·{' '}

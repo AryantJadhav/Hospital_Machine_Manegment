@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
-import { useAuth } from '../auth/useAuth';
-import { ROLES } from '../auth/context';
-import { PmChecklistForm } from './PmChecklistForm';
+import { useHandoff } from '../handoff';
+import { HandoffNotice } from '../HandoffNotice';
+import { formatDate } from '../time';
 
 type PmTask = {
   id: number;
@@ -35,26 +35,23 @@ export function PmTasksPage() {
   const [params, setParams] = useSearchParams();
   const status = params.get('status') ?? '';
   const locationId = params.get('locationId') ?? '';
+  const search = params.get('q') ?? '';
+  const location = useLocation();
 
   const [data, setData] = useState<Paged<PmTask> | null>(null);
   const [locations, setLocations] = useState<Lookup[]>([]);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [working, setWorking] = useState<PmTask | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  // The PM just recorded, kept so the confirmation can offer its certificate.
-  // A hospital's next question after "recorded" is "where is the paper".
-  const [recorded, setRecorded] = useState<PmTask | null>(null);
+  // What the form we were sent to just did, and its certificate. A hospital's
+  // next question after "recorded" is "where is the paper".
+  const [handoff, setHandoff] = useHandoff();
+  // What is typed in the search box, kept apart from the URL so typing is not
+  // one history entry per key and the list is asked once the typing pauses.
+  const [typed, setTyped] = useState(search);
   // Whether anything has ever been completed or skipped. Only asked when the
   // open list is empty, to tell "all caught up" from "nothing scheduled yet".
   const [hasHistory, setHasHistory] = useState(false);
-
-  const { can } = useAuth();
-  // Deciding a PM will not happen is a supervisory call, not a technician's,
-  // because a skip is a permanent gap in the record. The server enforces the
-  // same rule; this only keeps the button out of the way.
-  const canSkip = can(ROLES.admin);
 
   useEffect(() => {
     (async () => {
@@ -73,10 +70,11 @@ export function PmTasksPage() {
       const q = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
       if (status) q.set('status', status);
       if (locationId) q.set('locationId', locationId);
+      if (search) q.set('q', search);
       const result = await api.get<Paged<PmTask>>(`/api/pm/tasks?${q}`);
       setData(result);
 
-      if (result.total === 0 && !status && !locationId) {
+      if (result.total === 0 && !status && !locationId && !search) {
         for (const finished of [40, 50]) {
           const past = await api.get<Paged<PmTask>>(`/api/pm/tasks?status=${finished}&pageSize=1`);
           if (past.total > 0) {
@@ -91,7 +89,7 @@ export function PmTasksPage() {
     } finally {
       setLoading(false);
     }
-  }, [status, locationId, page]);
+  }, [status, locationId, search, page]);
 
   useEffect(() => {
     void load();
@@ -103,9 +101,17 @@ export function PmTasksPage() {
     else next.delete(key);
     setParams(next, { replace: true });
     setPage(1);
-    setNotice(null);
-    setRecorded(null);
+    setHandoff(null);
   }
+
+  // The list is asked for what was typed once the typing pauses.
+  useEffect(() => {
+    if (typed.trim() === search) return;
+    const handle = window.setTimeout(() => setFilter('q', typed.trim()), 250);
+    return () => window.clearTimeout(handle);
+    // setFilter only reads the current URL parameters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typed]);
 
   async function certificate(task: PmTask) {
     try {
@@ -124,23 +130,6 @@ export function PmTasksPage() {
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
 
-  if (working) {
-    return (
-      <PmChecklistForm
-        taskId={working.id}
-        canSkip={canSkip}
-        onClose={() => setWorking(null)}
-        onDone={async (message, completed) => {
-          const task = working;
-          setWorking(null);
-          setNotice(message);
-          setRecorded(completed ? task : null);
-          await load();
-        }}
-      />
-    );
-  }
-
   return (
     <div className="page">
       <header className="page-head">
@@ -153,21 +142,17 @@ export function PmTasksPage() {
       </header>
 
       {error && <p className="alert alert-error" role="alert">{error}</p>}
-      {notice && (
-        <p className="alert alert-ok" role="status">
-          {notice}
-          {recorded && (
-            <>
-              {' '}
-              <button className="btn btn-quiet" onClick={() => void certificate(recorded)}>
-                Download the certificate
-              </button>
-            </>
-          )}
-        </p>
-      )}
+      <HandoffNotice handoff={handoff} />
 
       <div className="filters card">
+        <input
+          className="grow"
+          type="search"
+          placeholder="Find a machine: asset tag, serial, make, model, type or place"
+          aria-label="Search the PM list"
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+        />
         <select aria-label="Filter by status" value={status} onChange={(e) => setFilter('status', e.target.value)}>
           <option value="">Open (scheduled, due, overdue)</option>
           {Object.entries(STATUS).map(([v, label]) => (
@@ -205,8 +190,8 @@ export function PmTasksPage() {
             {!loading && data?.items.length === 0 && (
               <tr>
                 <td colSpan={7} className="empty">
-                  {status || locationId
-                    ? 'No PMs match these filters.'
+                  {status || locationId || search
+                    ? 'No PMs match that.'
                     : hasHistory
                       ? 'All caught up. No PM is open right now. Finished ones are under Completed.'
                       : 'Nothing here yet. Schedule a checklist from the Checklists page to generate PM tasks.'}
@@ -217,7 +202,7 @@ export function PmTasksPage() {
             {!loading && data?.items.map((t) => (
               <tr key={t.id}>
                 <td className="mono">
-                  {t.dueDate}
+                  {formatDate(t.dueDate)}
                   {t.daysLate > 0 && (
                     <span className="late"> {t.daysLate}d late</span>
                   )}
@@ -233,15 +218,14 @@ export function PmTasksPage() {
                       by database trigger, so offering to reopen one would be
                       offering something the database will refuse. */}
                   {(t.status === 10 || t.status === 20 || t.status === 30) && (
-                    <button
+                    <Link
                       className="btn btn-quiet"
-                      onClick={() => {
-                        setRecorded(null);
-                        setWorking(t);
-                      }}
+                      to={`/pm/${t.id}/do`}
+                      // Back here afterwards, with the same filters and search.
+                      state={{ from: `${location.pathname}${location.search}` }}
                     >
                       Do PM
-                    </button>
+                    </Link>
                   )}
                   {t.status === 40 && (
                     <button className="btn btn-quiet" onClick={() => void certificate(t)}>

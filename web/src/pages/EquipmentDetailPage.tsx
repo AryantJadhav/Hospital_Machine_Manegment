@@ -5,6 +5,8 @@ import { useAuth } from '../auth/useAuth';
 import { ROLES } from '../auth/context';
 import { EquipmentForm } from './EquipmentForm';
 import { formatDate, formatDateTime, todayAtHospital } from '../time';
+import { useHandoff } from '../handoff';
+import { HandoffNotice } from '../HandoffNotice';
 
 type History = {
   equipment: {
@@ -89,6 +91,9 @@ export function EquipmentDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  // What the PM or fault form we sent them to just did, said here, where the
+  // new entry appears in the history below.
+  const [handoff] = useHandoff();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -177,7 +182,12 @@ export function EquipmentDetailPage() {
               Print label
             </button>
           )}
-          <Link className="btn" to="/work-orders">Report a fault</Link>
+          {/* With this machine already chosen, and back here afterwards. It used
+              to open the general work-order list and leave the technician to
+              press Report a fault and find the machine they were standing at. */}
+          <Link className="btn" to={`/work-orders?report=${e.id}`} state={{ from: `/equipment/${e.id}` }}>
+            Report a fault
+          </Link>
           {/* Condemning is its own action, not a status in a dropdown. It ends
               the machine's PM programme - the generator stops producing tasks
               for it - and that is not something to do by mis-clicking a
@@ -189,6 +199,8 @@ export function EquipmentDetailPage() {
           )}
         </div>
       </header>
+
+      <HandoffNotice handoff={handoff} />
 
       {actionError && <p className="alert alert-error" role="alert">{actionError}</p>}
 
@@ -267,11 +279,16 @@ export function EquipmentDetailPage() {
             <div className="grow">
               <div>{t.checklistName}</div>
               <div className="muted hist-meta">
-                Due {t.dueDate}
+                Due {formatDate(t.dueDate)}
                 {t.daysLate > 0 && <span className="late"> · {t.daysLate} days late</span>}
               </div>
             </div>
             <span className={`pill pm-${t.status}`}>{PM_STATUS[t.status]}</span>
+            {/* The point of a machine's page: it says what is due, and now it lets
+                the person standing at the machine do it. */}
+            <Link className="btn" to={`/pm/${t.id}/do`} state={{ from: `/equipment/${e.id}` }}>
+              Do PM
+            </Link>
           </div>
         ))}
       </Section>
@@ -297,7 +314,7 @@ export function EquipmentDetailPage() {
                 {t.status === 50
                   ? `Skipped — ${t.skipReason ?? 'no reason given'}`
                   : `${formatDateTime(t.completedAtUtc)} · ${t.completedBy ?? 'unknown'}`}
-                {' · due '}{t.dueDate}
+                {' · due '}{formatDate(t.dueDate)}
               </div>
             </div>
 

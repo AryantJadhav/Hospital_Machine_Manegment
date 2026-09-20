@@ -43,17 +43,20 @@ export function EquipmentPicker({
   value,
   onChange,
   label = 'Machine',
+  initialLabel = '',
 }: {
   value: number | null;
   onChange: (id: number | null) => void;
   label?: string;
+  /** What the box says on arrival, when the machine is already known. */
+  initialLabel?: string;
 }) {
   const id = useId();
   const listId = `${id}-list`;
   const root = useRef<HTMLDivElement>(null);
   const latest = useRef(0);
 
-  const [text, setText] = useState('');
+  const [text, setText] = useState(initialLabel);
   const [open, setOpen] = useState(false);
   const [results, setResults] = useState<Machine[]>([]);
   const [total, setTotal] = useState(0);
