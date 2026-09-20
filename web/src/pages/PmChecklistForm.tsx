@@ -147,7 +147,7 @@ export function PmChecklistForm({
     try {
       const signature = signatureRef.current?.toPngBase64() ?? null;
 
-      const result = await api.post<{ outOfRangeCount: number }>(
+      const result = await api.post<{ outOfRangeCount: number; failedCheckCount: number }>(
         `/api/pm/tasks/${form.id}/complete`,
         {
           checklistTemplateVersionId: form.checklistTemplateVersionId,
@@ -161,9 +161,22 @@ export function PmChecklistForm({
         },
       );
 
+      // Said in the words of the finding. The message used to mention only a
+      // reading out of range, so a PM whose alarm test failed was confirmed as
+      // if it had gone perfectly.
+      const findings: string[] = [];
+      if (result.failedCheckCount > 0) {
+        findings.push(`${result.failedCheckCount} failed check${result.failedCheckCount === 1 ? '' : 's'}`);
+      }
+      if (result.outOfRangeCount > 0) {
+        findings.push(
+          `${result.outOfRangeCount} reading${result.outOfRangeCount === 1 ? '' : 's'} outside the acceptable range`,
+        );
+      }
+
       await onDone(
-        result.outOfRangeCount > 0
-          ? `PM recorded, with ${result.outOfRangeCount} reading${result.outOfRangeCount === 1 ? '' : 's'} outside the acceptable range.`
+        findings.length > 0
+          ? `PM recorded, with ${findings.join(' and ')}. ${result.failedCheckCount > 0 ? 'Report a fault so the machine is followed up. ' : ''}`.trim()
           : 'PM recorded.',
         true,
       );
@@ -262,6 +275,13 @@ export function PmChecklistForm({
                 value={answers[item.key]?.value ?? ''}
                 onChange={(v) => set(item.key, v)}
               />
+
+              {answers[item.key]?.value === 'fail' && (
+                <div className="hist-flag">
+                  Recorded as a failed check, and the certificate will say so. Add a note saying what
+                  failed, and report a fault if the machine should not stay in use.
+                </div>
+              )}
 
               {outOfRange(item) && (
                 <div className="hist-flag">

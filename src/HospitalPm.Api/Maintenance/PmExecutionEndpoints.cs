@@ -135,6 +135,7 @@ public static class PmExecutionEndpoints
             hasSignature = completion.Signature is not null,
             signatureFormat = completion.SignatureFormat,
             outOfRangeCount = completion.OutOfRangeCount,
+            failedCheckCount = completion.FailedCheckCount,
             versionNo = version.VersionNo,
             definition = version.Definition,
             answers = completion.Answers,
@@ -163,6 +164,7 @@ public static class PmExecutionEndpoints
                 {
                     completionId = existing.Id,
                     outOfRangeCount = existing.OutOfRangeCount,
+                    failedCheckCount = existing.FailedCheckCount,
                     replayed = true,
                 });
             }
@@ -307,6 +309,7 @@ public static class PmExecutionEndpoints
         {
             completionId = completion.Id,
             outOfRangeCount = completion.OutOfRangeCount,
+            failedCheckCount = completion.FailedCheckCount,
             replayed = false,
         });
     }

@@ -36,6 +36,7 @@ type History = {
     checklistName: string;
     completedBy: string | null;
     outOfRange: number;
+    failedChecks: number;
     hasCertificate: boolean;
   }[];
   workOrders: {
@@ -281,6 +282,11 @@ export function EquipmentDetailPage() {
             <div className="grow">
               <div>
                 {t.checklistName}
+                {t.failedChecks > 0 && (
+                  <span className="pill prio-40 hist-flag">
+                    {t.failedChecks} failed
+                  </span>
+                )}
                 {t.outOfRange > 0 && (
                   <span className="pill prio-30 hist-flag">
                     {t.outOfRange} out of spec

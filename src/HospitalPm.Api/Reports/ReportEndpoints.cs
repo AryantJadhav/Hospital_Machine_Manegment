@@ -80,7 +80,8 @@ public static class ReportEndpoints
                     Present(answer?.Value),
                     answer?.Note,
                     answer?.OutOfRange ?? false,
-                    Expected(item)));
+                    Expected(item),
+                    answer?.IsFailedCheck() ?? false));
             }
         }
 

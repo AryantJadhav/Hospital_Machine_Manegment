@@ -23,7 +23,8 @@ public sealed record CertificateLine(
     string Answer,
     string? Note,
     bool OutOfRange,
-    string? Expected);
+    string? Expected,
+    bool Failed = false);
 
 /// <summary>
 /// Everything a PM certificate prints. Assembled by the endpoint so the
@@ -51,11 +52,43 @@ public sealed record PmCertificateData(
 {
     public int OutOfRangeCount => Lines.Count(l => l.OutOfRange);
 
+    public int FailedCount => Lines.Count(l => l.Failed);
+
     /// <summary>
-    /// A PM with a reading outside spec is not a clean pass, and a
-    /// certificate that implies otherwise is worse than no certificate.
+    /// A PM with a reading outside spec, or a check that failed, is not a clean
+    /// pass, and a certificate that implies otherwise is worse than no
+    /// certificate.
+    ///
+    /// It used to look only at readings. A PM where every number was in range
+    /// but the alarm test failed came out headed "All checks within
+    /// specification" - the one thing this document must never say.
     /// </summary>
-    public bool IsClean => OutOfRangeCount == 0;
+    public bool IsClean => OutOfRangeCount == 0 && FailedCount == 0;
+
+    /// <summary>
+    /// The headline an auditor reads first. Failures lead, because a failed
+    /// check is the more serious finding.
+    /// </summary>
+    public string Verdict
+    {
+        get
+        {
+            if (IsClean) return "All checks within specification";
+
+            var parts = new List<string>();
+            if (FailedCount > 0)
+            {
+                parts.Add(FailedCount == 1 ? "1 check failed" : $"{FailedCount} checks failed");
+            }
+
+            if (OutOfRangeCount > 0)
+            {
+                parts.Add($"{OutOfRangeCount} reading(s) outside specification");
+            }
+
+            return string.Join(" · ", parts);
+        }
+    }
 }
 
 public sealed record ServiceReportData(

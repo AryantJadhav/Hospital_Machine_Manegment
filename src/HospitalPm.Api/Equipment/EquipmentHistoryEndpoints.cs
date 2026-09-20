@@ -140,6 +140,7 @@ public static class EquipmentHistoryEndpoints
             // Surfaced on the list itself: a PM that passed with a reading
             // out of spec is the row someone needs to open.
             OutOfRange = byTask.TryGetValue(t.Id, out var c) ? c.OutOfRangeCount : 0,
+            FailedChecks = byTask.TryGetValue(t.Id, out var f) ? f.FailedCheckCount : 0,
             HasCertificate = byTask.ContainsKey(t.Id),
         }).ToList();
 

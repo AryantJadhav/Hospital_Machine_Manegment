@@ -28,6 +28,21 @@ public sealed class ChecklistAnswer
     /// pass/fail judgement that was already made at the bedside.
     /// </summary>
     public bool OutOfRange { get; set; }
+
+    /// <summary>
+    /// True when a Pass/Fail check was answered "fail".
+    ///
+    /// Derived from the stored text rather than added as another stored flag,
+    /// which is what lets it apply to every completion already on file. Only a
+    /// Pass/Fail item can hold "fail" (Yes/No holds yes, no or na), so the value
+    /// names a failed check without needing the item type. A method rather than
+    /// a property so it is never written into the stored document.
+    ///
+    /// Not the same as OutOfRange, which only a numeric reading can set. A
+    /// completion whose every reading was in range but whose alarm test failed
+    /// was reported as fully clean, because nothing looked at the answer.
+    /// </summary>
+    public bool IsFailedCheck() => string.Equals(Value, "fail", StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>
@@ -117,4 +132,7 @@ public sealed class PmCompletion
 
     /// <summary>Items answered outside their acceptable range.</summary>
     public int OutOfRangeCount => Answers.Count(a => a.Value.OutOfRange);
+
+    /// <summary>Pass/Fail checks answered "fail".</summary>
+    public int FailedCheckCount => Answers.Count(a => a.Value.IsFailedCheck());
 }

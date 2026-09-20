@@ -75,13 +75,13 @@ public sealed class PmCertificateDocument(
                     // The verdict, stated at the top rather than buried in a
                     // table an auditor has to read line by line.
                     right.Item().PaddingTop(4).AlignRight()
-                        .Background(data.IsClean ? Colors.Green.Lighten4 : Colors.Orange.Lighten4)
+                        .Background(data.IsClean ? Colors.Green.Lighten4
+                            : data.FailedCount > 0 ? Colors.Red.Lighten4 : Colors.Orange.Lighten4)
                         .Padding(4)
-                        .Text(data.IsClean
-                            ? "All checks within specification"
-                            : $"{data.OutOfRangeCount} reading(s) outside specification")
+                        .Text(data.Verdict)
                         .FontSize(8.5f)
-                        .FontColor(data.IsClean ? Colors.Green.Darken3 : Colors.Orange.Darken4);
+                        .FontColor(data.IsClean ? Colors.Green.Darken3
+                            : data.FailedCount > 0 ? Colors.Red.Darken3 : Colors.Orange.Darken4);
                 });
             });
 
@@ -157,7 +157,8 @@ public sealed class PmCertificateDocument(
                             .Text(line.SectionTitle).FontSize(9).Bold();
                     }
 
-                    var background = line.OutOfRange ? Colors.Orange.Lighten5 : Colors.White;
+                    var background = line.Failed ? Colors.Red.Lighten5
+                        : line.OutOfRange ? Colors.Orange.Lighten5 : Colors.White;
 
                     table.Cell().Background(background).Element(Cell).Column(c =>
                     {
@@ -175,10 +176,15 @@ public sealed class PmCertificateDocument(
                     table.Cell().Background(background).Element(Cell).Text(text =>
                     {
                         text.Span(line.Answer).Bold();
-                        if (line.OutOfRange)
+                        // Marked in the row itself, not only summarised at
+                        // the top, so a finding survives being photocopied.
+                        if (line.Failed)
                         {
-                            // Marked in the row itself, not only summarised at
-                            // the top, so a finding survives being photocopied.
+                            text.Span("  FAILED").FontSize(8)
+                                .FontColor(Colors.Red.Darken3).Bold();
+                        }
+                        else if (line.OutOfRange)
+                        {
                             text.Span("  OUT OF SPEC").FontSize(8)
                                 .FontColor(Colors.Orange.Darken3).Bold();
                         }
