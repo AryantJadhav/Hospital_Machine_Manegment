@@ -113,7 +113,8 @@ public static class WorkOrderEndpoints
         return Results.Ok(new { items, total, page, pageSize });
     }
 
-    private static async Task<IResult> GetAsync(int id, HospitalPmDbContext db, CancellationToken ct)
+    private static async Task<IResult> GetAsync(
+        int id, HospitalPmDbContext db, ClaimsPrincipal principal, CancellationToken ct)
     {
         var order = await db.WorkOrders.AsNoTracking()
             .Include(w => w.Equipment)!.ThenInclude(e => e!.EquipmentType)
@@ -156,8 +157,12 @@ public static class WorkOrderEndpoints
             order.OutOfServiceAtUtc,
             order.BackInServiceAtUtc,
             order.DowntimeMinutes,
-            // Told to the client so a UI offers only what will actually work.
-            allowedTransitions = WorkOrderTransitions.From(order.Status),
+            // Told to the client so a UI offers only what will actually work -
+            // for this caller. Cancelling is left out for anyone but an
+            // administrator, so the button is not offered only to be refused.
+            allowedTransitions = WorkOrderTransitions.From(order.Status)
+                .Where(s => s != WorkOrderStatus.Cancelled || CanCancel(principal))
+                .ToList(),
             notes,
         });
     }
@@ -271,6 +276,8 @@ public static class WorkOrderEndpoints
         return Results.NoContent();
     }
 
+    private static bool CanCancel(ClaimsPrincipal principal) => principal.IsInRole(Roles.Admin);
+
     private static async Task<IResult> ChangeStatusAsync(
         int id,
         [FromBody] StatusRequest request,
@@ -293,6 +300,18 @@ public static class WorkOrderEndpoints
             });
         }
 
+        // Cancelling throws a reported fault out of the queue, and it is a dead
+        // end: nothing moves out of Cancelled. That is a decision about what
+        // gets done, the same kind as assigning the work or skipping a PM, and
+        // those are an administrator's. An Employee could cancel a Critical
+        // fault assigned to someone else and the server said yes.
+        if (request.Status == WorkOrderStatus.Cancelled && !CanCancel(principal))
+        {
+            return Results.Json(
+                new { error = "Only an administrator can cancel a work order. Add a note and ask one to." },
+                statusCode: StatusCodes.Status403Forbidden);
+        }
+
         if (!WorkOrderTransitions.CanMove(order.Status, request.Status))
         {
             // The database enforces this too; checking here turns a raised
@@ -310,6 +329,17 @@ public static class WorkOrderEndpoints
         if (request.Status == WorkOrderStatus.Closed)
         {
             order.ClosedAtUtc = now;
+        }
+
+        // A machine flagged as unusable stays counted as down until the window
+        // is closed, and the only thing that closed it was resolving the order.
+        // Cancelling never did, and Cancelled is terminal, so a cancelled
+        // machine-down fault left the machine "down" on the dashboard for good
+        // with no work order left to clear it.
+        if (request.Status == WorkOrderStatus.Cancelled
+            && order.OutOfServiceAtUtc is not null && order.BackInServiceAtUtc is null)
+        {
+            order.BackInServiceAtUtc = now;
         }
 
         order.Status = request.Status;
