@@ -1,20 +1,45 @@
 :root {
-  --bg: #f6f7f9;
-  --surface: #ffffff;
-  --border: #dfe3e8;
-  --text: #1b2430;
-  --muted: #667085;
-  --accent: #1c6fd6;
-  --accent-text: #ffffff;
-  --ok-bg: #e7f6ec;
-  --ok-text: #1a6b38;
-  --err-bg: #fdecec;
-  --err-text: #a52121;
-  --info-bg: #eaf1fb;
-  --info-text: #1a4f96;
-  --warn-bg: #fdf3dc;
-  --warn-text: #7a5208;
+  /* The Hospital PM design system. Names on the right are its token names. The
+     older names (--bg, --surface, --text, --muted, --accent, --ok-*, --err-*,
+     --warn-*, --info-*) are kept so no page needed to change. */
+  --bg: #f3f6f9;            /* canvas */
+  --surface: #ffffff;       /* surface */
+  --surface-sunken: #e8edf2;/* surface-sunken */
+  --row-hover: #eef3f8;     /* row-hover */
+  --border: #d2dae2;        /* border: hairlines and card edges only */
+  --border-strong: #68798a; /* border-strong: the edge of every control (3:1) */
+  --text: #111f2b;          /* ink */
+  --muted: #3f5366;         /* ink-muted */
+  --subtle: #556a7d;        /* ink-subtle: hints and placeholders */
+  --accent: #0a5ca8;        /* brand */
+  --accent-hover: #084a88;  /* brand-hover */
+  --accent-text: #ffffff;   /* on-brand */
+  --accent-tint: #e2eef9;   /* brand-tint */
+  --accent-ink: #08477f;    /* brand-ink */
+  --nav: #0c2a43;           /* nav */
+  --on-nav: #ffffff;        /* on-nav */
+  --on-nav-muted: #bfd1e0;  /* on-nav-muted */
+  --nav-accent: #5fb4f0;    /* nav-accent */
+  --focus: #0a5ca8;         /* focus-ring */
+  --focus-on-nav: #8fd0ff;  /* focus-ring-on-nav */
+  --ok: #0b7a75;            /* success */
+  --ok-bg: #dff3f1;         /* success-bg */
+  --ok-text: #075853;       /* success-ink */
+  --warn: #b07800;          /* warning */
+  --warn-bg: #fdf0cc;       /* warning-bg */
+  --warn-text: #664000;     /* warning-ink */
+  --err: #a3162a;           /* danger */
+  --err-hover: #861224;     /* danger-hover */
+  --err-bg: #fbe8eb;        /* danger-bg */
+  --err-text: #86162a;      /* danger-ink */
+  --err-on: #ffffff;        /* on-danger */
+  --info-bg: var(--accent-tint);
+  --info-text: var(--accent-ink);
+  --shadow-card: 0 1px 2px rgba(12, 42, 67, 0.08);
+  --shadow-pop: 0 8px 24px rgba(12, 42, 67, 0.16), 0 1px 3px rgba(12, 42, 67, 0.10);
   --radius: 8px;
+  --sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: "Cascadia Mono", Consolas, ui-monospace, Menlo, monospace;
 }
 
 * { box-sizing: border-box; }
@@ -23,8 +48,15 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font: 15px/1.5 var(--sans);
 }
+
+a { color: var(--accent); }
+
+/* A focus outline on everything that can be reached with the keyboard, in the
+   brand colour and, inside the navigation bar, in the one that reads on navy. */
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.nav :focus-visible { outline-color: var(--focus-on-nav); }
 
 .shell { min-height: 100vh; }
 
@@ -36,20 +68,22 @@ body {
   gap: 1.25rem;
   padding: 0 1.25rem;
   height: 56px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  background: var(--nav);
+  color: var(--on-nav);
+  border-bottom: 0;
 }
 
-.brand { font-weight: 650; letter-spacing: -0.01em; }
+.brand { font-weight: 700; letter-spacing: -0.01em; color: var(--on-nav); }
 
 .nav-link {
-  color: var(--muted);
+  color: var(--on-nav-muted);
   text-decoration: none;
   padding: 0.35rem 0;
   border-bottom: 2px solid transparent;
 }
 
-.nav-link.active { color: var(--text); border-bottom-color: var(--accent); }
+.nav-link.active { color: var(--on-nav); border-bottom-color: var(--nav-accent); }
+.nav-link:hover { color: var(--on-nav); }
 
 .nav-right {
   margin-left: auto;
@@ -62,6 +96,7 @@ body {
 
 /* The account name gives way before Sign out does, and before the links. */
 .nav-right .muted {
+  color: var(--on-nav-muted);
   max-width: 14rem;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -90,9 +125,20 @@ body {
   border: 0;
   border-bottom: 2px solid transparent;
   font: inherit;
+  color: var(--on-nav-muted);
   cursor: pointer;
 }
-.nav-menu-button.active { color: var(--text); border-bottom-color: var(--accent); }
+.nav-menu-button:hover { color: var(--on-nav); }
+.nav-menu-button.active { color: var(--on-nav); border-bottom-color: var(--nav-accent); }
+
+/* Quiet buttons on the navigation bar (Sign out, the theme switch) keep a
+   visible edge: a bare word on navy does not look like something to press. */
+.nav .btn-quiet {
+  color: var(--on-nav-muted);
+  border: 1px solid var(--on-nav-muted);
+  background: transparent;
+}
+.nav .btn-quiet:hover:not(:disabled) { color: var(--on-nav); border-color: var(--on-nav); }
 
 .nav-menu-list {
   position: absolute;
@@ -106,7 +152,7 @@ body {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--shadow-pop);
 }
 
 .nav-menu-item {
@@ -115,7 +161,7 @@ body {
   color: var(--text);
   text-decoration: none;
 }
-.nav-menu-item:hover { background: var(--bg); }
+.nav-menu-item:hover { background: var(--row-hover); }
 .nav-menu-item.active { color: var(--accent); }
 
 /* ---------- machine picker ---------- */
@@ -132,7 +178,7 @@ body {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--shadow-pop);
   overflow: hidden;
 }
 .picker-list { list-style: none; margin: 0; padding: 0.25rem; }
@@ -145,7 +191,7 @@ body {
   cursor: pointer;
 }
 .picker-option .muted { grid-column: 2; font-size: 0.85em; }
-.picker-option.active { background: var(--bg); }
+.picker-option.active { background: var(--row-hover); }
 .picker-hint { margin: 0; padding: 0.4rem 0.85rem 0.55rem; font-size: 0.85em; }
 .picker-hint:empty { display: none; }
 
@@ -183,12 +229,13 @@ main { padding: 1.5rem; }
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 1rem;
+  box-shadow: var(--shadow-card);
 }
 
 .stack { display: grid; gap: 1rem; }
 .row { display: flex; gap: 0.6rem; flex-wrap: wrap; }
 .muted { color: var(--muted); }
-.mono { font-family: ui-monospace, "Cascadia Mono", Menlo, monospace; font-size: 0.9em; }
+.mono { font-family: var(--mono); font-size: 0.9em; }
 
 /* ---------- filters ---------- */
 
@@ -197,17 +244,16 @@ main { padding: 1.5rem; }
 
 input, select {
   font: inherit;
+  height: 40px;
   padding: 0.5rem 0.65rem;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: 6px;
   background: var(--surface);
   color: inherit;
 }
 
-input:focus-visible, select:focus-visible, button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
+input::placeholder, textarea::placeholder { color: var(--subtle); opacity: 1; }
+input[type="checkbox"], input[type="radio"] { height: auto; accent-color: var(--accent); }
 
 .field { display: grid; gap: 0.3rem; }
 .field > span { font-size: 0.85rem; color: var(--muted); }
@@ -228,6 +274,8 @@ input:focus-visible, select:focus-visible, button:focus-visible {
 }
 
 .table th {
+  background: var(--surface-sunken);
+  font-variant-numeric: tabular-nums;
   font-size: 0.8rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -245,7 +293,7 @@ input:focus-visible, select:focus-visible, button:focus-visible {
   padding: 0.15rem 0.55rem;
   border-radius: 999px;
   font-size: 0.8rem;
-  background: #eef1f5;
+  background: var(--surface-sunken);
   color: var(--muted);
 }
 
@@ -255,19 +303,27 @@ input:focus-visible, select:focus-visible, button:focus-visible {
 
 .btn {
   font: inherit;
+  font-weight: 600;
   padding: 0.5rem 0.9rem;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: 6px;
   background: var(--surface);
   color: inherit;
   cursor: pointer;
+  text-decoration: none;
+  transition: background-color 120ms ease-out, border-color 120ms ease-out;
 }
 
-.btn:hover:not(:disabled) { border-color: #c6ccd4; }
+.btn:hover:not(:disabled) { background: var(--row-hover); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
-.btn-quiet { border-color: transparent; color: var(--muted); }
+.btn-primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn-quiet { border-color: transparent; color: var(--muted); background: transparent; }
+
+@media (prefers-reduced-motion: reduce) {
+  .btn { transition: none; }
+}
 
 .alert { margin: 0; padding: 0.7rem 0.9rem; border-radius: 6px; }
 .alert-error { background: var(--err-bg); color: var(--err-text); }
@@ -326,25 +382,44 @@ input:focus-visible, select:focus-visible, button:focus-visible {
 
 .boot { min-height: 100vh; display: grid; place-items: center; color: var(--muted); }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #12161c;
-    --surface: #1a1f27;
-    --border: #2b323c;
-    --text: #e8ecf1;
-    --muted: #98a2b3;
-    --accent: #4a95ec;
-    --ok-bg: #14301f;
-    --ok-text: #7fd6a0;
-    --err-bg: #35191a;
-    --err-text: #f19a9a;
-    --info-bg: #17263a;
-    --info-text: #9cc3f2;
-    --warn-bg: #33240f;
-    --warn-text: #e0b071;
-  }
-  .pill { background: #232a33; }
-  .pill-30 { background: #33240f; color: #e0b071; }
+/* Dark is chosen, never assumed. A shared ward PC that happens to be in Windows
+   dark mode should not change how the product looks; the switch is in the
+   navigation bar and is remembered on this machine. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0b1620;
+  --surface: #122130;
+  --surface-sunken: #0d1a26;
+  --row-hover: #182b3d;
+  --border: #243547;
+  --border-strong: #7f94a7;
+  --text: #e8eff5;
+  --muted: #b0c2d2;
+  --subtle: #93a9bb;
+  --accent: #62b4f2;
+  --accent-hover: #84c6f7;
+  --accent-text: #06182a;
+  --accent-tint: #14344f;
+  --accent-ink: #a8d5f8;
+  --nav: #07111a;
+  --on-nav: #ffffff;
+  --on-nav-muted: #a9bfd0;
+  --nav-accent: #5fb4f0;
+  --focus: #8fd0ff;
+  --focus-on-nav: #8fd0ff;
+  --ok: #6fe0d3;
+  --ok-bg: #0e2f2f;
+  --ok-text: #8ee8dd;
+  --warn: #e0a040;
+  --warn-bg: #33260c;
+  --warn-text: #f0c57a;
+  --err: #ee5d6c;
+  --err-hover: #f58a95;
+  --err-bg: #3a1720;
+  --err-text: #f7a3aa;
+  --err-on: #2a0810;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.55), 0 1px 3px rgba(0, 0, 0, 0.4);
 }
 
 /* ---------- scanner ---------- */
@@ -425,15 +500,18 @@ input:focus-visible, select:focus-visible, button:focus-visible {
   border: 1px solid var(--border);
   border-left: 3px solid var(--border);
   border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
   text-decoration: none;
   color: inherit;
 }
 
-a.tile:hover { border-color: #c6ccd4; }
+a.tile:hover { border-color: var(--border-strong); }
 
 .tile-value { font-size: 1.7rem; font-weight: 650; letter-spacing: -0.02em; line-height: 1.1; }
 .tile-label { font-size: 0.85rem; color: var(--muted); }
-.tile-hint { font-size: 0.75rem; color: var(--muted); opacity: 0.8; }
+/* Its own colour, not the muted one at 80% opacity: dimming with opacity took it
+   to 3.3:1, below what small text needs. */
+.tile-hint { font-size: 0.75rem; color: var(--subtle); }
 
 .tile-ok { border-left-color: var(--ok-text); }
 .tile-warn { border-left-color: #b47b16; }
@@ -479,8 +557,8 @@ a.tile:hover { border-color: #c6ccd4; }
 }
 
 .row-clickable { cursor: pointer; }
-.row-clickable:hover td { background: rgba(127, 127, 127, 0.06); }
-.row-selected td { background: rgba(28, 111, 214, 0.08); }
+.row-clickable:hover td { background: var(--row-hover); }
+.row-selected td { background: var(--accent-tint); }
 
 /* Fault text can be a paragraph; the table must not stretch off-screen. */
 .truncate { max-width: 22rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -491,17 +569,11 @@ a.tile:hover { border-color: #c6ccd4; }
 textarea {
   font: inherit;
   padding: 0.5rem 0.65rem;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: 6px;
   background: var(--surface);
   color: inherit;
   resize: vertical;
-}
-
-@media (prefers-color-scheme: dark) {
-  .pm-10, .pm-50, .prio-10, .prio-20, .wo-60, .wo-70 { background: #232a33; }
-  .pm-20, .prio-30, .wo-10 { background: #33240f; color: #e0b071; }
-  .wo-20, .wo-30, .wo-40 { background: #16233a; color: #85b3f0; }
 }
 
 /* ---------- location tree ---------- */
@@ -577,8 +649,9 @@ textarea {
   resize: vertical;
   font-size: 0.78rem;
   line-height: 1.45;
-  background: var(--input-bg, #0f1520);
+  background: var(--surface-sunken);
   color: var(--text);
+  font-family: var(--mono);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 0.6rem;

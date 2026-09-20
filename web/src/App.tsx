@@ -25,6 +25,7 @@ import { ChecklistsPage } from './pages/ChecklistsPage';
 import { WorkOrdersPage } from './pages/WorkOrdersPage';
 import { AdminMenu } from './AdminMenu';
 import { LicenceBanner } from './LicenceBanner';
+import { ThemeToggle } from './ThemeToggle';
 import { titleForPath, usePageTitle } from './pageTitle';
 import './App.css';
 
@@ -101,6 +102,7 @@ function Shell() {
               {isAdmin ? 'Administrator' : 'Employee'}
             </span>
           </span>
+          <ThemeToggle />
           <button
             className="btn btn-quiet"
             title={`Sign out ${user?.fullName ?? user?.userName ?? ''}`.trim()}
