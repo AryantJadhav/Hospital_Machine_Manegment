@@ -533,6 +533,103 @@ Assert-That (-not (Test-Path $FailureFile)) "bare clean install: nothing was ins
 $code = Invoke-Setup -LogName "05c-restore"
 Assert-That ($code -eq 0) "restored the install for later scenarios (was $code)"
 
+# --- 5d. Restoring, including from a damaged backup ------------------------
+# The restore script had been proven by hand and never by this harness, which
+# is how it came to drop the live database before finding out that a backup
+# was cut short: the file opened, so the up-front check passed, and the copy
+# failed halfway through with the hospital's data already gone. The database is
+# now restored into a staging copy and swapped in only when complete. Both halves
+# of that are held here: a good restore replaces the data, and a damaged one
+# changes nothing.
+Write-Scenario "Restores from a backup, and a damaged backup changes nothing"
+
+$pgBin     = Join-Path $InstallDir "pgsql\bin"
+$dbCreds   = Get-Content "$DataDir\db.json" -Raw | ConvertFrom-Json
+$restorePs = Join-Path $InstallDir "restore-database.ps1"
+$work      = Join-Path $env:TEMP "hpm-smoke-restore"
+New-Item -ItemType Directory -Force -Path $work | Out-Null
+
+function Invoke-Db([string]$Sql, [switch]$Super) {
+    $user = if ($Super) { $dbCreds.superuser } else { $dbCreds.username }
+    $pass = if ($Super) { $dbCreds.superpass } else { $dbCreds.password }
+    $env:PGPASSWORD = $pass
+    try {
+        $out = & "$pgBin\psql.exe" --host=$($dbCreds.host) --port=$($dbCreds.port) `
+                   --username=$user --dbname=$($dbCreds.database) --no-password `
+                   --quiet --tuples-only --no-align --command=$Sql 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "psql failed ($Sql): $($out -join ' ')" }
+        return (($out | Out-String).Trim())
+    }
+    finally { Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue }
+}
+
+function Invoke-Restore([string]$DumpFile, [string]$Tag) {
+    $argList = @(
+        "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$restorePs`"",
+        "-PgRoot", "`"$InstallDir\pgsql`"",
+        "-CredentialsFile", "`"$DataDir\db.json`"",
+        "-DumpFile", "`"$DumpFile`"",
+        "-BackupDir", "`"$work`"",
+        "-LogFile", "`"$LogDir\restore-$Tag.log`"")
+    $proc = Start-Process -FilePath "powershell.exe" -ArgumentList $argList `
+                -Wait -PassThru -WindowStyle Hidden
+    return $proc.ExitCode
+}
+
+# A marker the restore must remove and bring back, and padding so that most of
+# the backup file is data. A fresh database dumps to about 140 KB, most of it
+# the table of contents; cut that short and the file no longer opens, which
+# tests the readability check rather than the restore. With a few MB of data
+# behind the table of contents, cutting the file at 60% leaves it readable and
+# unrestorable, which is the case that mattered.
+Invoke-Db "CREATE TABLE smoke_marker (v int); INSERT INTO smoke_marker VALUES (1); CREATE TABLE smoke_pad AS SELECT g, md5(g::text) || md5((g + 1)::text) AS t FROM generate_series(1, 100000) g" | Out-Null
+
+$goodDump = Join-Path $work "good.dump"
+$env:PGPASSWORD = $dbCreds.superpass
+try {
+    & "$pgBin\pg_dump.exe" --format=custom --no-owner --no-privileges `
+        --host=$($dbCreds.host) --port=$($dbCreds.port) --username=$($dbCreds.superuser) `
+        --dbname=$($dbCreds.database) --file=$goodDump 2>&1 | Out-Null
+    Assert-That ($LASTEXITCODE -eq 0) "took a backup to restore from (exit $LASTEXITCODE)"
+}
+finally { Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue }
+
+# Work done after the backup, which restoring must throw away.
+Invoke-Db "INSERT INTO smoke_marker VALUES (2)" | Out-Null
+Assert-That ((Invoke-Db "SELECT count(*) FROM smoke_marker") -eq "2") "the database has the newer row before restoring"
+
+$code = Invoke-Restore -DumpFile $goodDump -Tag "good"
+Assert-That ($code -eq 0) "restore from a good backup: exit 0 (was $code)"
+Assert-That ((Invoke-Db "SELECT count(*) FROM smoke_marker") -eq "1") "restore: the work after the backup is gone"
+Assert-That ((Get-ServiceState $ServiceName) -eq "Running") "restore: $ServiceName is running again"
+Assert-That ((Get-Health 60) -eq 200) "restore: the app answers on the restored database"
+
+# A file that opens but is cut short: what an interrupted copy leaves behind.
+$cutDump = Join-Path $work "cut.dump"
+Copy-Item $goodDump $cutDump
+$stream = [System.IO.File]::Open($cutDump, 'Open', 'Write')
+try { $stream.SetLength([long]((Get-Item $goodDump).Length * 0.6)) }
+finally { $stream.Dispose() }
+
+$env:PGPASSWORD = $dbCreds.superpass
+try {
+    & "$pgBin\pg_restore.exe" --list $cutDump 2>&1 | Out-Null
+    Assert-That ($LASTEXITCODE -eq 0) "the cut-short backup still opens, so only a full restore can tell (exit $LASTEXITCODE)"
+}
+finally { Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue }
+
+Invoke-Db "INSERT INTO smoke_marker VALUES (2)" | Out-Null
+
+$code = Invoke-Restore -DumpFile $cutDump -Tag "cut-short"
+Assert-That ($code -ne 0) "restore from a cut-short backup: refused with a non-zero code (was $code)"
+Assert-That ((Invoke-Db "SELECT count(*) FROM smoke_marker") -eq "2") "restore from a cut-short backup: the live database is untouched"
+Assert-That ((Invoke-Db "SELECT count(*) FROM pg_database WHERE datname LIKE '%\_restoring' OR datname LIKE '%\_replaced'" -Super) -eq "0") `
+    "restore from a cut-short backup: no staging database left behind"
+Assert-That ((Get-ServiceState $ServiceName) -eq "Running") "restore from a cut-short backup: $ServiceName is running"
+Assert-That ((Get-Health 60) -eq 200) "restore from a cut-short backup: the app still answers"
+
+Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
+
 # --- 6. A failure after the payload has landed ----------------------------
 # The phase where Inno reports success no matter what. The exit code cannot
 # be made non-zero here, so install-failure.txt IS the result, and it has to
