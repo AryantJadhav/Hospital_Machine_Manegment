@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { useAuth } from '../auth/useAuth';
 import { ROLES } from '../auth/context';
 import { suggestCode, suggestNames } from '../locationSuggestions';
+import { AddPlaceForm } from './AddPlaceForm';
 
 type Location = {
   id: number;
@@ -43,6 +44,9 @@ export function LocationsPage() {
   const [editing, setEditing] = useState<Location | null>(null);
   const [creatingUnder, setCreatingUnder] = useState<Location | null | undefined>(undefined);
   const [query, setQuery] = useState('');
+  // The guided way of adding a ward or room: Block, Level/Floor, then a name.
+  const [guided, setGuided] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   // Persisted so a hospital with two hundred rooms is not re-collapsing the
   // same six wards on every visit.
@@ -190,15 +194,26 @@ export function LocationsPage() {
             </button>
             <button
               className="btn btn-primary"
-              onClick={() => { setCreatingUnder(null); setEditing(null); }}
+              onClick={() => { setGuided(true); setCreatingUnder(undefined); setEditing(null); setNotice(null); }}
             >
-              Add top level
+              Add place
             </button>
           </div>
         )}
       </header>
 
       {error && <p className="alert alert-error" role="alert">{error}</p>}
+      {notice && <p className="alert alert-ok" role="status">{notice}</p>}
+
+      {guided && canEdit && (
+        <AddPlaceForm
+          all={items}
+          onCancel={() => { setGuided(false); setError(null); }}
+          onSaved={async (message) => { setGuided(false); setNotice(message); await load(); }}
+          onError={setError}
+          onUseFullForm={() => { setGuided(false); setCreatingUnder(null); setEditing(null); setError(null); }}
+        />
+      )}
 
       {formOpen && canEdit && (
         <LocationForm
