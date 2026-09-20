@@ -639,9 +639,14 @@ Ranked by how much I would like to be wrong about them.
    have been completed — so the history tables are still empty, which is the
    easiest case there is.
 
-   One thing the pass surfaced without fixing: `GET /api/pm/schedules` is
-   unpaged and returned 371 KB for 1,702 schedules. Fast today, and the wrong
-   shape for a chain hospital.
+   That pass found `GET /api/pm/schedules` unpaged (371 KB for 1,702
+   schedules). It is now paged. A later run at the plan's scale (15,000 assets,
+   113k PM tasks, 50k work orders; `tools/loadtest`) found the PM-list text
+   search the slowest thing in the product (about 470 ms; now about 50 ms) and
+   the unpaged schedule list at 3.6 MB (now about 12 KB). Every other endpoint
+   answered in under 100 ms. The nightly generation job takes about 7 s at that
+   size and still issues one query per schedule, which is fine for a nightly
+   batch and worth batching if it ever runs longer.
 
 10. **The signing-key path** (§5) — one security bug was already found there by
    accident, which is weak evidence that it was the only one.

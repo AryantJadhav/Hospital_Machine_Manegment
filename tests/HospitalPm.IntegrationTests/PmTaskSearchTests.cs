@@ -26,6 +26,7 @@ public sealed class PmTaskSearchTests(PostgresFixture fixture) : IAsyncLifetime,
     private string _tag = null!;
     private string _otherTag = null!;
     private string _room = null!;
+    private string _checklist = null!;
 
     public async Task InitializeAsync()
     {
@@ -35,6 +36,7 @@ public sealed class PmTaskSearchTests(PostgresFixture fixture) : IAsyncLifetime,
         _tag = $"SRCH-{suffix}".ToUpperInvariant();
         _otherTag = $"OTHR-{suffix}".ToUpperInvariant();
         _room = $"Ward {suffix}";
+        _checklist = $"Quarterly check {suffix}";
 
         using (var scope = _factory.Services.CreateScope())
         {
@@ -55,8 +57,8 @@ public sealed class PmTaskSearchTests(PostgresFixture fixture) : IAsyncLifetime,
         _client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", tokens.GetProperty("accessToken").GetString());
 
-        await SeedAsync(_tag, _room, "Hamilton", "Searchable C1");
-        await SeedAsync(_otherTag, $"Other {suffix}", "Philips", "V60");
+        await SeedAsync(_tag, _room, "Hamilton", "Searchable C1", _checklist);
+        await SeedAsync(_otherTag, $"Other {suffix}", "Philips", "V60", "Other PM");
     }
 
     public Task DisposeAsync()
@@ -100,12 +102,14 @@ public sealed class PmTaskSearchTests(PostgresFixture fixture) : IAsyncLifetime,
     [InlineData("model")]
     [InlineData("maker")]
     [InlineData("place")]
+    [InlineData("checklist")]
     public async Task Search_also_matches_what_is_printed_on_the_machine_and_where_it_stands(string field)
     {
         var term = field switch
         {
             "model" => "searchable c1",
             "maker" => "hamilton",
+            "checklist" => _checklist,
             _ => _room,
         };
 
@@ -130,7 +134,7 @@ public sealed class PmTaskSearchTests(PostgresFixture fixture) : IAsyncLifetime,
         Assert.Contains(_otherTag, found);
     }
 
-    private async Task SeedAsync(string assetTag, string roomName, string maker, string model)
+    private async Task SeedAsync(string assetTag, string roomName, string maker, string model, string checklist)
     {
         await using var db = fixture.CreateContext();
         var code = Guid.NewGuid().ToString("N")[..8];
@@ -149,7 +153,7 @@ public sealed class PmTaskSearchTests(PostgresFixture fixture) : IAsyncLifetime,
 
         var template = new ChecklistTemplate
         {
-            EquipmentTypeId = type.Id, Code = $"sr-{code}", Name = "Search PM",
+            EquipmentTypeId = type.Id, Code = $"sr-{code}", Name = checklist,
         };
         db.ChecklistTemplates.Add(template);
         await db.SaveChangesAsync();

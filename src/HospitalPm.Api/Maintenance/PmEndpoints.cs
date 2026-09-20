@@ -129,14 +129,28 @@ public static class PmEndpoints
         if (!string.IsNullOrWhiteSpace(q))
         {
             var term = q.Trim().ToLowerInvariant();
+
+            // Decided on the machine first, then matched to its tasks. Filtering
+            // the tasks directly made the database join every open task to its
+            // machine, type and place before it could test a single word; with a
+            // real register (15,000 machines) that was the slowest thing in the
+            // product. The machines are far fewer than the tasks.
+            var machines = db.Equipment.Where(e =>
+                e.AssetTag.ToLower().Contains(term) ||
+                (e.SerialNumber != null && e.SerialNumber.ToLower().Contains(term)) ||
+                (e.Manufacturer != null && e.Manufacturer.ToLower().Contains(term)) ||
+                (e.Model != null && e.Model.ToLower().Contains(term)) ||
+                e.EquipmentType!.Name.ToLower().Contains(term) ||
+                e.Location!.Name.ToLower().Contains(term))
+                .Select(e => e.Id);
+
+            var templates = db.ChecklistTemplates
+                .Where(c => c.Name.ToLower().Contains(term))
+                .Select(c => c.Id);
+
             query = query.Where(t =>
-                t.Equipment!.AssetTag.ToLower().Contains(term) ||
-                (t.Equipment!.SerialNumber != null && t.Equipment!.SerialNumber.ToLower().Contains(term)) ||
-                (t.Equipment!.Manufacturer != null && t.Equipment!.Manufacturer.ToLower().Contains(term)) ||
-                (t.Equipment!.Model != null && t.Equipment!.Model.ToLower().Contains(term)) ||
-                t.Equipment!.EquipmentType!.Name.ToLower().Contains(term) ||
-                t.Equipment!.Location!.Name.ToLower().Contains(term) ||
-                t.Schedule!.ChecklistTemplate!.Name.ToLower().Contains(term));
+                machines.Contains(t.EquipmentId) ||
+                templates.Contains(t.Schedule!.ChecklistTemplateId));
         }
 
         if (locationId is not null)
@@ -182,8 +196,15 @@ public static class PmEndpoints
     }
 
     private static async Task<IResult> SchedulesAsync(
-        HospitalPmDbContext db, [FromQuery] int? equipmentId, CancellationToken ct)
+        HospitalPmDbContext db,
+        [FromQuery] int? equipmentId,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50,
+        CancellationToken ct = default)
     {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
+
         var query = db.PmSchedules.AsNoTracking();
 
         if (equipmentId is not null)
@@ -191,8 +212,13 @@ public static class PmEndpoints
             query = query.Where(s => s.EquipmentId == equipmentId);
         }
 
+        var total = await query.CountAsync(ct);
+
         var items = await query
             .OrderBy(s => s.Equipment!.AssetTag)
+            .ThenBy(s => s.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .Select(s => new ScheduleResponse(
                 s.Id,
                 s.EquipmentId,
@@ -211,7 +237,7 @@ public static class PmEndpoints
                     .FirstOrDefault()))
             .ToListAsync(ct);
 
-        return Results.Ok(items);
+        return Results.Ok(new { items, total, page, pageSize });
     }
 
     /// <summary>Counts for the dashboard.</summary>
