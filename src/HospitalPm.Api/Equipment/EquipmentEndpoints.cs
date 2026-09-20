@@ -222,20 +222,30 @@ public static class EquipmentEndpoints
         HospitalPmDbContext db,
         CancellationToken ct)
     {
-        var error = await ValidateAsync(request, db, ct);
+        // Left blank, the software numbers the machine itself.
+        var error = await ValidateAsync(request, db, ct, tagRequired: !string.IsNullOrWhiteSpace(request.AssetTag));
         if (error is not null)
         {
             return error;
         }
 
-        if (await db.Equipment.AnyAsync(e => e.AssetTag.ToLower() == request.AssetTag.Trim().ToLower(), ct))
+        string assetTag;
+        if (string.IsNullOrWhiteSpace(request.AssetTag))
         {
-            return Results.Conflict(new { error = $"Asset tag '{request.AssetTag}' is already in use." });
+            assetTag = await NextAssetTagAsync(db, ct);
+        }
+        else
+        {
+            assetTag = request.AssetTag.Trim();
+            if (await db.Equipment.AnyAsync(e => e.AssetTag.ToLower() == assetTag.ToLower(), ct))
+            {
+                return Results.Conflict(new { error = $"Asset tag '{request.AssetTag}' is already in use." });
+            }
         }
 
         var entity = new Domain.Assets.Equipment
         {
-            AssetTag = request.AssetTag.Trim(),
+            AssetTag = assetTag,
             SerialNumber = request.SerialNumber?.Trim(),
             EquipmentTypeId = request.EquipmentTypeId,
             LocationId = request.LocationId,
@@ -251,7 +261,30 @@ public static class EquipmentEndpoints
         db.Equipment.Add(entity);
         await db.SaveChangesAsync(ct);
 
-        return Results.Created($"/api/equipment/{entity.Id}", new { entity.Id });
+        return Results.Created($"/api/equipment/{entity.Id}", new { entity.Id, entity.AssetTag });
+    }
+
+    /// <summary>
+    /// The next number in the hospital's own series, EQ-00001 and on.
+    ///
+    /// Drawn from a database sequence, so two people adding machines at once cannot be
+    /// handed the same number. A number already used by a tag someone typed or imported
+    /// is skipped rather than refused.
+    /// </summary>
+    private static async Task<string> NextAssetTagAsync(HospitalPmDbContext db, CancellationToken ct)
+    {
+        while (true)
+        {
+            var n = await db.Database
+                .SqlQueryRaw<long>("SELECT nextval('equipment_asset_tag_seq') AS \"Value\"")
+                .SingleAsync(ct);
+
+            var tag = $"EQ-{n:D5}";
+            if (!await db.Equipment.AnyAsync(e => e.AssetTag == tag, ct))
+            {
+                return tag;
+            }
+        }
     }
 
     private static async Task<IResult> UpdateAsync(
@@ -324,9 +357,9 @@ public static class EquipmentEndpoints
     }
 
     private static async Task<IResult?> ValidateAsync(
-        EquipmentRequest request, HospitalPmDbContext db, CancellationToken ct)
+        EquipmentRequest request, HospitalPmDbContext db, CancellationToken ct, bool tagRequired = true)
     {
-        if (string.IsNullOrWhiteSpace(request.AssetTag))
+        if (tagRequired && string.IsNullOrWhiteSpace(request.AssetTag))
         {
             return Results.BadRequest(new { error = "Asset tag is required." });
         }

@@ -136,21 +136,30 @@ export function EquipmentForm({
 
       {error && <p className="alert alert-error" role="alert">{error}</p>}
 
-      <label className="stack">
-        <span>Asset tag</span>
-        <input
-          className="field mono"
-          required
-          maxLength={40}
-          placeholder="BME-00841"
-          value={form.assetTag}
-          onChange={(e) => set('assetTag', e.target.value)}
-        />
-        <span className="muted">
-          The hospital's own number, as written on the sticker. It must be unique and it is
-          what a QR label prints.
-        </span>
-      </label>
+      {editing ? (
+        <label className="stack">
+          <span>Asset tag</span>
+          <input
+            className="field mono"
+            required
+            maxLength={40}
+            value={form.assetTag}
+            onChange={(e) => set('assetTag', e.target.value)}
+          />
+          <span className="muted">
+            It must be unique and it is what a QR label prints. Change it only if the label is
+            changed too.
+          </span>
+        </label>
+      ) : (
+        <div className="stack">
+          <span>Asset tag</span>
+          <span className="muted">
+            Made by the software when you save (EQ-00001, EQ-00002 and so on). Print its label
+            afterwards from the machine&apos;s page.
+          </span>
+        </div>
+      )}
 
       <label className="stack">
         <span>Equipment type</span>
