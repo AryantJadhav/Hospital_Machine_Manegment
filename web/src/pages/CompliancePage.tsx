@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
 import { presetPeriods } from '../compliancePeriods';
 import { formatDate, todayAtHospital } from '../time';
+import { Tile } from '../Tile';
+import type { TileTone } from '../Tile';
 
 type Totals = {
   due: number;
@@ -218,33 +220,21 @@ export function CompliancePage() {
           ) : (
             <>
               <div className="tiles">
-                <div className={`tile ${tone(t.onSchedulePercent)}`}>
-                  <span className="tile-value">{pct(t.onSchedulePercent)}</span>
-                  <span className="tile-label">Done on schedule</span>
-                  <span className="tile-hint">{t.onTime} of {t.due} PMs that fell due</span>
-                </div>
-                <div className="tile">
-                  <span className="tile-value">{pct(t.completionPercent)}</span>
-                  <span className="tile-label">Done at all</span>
-                  <span className="tile-hint">{t.completed} of {t.due}, including late</span>
-                </div>
-                <div className={`tile ${t.late > 0 ? 'tile-warn' : 'tile-ok'}`}>
-                  <span className="tile-value">{t.late}</span>
-                  <span className="tile-label">Done late</span>
-                </div>
-                <div className={`tile ${t.overdue > 0 ? 'tile-danger' : 'tile-ok'}`}>
-                  <span className="tile-value">{t.overdue}</span>
-                  <span className="tile-label">Overdue, not done</span>
-                </div>
-                <div className={`tile ${t.skipped > 0 ? 'tile-warn' : 'tile-ok'}`}>
-                  <span className="tile-value">{t.skipped}</span>
-                  <span className="tile-label">Skipped</span>
-                </div>
-                <div className="tile">
-                  <span className="tile-value">{t.withFindings}</span>
-                  <span className="tile-label">With findings</span>
-                  <span className="tile-hint">out of spec or a failed check</span>
-                </div>
+                <Tile
+                  label="Done on schedule"
+                  value={pct(t.onSchedulePercent)}
+                  tone={tone(t.onSchedulePercent)}
+                  hint={`${t.onTime} of ${t.due} PMs that fell due`}
+                />
+                <Tile
+                  label="Done at all"
+                  value={pct(t.completionPercent)}
+                  hint={`${t.completed} of ${t.due}, including late`}
+                />
+                <Tile label="Done late" value={t.late} tone={t.late > 0 ? 'warn' : undefined} />
+                <Tile label="Overdue, not done" value={t.overdue} tone={t.overdue > 0 ? 'danger' : undefined} />
+                <Tile label="Skipped" value={t.skipped} tone={t.skipped > 0 ? 'warn' : undefined} />
+                <Tile label="With findings" value={t.withFindings} hint="out of spec or a failed check" />
               </div>
 
               <p className="muted">
@@ -263,11 +253,11 @@ export function CompliancePage() {
   );
 }
 
-function tone(percent: number | null): string {
-  if (percent === null) return '';
-  if (percent >= 95) return 'tile-ok';
-  if (percent >= 80) return 'tile-warn';
-  return 'tile-danger';
+function tone(percent: number | null): TileTone | undefined {
+  if (percent === null) return undefined;
+  if (percent >= 95) return 'ok';
+  if (percent >= 80) return 'warn';
+  return 'danger';
 }
 
 function Breakdown({ title, groups }: { title: string; groups: Group[] }) {

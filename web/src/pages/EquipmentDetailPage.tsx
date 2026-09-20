@@ -8,6 +8,7 @@ import { formatDate, formatDateTime, todayAtHospital } from '../time';
 import { useHandoff } from '../handoff';
 import { HandoffNotice } from '../HandoffNotice';
 import { StatusPill } from '../StatusPill';
+import { Tile } from '../Tile';
 import { EQUIPMENT_LOOK, PM_LOOK, PRIORITY_LOOK, WORK_ORDER_LOOK } from '../statusTones';
 
 type History = {
@@ -261,14 +262,14 @@ export function EquipmentDetailPage() {
         <div className="card">
           <h2 className="section-h">Record</h2>
           <div className="tiles tiles-plain">
-            <Stat label="PMs completed" value={data.summary.completedPmCount} />
-            <Stat
+            <Tile label="PMs completed" value={data.summary.completedPmCount} />
+            <Tile
               label="PMs open"
               value={data.summary.openPmCount}
               tone={data.summary.overduePmCount > 0 ? 'danger' : undefined}
             />
-            <Stat label="Faults logged" value={data.summary.totalWorkOrderCount} />
-            <Stat
+            <Tile label="Faults logged" value={data.summary.totalWorkOrderCount} />
+            <Tile
               label="Recorded downtime"
               value={formatDuration(data.summary.totalDowntimeMinutes)}
             />
@@ -413,15 +414,6 @@ function Row({
         {value || <span className="muted">—</span>}
       </dd>
     </>
-  );
-}
-
-function Stat({ label, value, tone }: { label: string; value: number | string; tone?: 'danger' }) {
-  return (
-    <div className={['tile', tone ? `tile-${tone}` : ''].join(' ').trim()}>
-      <span className="tile-value">{value}</span>
-      <span className="tile-label">{label}</span>
-    </div>
   );
 }
 

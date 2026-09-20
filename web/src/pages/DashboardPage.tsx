@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { formatDateTime } from '../time';
 import { HandoffNotice } from '../HandoffNotice';
-import { StatusIcon } from '../StatusPill';
+import { Tile } from '../Tile';
 import { useHandoff } from '../handoff';
 
 type Dashboard = {
@@ -152,46 +152,5 @@ function BackupBanner({ backup }: { backup: NonNullable<Dashboard['backup']> }) 
       {backup.state === 'problem' ? 'Backups are not running. ' : 'The latest backup failed. '}
       {last} <Link to="/backups">Open Backups</Link>
     </p>
-  );
-}
-
-// Zero is a quiet morning, not a success, so it has no tone and no word. Green is
-// for a figure that is confirmed good, which here is only the compliance rate.
-const STATE_WORD = { danger: 'Act now', warn: 'Attention', ok: 'On track' } as const;
-const STATE_ICON = { danger: 'danger', warn: 'warning', ok: 'success' } as const;
-
-function Tile({
-  label,
-  value,
-  tone,
-  to,
-  hint,
-}: {
-  label: string;
-  value: number | string;
-  tone?: 'ok' | 'warn' | 'danger';
-  to?: string;
-  hint?: string;
-}) {
-  const body = (
-    <>
-      <span className="tile-value">{value}</span>
-      <span className="tile-label">{label}</span>
-      {tone && (
-        <span className="tile-state">
-          <StatusIcon name={STATE_ICON[tone]} />
-          {STATE_WORD[tone]}
-        </span>
-      )}
-      {hint && <span className="tile-hint">{hint}</span>}
-    </>
-  );
-
-  const className = ['tile', tone ? `tile-${tone}` : ''].join(' ').trim();
-
-  return to ? (
-    <Link className={className} to={to}>{body}</Link>
-  ) : (
-    <div className={className}>{body}</div>
   );
 }
