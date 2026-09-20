@@ -515,7 +515,6 @@ input[type="checkbox"], input[type="radio"] { height: auto; accent-color: var(--
   padding: 0.9rem 1rem;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-left: 3px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-card);
   text-decoration: none;
@@ -524,15 +523,45 @@ input[type="checkbox"], input[type="radio"] { height: auto; accent-color: var(--
 
 a.tile:hover { border-color: var(--border-strong); }
 
-.tile-value { font-size: 1.7rem; font-weight: 650; letter-spacing: -0.02em; line-height: 1.1; }
+.tile-value {
+  font-size: 2rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
 .tile-label { font-size: 0.85rem; color: var(--muted); }
 /* Its own colour, not the muted one at 80% opacity: dimming with opacity took it
    to 3.3:1, below what small text needs. */
 .tile-hint { font-size: 0.75rem; color: var(--subtle); }
 
-.tile-ok { border-left-color: var(--ok-text); }
-.tile-warn { border-left-color: #b47b16; }
-.tile-danger { border-left-color: var(--err-text); }
+/* A tile that needs attention is tinted all over and edged in the solid tone, and
+   says so in words with an icon: colour alone would not reach everyone, and a
+   coloured stripe down one edge is colour and nothing else. A quiet tile (zero,
+   or nothing to report) stays neutral and says nothing. */
+.tile-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.tile-ok .tile-state { color: var(--ok-text); }
+.tile-ok .tile-state .ico { color: var(--ok); }
+
+.tile-warn { background: var(--warn-bg); border-color: var(--warn); }
+.tile-warn .tile-state { color: var(--warn-text); }
+.tile-warn .tile-state .ico { color: var(--warn); }
+
+.tile-danger { background: var(--err-bg); border-color: var(--err); }
+.tile-danger .tile-state { color: var(--err-text); }
+.tile-danger .tile-state .ico { color: var(--err); }
+
+.tile-warn .tile-label, .tile-danger .tile-label { color: var(--muted); }
 
 .section-h { margin: 0 0 0.6rem; font-size: 0.95rem; }
 

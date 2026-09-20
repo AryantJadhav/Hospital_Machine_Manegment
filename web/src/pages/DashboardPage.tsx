@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { formatDateTime } from '../time';
 import { HandoffNotice } from '../HandoffNotice';
+import { StatusIcon } from '../StatusPill';
 import { useHandoff } from '../handoff';
 
 type Dashboard = {
@@ -66,19 +67,19 @@ export function DashboardPage() {
             <Tile
               label="Machines down"
               value={data.workOrders.machinesDown}
-              tone={data.workOrders.machinesDown > 0 ? 'danger' : 'ok'}
+              tone={data.workOrders.machinesDown > 0 ? 'danger' : undefined}
               to="/work-orders"
             />
             <Tile
               label="Critical faults"
               value={data.workOrders.critical}
-              tone={data.workOrders.critical > 0 ? 'danger' : 'ok'}
+              tone={data.workOrders.critical > 0 ? 'danger' : undefined}
               to="/work-orders"
             />
             <Tile
               label="PMs overdue"
               value={data.pm.overdue}
-              tone={data.pm.overdue > 0 ? 'warn' : 'ok'}
+              tone={data.pm.overdue > 0 ? 'warn' : undefined}
               to="/pm?status=30"
             />
             <Tile label="Due this week" value={data.pm.dueThisWeek} to="/pm" />
@@ -91,13 +92,13 @@ export function DashboardPage() {
             <Tile
               label="Assigned to me"
               value={data.workOrders.mine}
-              tone={data.workOrders.mine > 0 ? 'warn' : 'ok'}
+              tone={data.workOrders.mine > 0 ? 'warn' : undefined}
               to="/work-orders?assignee=me"
             />
             <Tile
               label="Unassigned faults"
               value={data.workOrders.unassigned}
-              tone={data.workOrders.unassigned > 0 ? 'warn' : 'ok'}
+              tone={data.workOrders.unassigned > 0 ? 'warn' : undefined}
               to="/work-orders?status=10"
             />
             <Tile label="Open work orders" value={data.workOrders.open} to="/work-orders" />
@@ -154,6 +155,11 @@ function BackupBanner({ backup }: { backup: NonNullable<Dashboard['backup']> }) 
   );
 }
 
+// Zero is a quiet morning, not a success, so it has no tone and no word. Green is
+// for a figure that is confirmed good, which here is only the compliance rate.
+const STATE_WORD = { danger: 'Act now', warn: 'Attention', ok: 'On track' } as const;
+const STATE_ICON = { danger: 'danger', warn: 'warning', ok: 'success' } as const;
+
 function Tile({
   label,
   value,
@@ -171,6 +177,12 @@ function Tile({
     <>
       <span className="tile-value">{value}</span>
       <span className="tile-label">{label}</span>
+      {tone && (
+        <span className="tile-state">
+          <StatusIcon name={STATE_ICON[tone]} />
+          {STATE_WORD[tone]}
+        </span>
+      )}
       {hint && <span className="tile-hint">{hint}</span>}
     </>
   );
