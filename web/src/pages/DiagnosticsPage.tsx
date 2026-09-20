@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { ServerQrCode } from './ServerQrCode';
 import { formatDateTime } from '../time';
+import { StatusPill } from '../StatusPill';
+import { CHECK_LOOK } from '../statusTones';
 
 type Check = {
   name: string;
@@ -96,7 +98,7 @@ export function DiagnosticsPage() {
             <div className="grow">
               <div>
                 <strong>{c.name}</strong>
-                <span className={`pill dg-${c.state} hist-flag`}>{STATE_LABEL[c.state]}</span>
+                <StatusPill look={CHECK_LOOK[c.state]} className="hist-flag">{STATE_LABEL[c.state]}</StatusPill>
               </div>
               <div className="muted hist-meta">{c.detail}</div>
               {c.advice && <div className="hist-fault">{c.advice}</div>}

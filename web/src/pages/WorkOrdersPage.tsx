@@ -5,6 +5,8 @@ import { api } from '../api/client';
 import { useAuth } from '../auth/useAuth';
 import { ROLES } from '../auth/context';
 import { EquipmentPicker } from '../EquipmentPicker';
+import { StatusPill } from '../StatusPill';
+import { PRIORITY_LOOK, WORK_ORDER_LOOK } from '../statusTones';
 
 type WorkOrderRow = {
   id: number;
@@ -240,10 +242,10 @@ export function WorkOrdersPage() {
                   className={selected?.id === w.id ? 'row-selected' : 'row-clickable'}
                 >
                   <td className="mono">{w.number}</td>
-                  <td><span className={`pill prio-${w.priority}`}>{PRIORITY[w.priority]}</span></td>
+                  <td><StatusPill look={PRIORITY_LOOK[w.priority]}>{PRIORITY[w.priority]}</StatusPill></td>
                   <td className="mono">{w.assetTag}</td>
                   <td className="truncate">{w.faultDescription}</td>
-                  <td><span className={`pill wo-${w.status}`}>{STATUS[w.status]}</span></td>
+                  <td><StatusPill look={WORK_ORDER_LOOK[w.status]}>{STATUS[w.status]}</StatusPill></td>
                   {/* On "my work" every row is the reader's own: a column saying so is noise. */}
                   {!mine && <td>{w.assignedToName ?? <span className="muted">Unassigned</span>}</td>}
                 </tr>
@@ -328,8 +330,8 @@ function Detail({
       </div>
 
       <div className="row">
-        <span className={`pill wo-${order.status}`}>{STATUS[order.status]}</span>
-        <span className={`pill prio-${order.priority}`}>{PRIORITY[order.priority]}</span>
+        <StatusPill look={WORK_ORDER_LOOK[order.status]}>{STATUS[order.status]}</StatusPill>
+        <StatusPill look={PRIORITY_LOOK[order.priority]}>{PRIORITY[order.priority]}</StatusPill>
         {order.downtimeMinutes !== null && (
           <span className="pill">Down {formatDuration(order.downtimeMinutes)}</span>
         )}

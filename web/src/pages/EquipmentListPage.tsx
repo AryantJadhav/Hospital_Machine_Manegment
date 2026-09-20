@@ -4,6 +4,8 @@ import { api } from '../api/client';
 import { useAuth } from '../auth/useAuth';
 import { ROLES } from '../auth/context';
 import { EquipmentForm } from './EquipmentForm';
+import { StatusPill } from '../StatusPill';
+import { EQUIPMENT_LOOK } from '../statusTones';
 
 type Equipment = {
   id: number;
@@ -296,7 +298,7 @@ export function EquipmentListPage() {
                 <td>{e.manufacturer ?? <span className="muted">—</span>}</td>
                 <td className="mono">{e.serialNumber ?? <span className="muted">—</span>}</td>
                 <td>
-                  <span className={`pill pill-${e.status}`}>{STATUS[e.status] ?? 'Unknown'}</span>
+                  <StatusPill look={EQUIPMENT_LOOK[e.status]}>{STATUS[e.status] ?? 'Unknown'}</StatusPill>
                 </td>
               </tr>
             ))}

@@ -4,6 +4,8 @@ import { api, ApiError } from '../api/client';
 import { useHandoff } from '../handoff';
 import { HandoffNotice } from '../HandoffNotice';
 import { formatDate } from '../time';
+import { StatusPill } from '../StatusPill';
+import { PM_LOOK } from '../statusTones';
 
 type PmTask = {
   id: number;
@@ -211,7 +213,7 @@ export function PmTasksPage() {
                 <td>{t.equipmentTypeName}</td>
                 <td>{t.locationName}</td>
                 <td>{t.checklistName}</td>
-                <td><span className={`pill pm-${t.status}`}>{STATUS[t.status] ?? '—'}</span></td>
+                <td><StatusPill look={PM_LOOK[t.status]}>{STATUS[t.status] ?? '—'}</StatusPill></td>
                 <td style={{ whiteSpace: 'nowrap' }}>
                   {/* Scheduled, Due and Overdue are open work. Completed and
                       Skipped are finished records — a completion is immutable

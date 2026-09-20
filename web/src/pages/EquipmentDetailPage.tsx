@@ -7,6 +7,8 @@ import { EquipmentForm } from './EquipmentForm';
 import { formatDate, formatDateTime, todayAtHospital } from '../time';
 import { useHandoff } from '../handoff';
 import { HandoffNotice } from '../HandoffNotice';
+import { StatusPill } from '../StatusPill';
+import { EQUIPMENT_LOOK, PM_LOOK, PRIORITY_LOOK, WORK_ORDER_LOOK } from '../statusTones';
 
 type History = {
   equipment: {
@@ -229,15 +231,16 @@ export function EquipmentDetailPage() {
       )}
 
       <div className="row">
-        <span className={`pill pill-${e.status}`}>{EQUIPMENT_STATUS[e.status] ?? '—'}</span>
-        {data.summary.currentlyDown && <span className="pill wo-10">Currently down</span>}
+        <StatusPill look={EQUIPMENT_LOOK[e.status]}>{EQUIPMENT_STATUS[e.status] ?? '—'}</StatusPill>
+        {data.summary.currentlyDown && <StatusPill tone="danger">Currently down</StatusPill>}
         {data.summary.overduePmCount > 0 && (
-          <span className="pill pm-30">{data.summary.overduePmCount} PM overdue</span>
+          <StatusPill tone="danger">{data.summary.overduePmCount} PM overdue</StatusPill>
         )}
         {warranty && (
-          <span className={`pill ${inWarranty ? 'pm-40' : 'prio-30'}`}>
+          // Out of warranty is a fact, not an alarm: neutral. In warranty is good news.
+          <StatusPill tone={inWarranty ? 'success' : 'neutral'}>
             {inWarranty ? 'In warranty' : 'Warranty expired'} {formatDate(e.warrantyExpiryDate)}
-          </span>
+          </StatusPill>
         )}
       </div>
 
@@ -283,7 +286,7 @@ export function EquipmentDetailPage() {
                 {t.daysLate > 0 && <span className="late"> · {t.daysLate} days late</span>}
               </div>
             </div>
-            <span className={`pill pm-${t.status}`}>{PM_STATUS[t.status]}</span>
+            <StatusPill look={PM_LOOK[t.status]}>{PM_STATUS[t.status]}</StatusPill>
             {/* The point of a machine's page: it says what is due, and now it lets
                 the person standing at the machine do it. */}
             <Link className="btn" to={`/pm/${t.id}/do`} state={{ from: `/equipment/${e.id}` }}>
@@ -300,14 +303,14 @@ export function EquipmentDetailPage() {
               <div>
                 {t.checklistName}
                 {t.failedChecks > 0 && (
-                  <span className="pill prio-40 hist-flag">
+                  <StatusPill tone="danger" className="hist-flag">
                     {t.failedChecks} failed
-                  </span>
+                  </StatusPill>
                 )}
                 {t.outOfRange > 0 && (
-                  <span className="pill prio-30 hist-flag">
+                  <StatusPill tone="warning" className="hist-flag">
                     {t.outOfRange} out of spec
-                  </span>
+                  </StatusPill>
                 )}
               </div>
               <div className="muted hist-meta">
@@ -341,7 +344,7 @@ export function EquipmentDetailPage() {
             <div className="grow">
               <div>
                 <span className="mono">{w.number}</span>
-                <span className={`pill prio-${w.priority} hist-flag`}>{PRIORITY[w.priority]}</span>
+                <StatusPill look={PRIORITY_LOOK[w.priority]} className="hist-flag">{PRIORITY[w.priority]}</StatusPill>
               </div>
               <div className="hist-fault">{w.faultDescription}</div>
               {w.resolutionNotes && (
@@ -354,7 +357,7 @@ export function EquipmentDetailPage() {
             </div>
 
             <div className="stack" style={{ gap: '0.35rem', alignItems: 'flex-end' }}>
-              <span className={`pill wo-${w.status}`}>{WO_STATUS[w.status]}</span>
+              <StatusPill look={WORK_ORDER_LOOK[w.status]}>{WO_STATUS[w.status]}</StatusPill>
               <button
                 className="btn btn-quiet"
                 onClick={() =>

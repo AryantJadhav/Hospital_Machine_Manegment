@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { formatDateTime } from '../time';
+import { StatusPill } from '../StatusPill';
+import { BACKUP_LOOK } from '../statusTones';
 
 type Run = {
   id: number;
@@ -191,7 +193,7 @@ export function BackupsPage() {
               <tr key={r.id}>
                 <td>{formatDateTime(r.startedAtUtc)}</td>
                 <td>
-                  <span className={`pill bk-${r.status}`}>{STATUS[r.status] ?? '—'}</span>
+                  <StatusPill look={BACKUP_LOOK[r.status]}>{STATUS[r.status] ?? '—'}</StatusPill>
                   {r.error && <div className="hist-fault">{r.error}</div>}
                 </td>
                 <td>{TRIGGER[r.trigger] ?? '—'}</td>

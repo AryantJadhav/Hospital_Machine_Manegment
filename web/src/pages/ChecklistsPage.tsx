@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { useAuth } from '../auth/useAuth';
 import { ROLES } from '../auth/context';
 import { formatDate, todayAtHospital } from '../time';
+import { StatusPill } from '../StatusPill';
 
 /**
  * Authoring the checklists a PM round is worked from.
@@ -287,12 +288,12 @@ export function ChecklistsPage() {
                 </td>
                 <td>
                   {t.publishedVersionNo !== null
-                    ? <span className="pill dg-10">v{t.publishedVersionNo}</span>
+                    ? <StatusPill tone="success">v{t.publishedVersionNo}</StatusPill>
                     : <span className="muted">not published</span>}
                 </td>
                 <td>
                   {t.hasDraft
-                    ? <span className="pill dg-20">unpublished changes</span>
+                    ? <StatusPill tone="warning">unpublished changes</StatusPill>
                     : <span className="muted">—</span>}
                 </td>
                 <td>{t.versionCount}</td>

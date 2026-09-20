@@ -5,6 +5,8 @@ import { api, ApiError } from '../api/client';
 import { useQrScanner } from '../scan/useQrScanner';
 import { extractAssetTag } from '../scan/assetTag';
 import { formatDate } from '../time';
+import { StatusPill } from '../StatusPill';
+import { EQUIPMENT_LOOK } from '../statusTones';
 
 type Equipment = {
   id: number;
@@ -223,9 +225,9 @@ function Detail({ equipment }: { equipment: Equipment }) {
       </div>
 
       <div>
-        <span className={`pill pill-${equipment.status}`}>
+        <StatusPill look={EQUIPMENT_LOOK[equipment.status]}>
           {STATUS[equipment.status] ?? 'Unknown'}
-        </span>
+        </StatusPill>
       </div>
 
       <Link className="btn" to={`/equipment/${equipment.id}`}>

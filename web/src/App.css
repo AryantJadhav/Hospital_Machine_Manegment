@@ -288,18 +288,35 @@ input[type="checkbox"], input[type="radio"] { height: auto; accent-color: var(--
 
 /* ---------- bits ---------- */
 
+/* A status pill. Neutral by default; a tone class gives it its tint and ink. The
+   icon and the word carry the meaning, the colour only backs them up. */
 .pill {
-  display: inline-block;
-  padding: 0.15rem 0.55rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 10px;
   border-radius: 999px;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
   background: var(--surface-sunken);
   color: var(--muted);
 }
+.pill:has(> .ico) { padding-left: 8px; }
+.pill .ico { flex: none; color: var(--subtle); }
 
-.pill-20 { background: var(--ok-bg); color: var(--ok-text); }
-.pill-30 { background: #fff4e5; color: #8a5200; }
-.pill-40, .pill-50 { background: var(--err-bg); color: var(--err-text); }
+.tone-success { background: var(--ok-bg); color: var(--ok-text); }
+.tone-success .ico { color: var(--ok); }
+.tone-warning { background: var(--warn-bg); color: var(--warn-text); }
+.tone-warning .ico { color: var(--warn); }
+.tone-danger { background: var(--err-bg); color: var(--err-text); }
+.tone-danger .ico { color: var(--err); }
+.tone-info { background: var(--accent-tint); color: var(--accent-ink); }
+.tone-info .ico { color: var(--accent); }
+/* Critical only: filled solid, the one status that should be seen from across the room. */
+.tone-strong.tone-danger { background: var(--err); color: var(--err-on); }
+.tone-strong.tone-danger .ico { color: var(--err-on); }
 
 .btn {
   font: inherit;
@@ -523,22 +540,6 @@ a.tile:hover { border-color: var(--border-strong); }
 
 .late { color: var(--err-text); font-size: 0.8rem; }
 
-.pm-10 { background: #eef1f5; color: var(--muted); }
-.pm-20 { background: #fff4e5; color: #8a5200; }
-.pm-30 { background: var(--err-bg); color: var(--err-text); }
-.pm-40 { background: var(--ok-bg); color: var(--ok-text); }
-.pm-50 { background: #eef1f5; color: var(--muted); }
-
-.prio-10, .prio-20 { background: #eef1f5; color: var(--muted); }
-.prio-30 { background: #fff4e5; color: #8a5200; }
-.prio-40 { background: var(--err-bg); color: var(--err-text); }
-
-.wo-10 { background: #fff4e5; color: #8a5200; }
-.wo-20, .wo-30, .wo-40 { background: #e7eefc; color: #1c4f9c; }
-.wo-50 { background: var(--ok-bg); color: var(--ok-text); }
-.wo-60 { background: #eef1f5; color: var(--muted); }
-.wo-70 { background: #eef1f5; color: var(--muted); }
-
 .wo-grid {
   display: grid;
   gap: 1rem;
@@ -626,18 +627,6 @@ textarea {
 .hist-flag { margin-left: 0.5rem; font-size: 0.72rem; }
 
 .page-head h1.mono { letter-spacing: -0.01em; }
-
-/* ---------- backups ---------- */
-
-.bk-10 { background: #2a2a16; color: #d8cf7a; }
-.bk-20 { background: #16291c; color: #7fd39b; }
-.bk-30 { background: #2e1a1a; color: #f0918b; }
-
-/* ---------- diagnostics ---------- */
-
-.dg-10 { background: #16291c; color: #7fd39b; }
-.dg-20 { background: #2a2a16; color: #d8cf7a; }
-.dg-30 { background: #2e1a1a; color: #f0918b; }
 
 .addr-list { margin: 0; padding-left: 1.1rem; }
 .addr-list li { padding: 0.15rem 0; }

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
+import { StatusPill } from '../StatusPill';
+import { UPDATE_LOOK } from '../statusTones';
 
 /**
  * Installing an update from a file.
@@ -35,16 +37,6 @@ type Status = {
   defaultFolder: string;
   folder: string;
   available: Candidate[];
-};
-
-/** Green for the one that can be installed, red for the ones that must not be. */
-const TONE: Record<string, string> = {
-  Ready: 'pill-20',
-  NotNewer: 'pill-10',
-  Unreadable: 'pill-30',
-  InstallerMissing: 'pill-30',
-  InstallerAltered: 'pill-40',
-  NotOurs: 'pill-40',
 };
 
 const STATE_LABEL: Record<string, string> = {
@@ -331,9 +323,9 @@ function UpdateCard({
             {candidate.sizeBytes ? `, ${megabytes(candidate.sizeBytes)}` : ''}
           </p>
         </div>
-        <span className={`pill ${TONE[candidate.state] ?? 'pill-10'}`}>
+        <StatusPill look={UPDATE_LOOK[candidate.state]}>
           {STATE_LABEL[candidate.state] ?? candidate.state}
-        </span>
+        </StatusPill>
       </div>
 
       {candidate.notes && <p style={{ margin: 0 }}>{candidate.notes}</p>}
