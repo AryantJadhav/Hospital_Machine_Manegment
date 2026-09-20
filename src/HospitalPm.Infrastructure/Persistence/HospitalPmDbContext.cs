@@ -33,6 +33,8 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
 
     public DbSet<Equipment> Equipment => Set<Equipment>();
 
+    public DbSet<EquipmentMove> EquipmentMoves => Set<EquipmentMove>();
+
     public DbSet<ChecklistTemplate> ChecklistTemplates => Set<ChecklistTemplate>();
 
     public DbSet<ChecklistTemplateVersion> ChecklistTemplateVersions => Set<ChecklistTemplateVersion>();
@@ -415,6 +417,27 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
             e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasDatabaseName("ux_location_tenant_code");
             e.HasIndex(x => x.ParentId).HasDatabaseName("ix_location_parent");
             e.HasIndex(x => x.Path).HasDatabaseName("ix_location_path");
+        });
+
+        builder.Entity<EquipmentMove>(e =>
+        {
+            e.ToTable("equipment_move");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.EquipmentId).HasColumnName("equipment_id");
+            e.Property(x => x.FromLocationId).HasColumnName("from_location_id");
+            e.Property(x => x.ToLocationId).HasColumnName("to_location_id");
+            e.Property(x => x.Reason).HasColumnName("reason").HasMaxLength(500);
+            e.Property(x => x.MovedByUserId).HasColumnName("moved_by_user_id");
+            e.Property(x => x.MovedAtUtc).HasColumnName("moved_at_utc");
+
+            e.HasOne<Equipment>().WithMany().HasForeignKey(x => x.EquipmentId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Location>().WithMany().HasForeignKey(x => x.FromLocationId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Location>().WithMany().HasForeignKey(x => x.ToLocationId).OnDelete(DeleteBehavior.Restrict);
+
+            // "Where has this machine been", newest first.
+            e.HasIndex(x => new { x.EquipmentId, x.MovedAtUtc }).HasDatabaseName("ix_equipment_move_equipment");
         });
 
         builder.Entity<Equipment>(e =>

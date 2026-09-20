@@ -4,6 +4,7 @@ import { api, ApiError } from '../api/client';
 import { useAuth } from '../auth/useAuth';
 import { ROLES } from '../auth/context';
 import { EquipmentForm } from './EquipmentForm';
+import { MoveMachineForm } from './MoveMachineForm';
 import { formatDate, formatDateTime, todayAtHospital } from '../time';
 import { useHandoff } from '../handoff';
 import { HandoffNotice } from '../HandoffNotice';
@@ -65,6 +66,15 @@ type History = {
   };
 };
 
+type Move = {
+  id: number;
+  movedAtUtc: string;
+  reason: string | null;
+  from: string | null;
+  to: string | null;
+  movedBy: string | null;
+};
+
 const EQUIPMENT_STATUS: Record<number, string> = {
   10: 'In store', 20: 'In service', 30: 'Under repair', 40: 'Condemned', 50: 'Disposed',
 };
@@ -93,6 +103,9 @@ export function EquipmentDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [moving, setMoving] = useState(false);
+  const [moves, setMoves] = useState<Move[]>([]);
+  const [movedNote, setMovedNote] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   // What the PM or fault form we sent them to just did, said here, where the
   // new entry appears in the history below.
@@ -103,6 +116,7 @@ export function EquipmentDetailPage() {
     setError(null);
     try {
       setData(await api.get<History>(`/api/equipment/${id}/history`));
+      setMoves(await api.get<Move[]>(`/api/equipment/${id}/moves`));
     } catch (e) {
       setError(
         e instanceof ApiError && e.status === 404
@@ -175,6 +189,9 @@ export function EquipmentDetailPage() {
           {canEdit && !editing && (
             <button className="btn" onClick={() => setEditing(true)}>Edit</button>
           )}
+          {e.status !== 40 && e.status !== 50 && !moving && (
+            <button className="btn" onClick={() => { setMoving(true); setMovedNote(null); }}>Move</button>
+          )}
           {canPrint && (
             <button
               className="btn"
@@ -206,6 +223,21 @@ export function EquipmentDetailPage() {
       <HandoffNotice handoff={handoff} />
 
       {actionError && <p className="alert alert-error" role="alert">{actionError}</p>}
+
+      {movedNote && <p className="alert alert-ok" role="status">{movedNote}</p>}
+
+      {moving && (
+        <MoveMachineForm
+          equipmentId={e.id}
+          currentLocationId={e.locationId}
+          onCancel={() => setMoving(false)}
+          onMoved={async (message) => {
+            setMoving(false);
+            setMovedNote(message);
+            await load();
+          }}
+        />
+      )}
 
       {editing && (
         <EquipmentForm
@@ -335,6 +367,20 @@ export function EquipmentDetailPage() {
                 Certificate
               </button>
             )}
+          </div>
+        ))}
+      </Section>
+
+      <Section title="Where it has been" empty="It has not been moved since it was put on the register.">
+        {moves.map((m) => (
+          <div key={m.id} className="hist-row">
+            <div className="grow">
+              <div>{m.from ?? 'Not placed'} → <strong>{m.to ?? '—'}</strong></div>
+              <div className="muted hist-meta">
+                {formatDateTime(m.movedAtUtc)} · {m.movedBy ?? 'unknown'}
+                {m.reason && ` · ${m.reason}`}
+              </div>
+            </div>
           </div>
         ))}
       </Section>

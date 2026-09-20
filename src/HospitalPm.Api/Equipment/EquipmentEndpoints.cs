@@ -258,6 +258,8 @@ public static class EquipmentEndpoints
         int id,
         [FromBody] EquipmentRequest request,
         HospitalPmDbContext db,
+        System.Security.Claims.ClaimsPrincipal principal,
+        TimeProvider clock,
         CancellationToken ct)
     {
         var entity = await db.Equipment.SingleOrDefaultAsync(e => e.Id == id, ct);
@@ -281,6 +283,14 @@ public static class EquipmentEndpoints
         entity.AssetTag = tag;
         entity.SerialNumber = request.SerialNumber?.Trim();
         entity.EquipmentTypeId = request.EquipmentTypeId;
+        // Changing the place here is a move like any other, and is written down as one.
+        if (entity.LocationId != request.LocationId)
+        {
+            EquipmentMoveEndpoints.Record(
+                db, entity, request.LocationId, "Changed on the machine's record",
+                EquipmentMoveEndpoints.UserId(principal), clock.GetUtcNow().UtcDateTime);
+        }
+
         entity.LocationId = request.LocationId;
         entity.Manufacturer = request.Manufacturer?.Trim();
         entity.Model = request.Model?.Trim();

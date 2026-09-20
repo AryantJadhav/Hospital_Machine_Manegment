@@ -90,6 +90,7 @@ DELETE FROM work_order;
 DELETE FROM pm_completion;
 DELETE FROM pm_task;
 DELETE FROM pm_schedule;
+DELETE FROM equipment_move;
 DELETE FROM equipment;
 --LOCATIONS--
 ALTER TABLE work_order_note ENABLE TRIGGER trg_work_order_note_append_only;

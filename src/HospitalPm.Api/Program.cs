@@ -291,6 +291,7 @@ app.MapEquipmentEndpoints();
 app.MapImportEndpoints();
 app.MapLookupEndpoints();
 app.MapEquipmentHistoryEndpoints();
+app.MapEquipmentMoveEndpoints();
 app.MapLocationEndpoints();
 app.MapLabelEndpoints();
 app.MapChecklistEndpoints();
