@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/useAuth';
 import { ROLES } from '../auth/context';
+import { suggestCode, suggestNames } from '../locationSuggestions';
 
 type Location = {
   id: number;
@@ -353,8 +354,9 @@ function LocationForm({
 }) {
   const initialParentId = editing ? editing.parentId : parent?.id ?? null;
 
-  const [code, setCode] = useState(editing?.code ?? '');
   const [name, setName] = useState(editing?.name ?? '');
+  // What the person typed into Code, if they did. Until then it follows the name.
+  const [typedCode, setTypedCode] = useState<string | null>(editing ? editing.code : null);
   const [parentId, setParentId] = useState<string>(initialParentId?.toString() ?? '');
   const [busy, setBusy] = useState(false);
 
@@ -397,6 +399,23 @@ function LocationForm({
 
   const parentOptions = all.filter((l) => !forbidden.has(l.id));
 
+  const parentPlace = useMemo(
+    () => (parentId ? all.find((l) => l.id === Number(parentId)) ?? null : null),
+    [all, parentId],
+  );
+
+  // Offered as the name is typed. The next number in a run ("Room 3" after "Room
+  // 1" and "Room 2") comes first, then the names hospitals usually give this kind
+  // of place. Anything else can still be typed.
+  const nameSuggestions = useMemo(
+    () => suggestNames(level, parentId ? Number(parentId) : null, all.filter((l) => l.id !== editing?.id)),
+    [level, parentId, all, editing],
+  );
+
+  // Worked out from the name and made unique across the hospital, until the
+  // person types their own.
+  const code = typedCode ?? suggestCode(name, parentPlace, all, editing?.id);
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     onError(null);
@@ -428,12 +447,24 @@ function LocationForm({
             code is the short handle for it, and comes second. */}
         <label className="field grow">
           <span>Name</span>
-          <input value={name} onChange={(e) => setName(e.target.value)} required />
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            list="location-name-suggestions"
+            autoComplete="off"
+            placeholder="Type a name, or pick one from the list"
+          />
+          <datalist id="location-name-suggestions">
+            {nameSuggestions.map((n) => (
+              <option key={n} value={n} />
+            ))}
+          </datalist>
         </label>
 
         <label className="field">
           <span>Code</span>
-          <input value={code} onChange={(e) => setCode(e.target.value)} required />
+          <input value={code} onChange={(e) => setTypedCode(e.target.value)} required />
         </label>
 
         <label className="field">
