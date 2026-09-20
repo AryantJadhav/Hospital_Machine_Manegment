@@ -72,6 +72,17 @@ RUN apt-get update     && apt-get install -y --no-install-recommends ca-certific
 ENV HOSPITALPM_DATA=/var/lib/hospitalpm
 ENV ASPNETCORE_URLS=http://+:5000
 
+# Where the app keeps what must outlive the container. The Windows installer
+# writes these paths into the settings file; a container has no such file, and the
+# defaults are relative to the binary, which is inside the container. Backups
+# written there were lost the first time the container was recreated - which is
+# what an upgrade does - along with the licence. Found by the container smoke
+# test (tools/container-smoke-test.sh), which looks for the backup on the volume.
+ENV Backup__Directory=/var/lib/hospitalpm/backups
+ENV Update__Directory=/var/lib/hospitalpm/updates
+ENV Update__StagingDirectory=/var/lib/hospitalpm/updates/staging
+ENV Licence__Path=/var/lib/hospitalpm/hospitalpm.licence
+
 RUN mkdir -p /var/lib/hospitalpm/backups \
              /var/lib/hospitalpm/keys \
              /var/lib/hospitalpm/updates

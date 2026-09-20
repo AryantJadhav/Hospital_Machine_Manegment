@@ -79,6 +79,21 @@ jobs:
         working-directory: web
         run: npm run build
 
+  # The Linux container image, built the way a hospital's server would build it
+  # and started with its database. The tests above run the app directly on this
+  # machine and cannot see what only the image lacks: every Linux-only bug so far
+  # (no web UI in the image, no curl for the health check, no pg_dump for
+  # backups) was found by building it by hand. Independent of the test job, so
+  # it runs beside it and adds no time to the run.
+  container:
+    name: container (linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image, start it, and check it
+        run: bash tools/container-smoke-test.sh
+
   publish:
     name: publish ${{ matrix.rid }}
     needs: test
