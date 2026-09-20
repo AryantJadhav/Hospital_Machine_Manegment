@@ -70,7 +70,14 @@ export function AddPlaceForm({
     [level, existingParent, all],
   );
 
-  const code = typedCode ?? suggestCode(name, existingParent, all);
+  // One name, or several at once: "ER, X-Ray, ECG" adds three places on the same level.
+  const names = useMemo(
+    () => [...new Set(name.split(/[,\n;]/).map((n) => n.trim()).filter(Boolean))],
+    [name],
+  );
+  const several = names.length > 1;
+
+  const code = typedCode ?? suggestCode(names[0] ?? '', existingParent, all);
 
   const blockName = blockNameOf(pickedBlock, blockOther, all);
   const floorName = floorNameOf(pickedFloor, floorOther, all);
@@ -84,7 +91,7 @@ export function AddPlaceForm({
           ? 'Type the name of the level or floor.'
           : pickedName.kind === 'unset' || pickedName.kind === 'none'
             ? 'Choose a name, or Other to type one.'
-            : !name.trim()
+            : names.length === 0
               ? 'Type the name.'
               : null;
 
@@ -137,17 +144,34 @@ export function AddPlaceForm({
       }
 
       const parentId = floorId ?? blockId;
-      if (find(name, level, parentId)) {
-        onError(`There is already a ${PLACE_LEVELS.find((l) => l.value === level)?.label.toLowerCase()} called "${name.trim()}" there.`);
+      const parent = parentId === null ? null : known.find((p) => p.id === parentId) ?? null;
+
+      const added: string[] = [];
+      const already: string[] = [];
+
+      for (const n of names) {
+        if (find(n, level, parentId)) {
+          already.push(n);
+          continue;
+        }
+
+        // A code typed by hand is for one place; several get one each from their names.
+        const finalCode = !several && typedCode ? typedCode : suggestCode(n, parent, known) || n;
+        const made = await api.post<{ id: number }>('/api/locations', { code: finalCode, name: n, level, parentId });
+        known.push({ id: made.id, code: finalCode, name: n, level, parentId });
+        added.push(n);
+      }
+
+      if (added.length === 0) {
+        onError(`Already there: ${already.join(', ')}.`);
         return;
       }
 
-      const parent = parentId === null ? null : known.find((p) => p.id === parentId) ?? null;
-      const finalCode = typedCode ?? suggestCode(name, parent, known);
-      await api.post('/api/locations', { code: finalCode, name: name.trim(), level, parentId });
-
       const where = [blockName, floorName].filter(Boolean).join(', ');
-      await onSaved(`Added ${name.trim()}${where ? ` in ${where}` : ''}.`);
+      await onSaved(
+        `Added ${list(added)}${where ? ` in ${where}` : ''}.`
+          + (already.length > 0 ? ` ${list(already)} ${already.length === 1 ? 'was' : 'were'} already there.` : ''),
+      );
     } catch (err) {
       onError(
         err instanceof Error
@@ -242,7 +266,7 @@ export function AddPlaceForm({
             <input
               value={nameOther}
               onChange={(e) => setNameOther(e.target.value)}
-              placeholder="For example Dialysis Bay"
+              placeholder="One name, or several with commas: ER, X-Ray, ECG"
               autoComplete="off"
               required
             />
@@ -251,7 +275,13 @@ export function AddPlaceForm({
 
         <label className="field">
           <span>Code</span>
-          <input value={code} onChange={(e) => setTypedCode(e.target.value)} required />
+          <input
+            value={several ? '' : code}
+            onChange={(e) => setTypedCode(e.target.value)}
+            disabled={several}
+            placeholder={several ? 'Made from each name' : undefined}
+            required={!several}
+          />
         </label>
       </div>
 
@@ -270,6 +300,11 @@ export function AddPlaceForm({
       </div>
     </form>
   );
+}
+
+/** "ER, X-Ray and ECG". */
+function list(items: string[]): string {
+  return items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
 }
 
 function blockNameOf(p: Picked, other: string, all: Place[]): string {

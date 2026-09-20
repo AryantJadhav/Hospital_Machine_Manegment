@@ -20,7 +20,8 @@ export type Picked =
   | { kind: 'unset' };
 
 export const DEFAULT_BLOCKS = ['Block-A', 'Block-B'];
-export const DEFAULT_FLOORS = ['Level-1', 'Level-2', 'Level-3'];
+// Ten, because a hospital block is often taller than three floors. Anything else is Other.
+export const DEFAULT_FLOORS = Array.from({ length: 10 }, (_, i) => `Level-${i + 1}`);
 
 const BUILDING = 30;
 const FLOOR = 40;
