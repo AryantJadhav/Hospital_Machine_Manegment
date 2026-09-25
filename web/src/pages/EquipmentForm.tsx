@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
+import { formatDate, todayAtHospital } from '../time';
 
 /**
  * Adding or correcting one machine.
@@ -73,6 +74,26 @@ const CONTRACTS = [
   { value: 20, label: 'CMC — comprehensive maintenance contract (parts covered)' },
 ];
 
+// How often a PM falls due. Decided by the administrator; the dates follow from the first
+// one. The numbers are the server's PmFrequency values.
+const PM_FREQUENCIES = [
+  { value: 10, label: 'Monthly — 12 times a year' },
+  { value: 15, label: 'Every 2 months — 6 times a year' },
+  { value: 20, label: 'Quarterly — 4 times a year' },
+  { value: 30, label: 'Half-yearly — 2 times a year' },
+  { value: 40, label: 'Yearly — once a year' },
+];
+
+/** The PM checklist kind, as the server numbers it. */
+const PM_CHECKLIST_KIND = 10;
+
+type PmChecklist = {
+  id: number;
+  name: string;
+  isActive: boolean;
+  publishedVersionNo: number | null;
+};
+
 export function EquipmentForm({
   editing,
   onCancel,
@@ -137,9 +158,73 @@ export function EquipmentForm({
 
   const hasContract = form.maintenanceContractType !== null;
 
+  // Preventive maintenance, set up in the same step as adding the machine. Adding only:
+  // changing a machine's PM afterwards is done on the PM pages.
+  const [pmFrequency, setPmFrequency] = useState<number | null>(null);
+  const [pmFirstDue, setPmFirstDue] = useState(todayAtHospital);
+  const [pmGrace, setPmGrace] = useState('7');
+  const [pmChecklists, setPmChecklists] = useState<PmChecklist[] | null>(null);
+  const [pmChecklistId, setPmChecklistId] = useState<number | null>(null);
+  const [pmDates, setPmDates] = useState<string[]>([]);
+
+  // The checklists that can be used depend on the type, so they are fetched when the type
+  // is chosen. Only ones that are switched on and have a published version: a schedule on
+  // a checklist nobody can fill in would put work on the list that cannot be done.
+  async function loadPmChecklists(typeId: number) {
+    if (!typeId) {
+      setPmChecklists(null);
+      setPmChecklistId(null);
+      return;
+    }
+    try {
+      const all = await api.get<PmChecklist[]>(
+        `/api/checklists?equipmentTypeId=${typeId}&kind=${PM_CHECKLIST_KIND}`,
+      );
+      const usable = all.filter((c) => c.isActive && c.publishedVersionNo !== null);
+      setPmChecklists(usable);
+      setPmChecklistId(usable.length === 1 ? usable[0].id : null);
+    } catch {
+      setPmChecklists([]);
+      setPmChecklistId(null);
+    }
+  }
+
+  // The dates the choice means, worked out by the server with the same code that will
+  // generate the real ones, so "quarterly" is shown as four dates and not trusted as a word.
+  useEffect(() => {
+    if (pmFrequency === null || !pmFirstDue) return;
+
+    let current = true;
+    void (async () => {
+      try {
+        const r = await api.get<{ dates: string[] }>(
+          `/api/pm/preview?frequency=${pmFrequency}&anchorDate=${pmFirstDue}`,
+        );
+        if (current) setPmDates(r.dates);
+      } catch {
+        if (current) setPmDates([]);
+      }
+    })();
+
+    return () => {
+      current = false;
+    };
+  }, [pmFrequency, pmFirstDue]);
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    if (!editing && pmFrequency !== null) {
+      if (pmChecklistId === null) {
+        setError('Choose the checklist for the PM, or set the PM schedule to None.');
+        return;
+      }
+      if (!pmFirstDue) {
+        setError('Give the date the first PM falls due.');
+        return;
+      }
+    }
+
     setBusy(true);
     try {
       const body = {
@@ -171,6 +256,17 @@ export function EquipmentForm({
         maintenanceStartDate: hasContract ? form.maintenanceStartDate || null : null,
         maintenanceEndDate: hasContract ? form.maintenanceEndDate || null : null,
         maintenanceCost: hasContract ? form.maintenanceCost : null,
+        // Sent only when adding, and in the same request, so the machine and its PM are
+        // added together or not at all.
+        pm:
+          !editing && pmFrequency !== null && pmChecklistId !== null
+            ? {
+                checklistTemplateId: pmChecklistId,
+                frequency: pmFrequency,
+                firstDueDate: pmFirstDue,
+                graceDays: Number(pmGrace) || 0,
+              }
+            : undefined,
         notes: form.notes?.trim() || null,
       };
 
@@ -227,7 +323,10 @@ export function EquipmentForm({
           className="field"
           required
           value={form.equipmentTypeId || ''}
-          onChange={(e) => set('equipmentTypeId', Number(e.target.value))}
+          onChange={(e) => {
+            set('equipmentTypeId', Number(e.target.value));
+            if (!editing) void loadPmChecklists(Number(e.target.value));
+          }}
         >
           <option value="">Choose…</option>
           {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -522,6 +621,104 @@ export function EquipmentForm({
             />
           </label>
         </div>
+      )}
+
+      {!editing && (
+        <fieldset className="stack" style={{ border: 0, padding: 0, margin: 0 }}>
+          <legend>Preventive maintenance (PM)</legend>
+
+          <label className="stack">
+            <span>PM schedule</span>
+            <select
+              className="field"
+              value={pmFrequency ?? ''}
+              onChange={(e) => setPmFrequency(e.target.value ? Number(e.target.value) : null)}
+            >
+              <option value="">None — set it up later</option>
+              {PM_FREQUENCIES.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+            </select>
+            <span className="muted">
+              How often this machine is serviced. You decide, and the due dates follow from the
+              first one.
+            </span>
+          </label>
+
+          {pmFrequency !== null && form.equipmentTypeId === 0 && (
+            <p className="alert alert-info">Choose the equipment type above first, to pick its PM checklist.</p>
+          )}
+
+          {pmFrequency !== null && pmChecklists !== null && pmChecklists.length === 0 && (
+            <p className="alert alert-info">
+              This equipment type has no published PM checklist yet, so there is nothing to schedule.
+              Write and publish one on the <Link to="/checklists">Checklists</Link> page, then
+              schedule it from there. This form closes, so come back and add the machine afterwards.
+            </p>
+          )}
+
+          {pmFrequency !== null && pmChecklists !== null && pmChecklists.length > 0 && (
+            <>
+              <div style={{ display: 'grid', gap: '0.75rem', gridTemplateColumns: 'repeat(auto-fit, minmax(12rem, 1fr))' }}>
+                <label className="stack">
+                  <span>PM checklist</span>
+                  <select
+                    className="field"
+                    required
+                    value={pmChecklistId ?? ''}
+                    onChange={(e) => setPmChecklistId(e.target.value ? Number(e.target.value) : null)}
+                  >
+                    <option value="">Choose…</option>
+                    {pmChecklists.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </label>
+
+                <label className="stack">
+                  <span>First PM due</span>
+                  <input
+                    className="field"
+                    type="date"
+                    required
+                    value={pmFirstDue}
+                    onChange={(e) => setPmFirstDue(e.target.value)}
+                  />
+                </label>
+
+                <label className="stack">
+                  <span>Days of grace</span>
+                  <input
+                    className="field mono"
+                    type="number"
+                    min={0}
+                    max={365}
+                    value={pmGrace}
+                    onChange={(e) => setPmGrace(e.target.value)}
+                  />
+                </label>
+              </div>
+
+              <span className="muted">
+                Days of grace are how many days after a due date the PM can still be done before it
+                counts as overdue.
+              </span>
+
+              {pmDates.length > 0 && (
+                <div className="stack" style={{ gap: '0.25rem' }}>
+                  <span>Due dates in the first year</span>
+                  <ol className="row" style={{ flexWrap: 'wrap', gap: '0.5rem', listStyle: 'none', margin: 0, padding: 0 }}>
+                    {pmDates.map((d) => (
+                      <li key={d}>
+                        <span className="pill tone-neutral">{formatDate(d)}</span>
+                      </li>
+                    ))}
+                  </ol>
+                  <span className="muted">
+                    After that the dates carry on the same way. The PM appears on the work list as
+                    soon as the machine is added.
+                  </span>
+                </div>
+              )}
+            </>
+          )}
+        </fieldset>
       )}
 
       <label className="stack">

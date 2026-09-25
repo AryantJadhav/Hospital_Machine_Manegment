@@ -1,5 +1,8 @@
 using HospitalPm.Domain.Assets;
+using HospitalPm.Domain.Checklists;
 using HospitalPm.Domain.Identity;
+using HospitalPm.Domain.Maintenance;
+using HospitalPm.Infrastructure.Maintenance;
 using HospitalPm.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -13,6 +16,17 @@ using Microsoft.EntityFrameworkCore;
 #pragma warning disable CA1862
 
 namespace HospitalPm.Api.Equipment;
+
+/// <summary>
+/// The PM to set up for a machine as it is added: which checklist, how often, the date
+/// the first one falls due, and how many days late counts as late. Only read when a
+/// machine is created; changing a machine's PM later is done on the PM pages.
+/// </summary>
+public sealed record NewMachinePmRequest(
+    int ChecklistTemplateId,
+    PmFrequency Frequency,
+    DateOnly FirstDueDate,
+    int GraceDays = 7);
 
 public sealed record EquipmentRequest(
     string AssetTag,
@@ -54,7 +68,10 @@ public sealed record EquipmentRequest(
     string? MaintenanceContractNumber = null,
     DateOnly? MaintenanceStartDate = null,
     DateOnly? MaintenanceEndDate = null,
-    decimal? MaintenanceCost = null);
+    decimal? MaintenanceCost = null,
+    // Set up the machine's PM in the same request, so it is added and scheduled
+    // together or not at all. Left out, no PM is scheduled.
+    NewMachinePmRequest? Pm = null);
 
 public sealed record EquipmentResponse(
     int Id,
@@ -303,6 +320,7 @@ public static class EquipmentEndpoints
     private static async Task<IResult> CreateAsync(
         [FromBody] EquipmentRequest request,
         HospitalPmDbContext db,
+        PmScheduleGenerator generator,
         CancellationToken ct)
     {
         // Left blank, the software numbers the machine itself.
@@ -310,6 +328,14 @@ public static class EquipmentEndpoints
         if (error is not null)
         {
             return error;
+        }
+
+        // Checked before anything is written, so a PM that cannot be scheduled does not
+        // leave the machine added without it.
+        var pmError = await ValidatePmAsync(request.Pm, request.EquipmentTypeId, db, ct);
+        if (pmError is not null)
+        {
+            return pmError;
         }
 
         string assetTag;
@@ -346,7 +372,29 @@ public static class EquipmentEndpoints
         ApplyMaintenanceContract(entity, request);
 
         db.Equipment.Add(entity);
+
+        if (request.Pm is { } pm)
+        {
+            // One save, one transaction: the machine and its schedule.
+            db.PmSchedules.Add(new PmSchedule
+            {
+                Equipment = entity,
+                ChecklistTemplateId = pm.ChecklistTemplateId,
+                Frequency = pm.Frequency,
+                IntervalDays = 0,
+                AnchorDate = pm.FirstDueDate,
+                GraceDays = pm.GraceDays,
+            });
+        }
+
         await db.SaveChangesAsync(ct);
+
+        if (request.Pm is not null)
+        {
+            // Turned into due dates now, so the PM is on the work list straight away
+            // rather than after tonight's job.
+            await generator.RunAsync(ct);
+        }
 
         return Results.Created($"/api/equipment/{entity.Id}", new { entity.Id, entity.AssetTag });
     }
@@ -511,6 +559,54 @@ public static class EquipmentEndpoints
                 entity.MaintenanceCost = Money(request.MaintenanceCost);
                 return;
         }
+    }
+
+    private static async Task<IResult?> ValidatePmAsync(
+        NewMachinePmRequest? pm, int equipmentTypeId, HospitalPmDbContext db, CancellationToken ct)
+    {
+        if (pm is null)
+        {
+            return null;
+        }
+
+        // Custom is left to the PM pages, which take an interval in days. This form is
+        // for the named intervals.
+        if (pm.Frequency.Months() is null)
+        {
+            return Results.BadRequest(new
+            {
+                error = "Choose how often: monthly, every 2 months, quarterly, half-yearly or yearly.",
+            });
+        }
+
+        if (pm.GraceDays is < 0 or > 365)
+        {
+            return Results.BadRequest(new { error = "Grace days must be between 0 and 365." });
+        }
+
+        if (pm.FirstDueDate.Year is < 2000 or > 2100)
+        {
+            return Results.BadRequest(new { error = "Give the date the first PM falls due." });
+        }
+
+        var template = await db.ChecklistTemplates
+            .Where(t => t.Id == pm.ChecklistTemplateId && t.Kind == ChecklistKind.Pm)
+            .Select(t => new { t.EquipmentTypeId })
+            .SingleOrDefaultAsync(ct);
+
+        if (template is null)
+        {
+            return Results.BadRequest(new { error = "Unknown checklist." });
+        }
+
+        // A ventilator checklist on an ultrasound is a technician being asked questions
+        // that do not apply to the machine in front of them.
+        if (template.EquipmentTypeId != equipmentTypeId)
+        {
+            return Results.BadRequest(new { error = "That checklist belongs to a different equipment type." });
+        }
+
+        return null;
     }
 
     /// <summary>The largest amount the column holds: twelve digits before the paise.</summary>

@@ -81,6 +81,7 @@ public static class PmEndpoints
         group.MapGet("/tasks", TasksAsync);
         group.MapGet("/schedules", SchedulesAsync);
         group.MapGet("/summary", SummaryAsync);
+        group.MapGet("/preview", Preview);
 
         var owner = group.MapGroup(string.Empty)
             .RequireAuthorization(p => p.RequireRole(Roles.Admin));
@@ -403,6 +404,31 @@ public static class PmEndpoints
             SkippedRetired: skippedRetired,
             SkippedNotYetInService: skippedNotYetInService,
             Considered: equipment.Count));
+    }
+
+    /// <summary>
+    /// The dates a schedule would fall due on in its first year, worked out by the same
+    /// code that generates the real ones. The add-a-machine form shows them before
+    /// anything is saved, so the person choosing "quarterly" sees the four dates that
+    /// means rather than trusting a word.
+    /// </summary>
+    private static IResult Preview([FromQuery] PmFrequency frequency, [FromQuery] DateOnly anchorDate)
+    {
+        var months = frequency.Months();
+        if (months is null)
+        {
+            return Results.BadRequest(new
+            {
+                error = "Choose monthly, every 2 months, quarterly, half-yearly or yearly.",
+            });
+        }
+
+        // The first year: from the anchor up to the day before it comes round again, so
+        // monthly gives twelve dates and yearly gives one.
+        var dates = PmDueDates.Between(
+            anchorDate, frequency, 0, from: anchorDate, horizon: anchorDate.AddYears(1).AddDays(-1));
+
+        return Results.Ok(new { timesPerYear = 12 / months.Value, dates });
     }
 
     private static async Task<IResult> CreateScheduleAsync(

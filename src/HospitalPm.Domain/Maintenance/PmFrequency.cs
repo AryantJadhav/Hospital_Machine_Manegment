@@ -10,6 +10,10 @@ namespace HospitalPm.Domain.Maintenance;
 public enum PmFrequency
 {
     Monthly = 10,
+
+    /// <summary>Six times a year. Numbered between Monthly and Quarterly so the order stays the order.</summary>
+    EveryTwoMonths = 15,
+
     Quarterly = 20,
     HalfYearly = 30,
     Yearly = 40,
@@ -30,6 +34,7 @@ public static class PmFrequencyExtensions
     public static int? Months(this PmFrequency frequency) => frequency switch
     {
         PmFrequency.Monthly => 1,
+        PmFrequency.EveryTwoMonths => 2,
         PmFrequency.Quarterly => 3,
         PmFrequency.HalfYearly => 6,
         PmFrequency.Yearly => 12,

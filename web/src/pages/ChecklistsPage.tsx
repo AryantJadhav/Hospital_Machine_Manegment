@@ -124,6 +124,7 @@ type BulkResult = {
 
 const FREQUENCIES = [
   { value: 10, label: 'Monthly' },
+  { value: 15, label: 'Every 2 months' },
   { value: 20, label: 'Quarterly' },
   { value: 30, label: 'Half-yearly' },
   { value: 40, label: 'Yearly' },
