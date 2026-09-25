@@ -219,7 +219,7 @@ public static class PmComplianceEndpoints
                 LocationId = t.Equipment!.LocationId,
                 Place = t.Equipment!.Location!.Name,
                 PlacePath = t.Equipment!.Location!.Path,
-                Checklist = t.Schedule!.ChecklistTemplate!.Name,
+                Checklist = t.Schedule!.ChecklistTemplate!.Name ?? "PM",
                 Done = db.PmCompletions
                     .Where(c => c.PmTaskId == t.Id)
                     .Select(c => new

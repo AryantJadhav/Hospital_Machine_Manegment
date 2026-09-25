@@ -69,13 +69,21 @@ public static class PmExecutionEndpoints
                 EquipmentTypeName = t.Equipment!.EquipmentType!.Name,
                 LocationName = t.Equipment!.Location!.Name,
                 t.Schedule!.ChecklistTemplateId,
-                ChecklistName = t.Schedule!.ChecklistTemplate!.Name,
+                ChecklistName = t.Schedule!.ChecklistTemplate!.Name ?? "PM",
             })
             .SingleOrDefaultAsync(ct);
 
         if (task is null)
         {
             return Results.NotFound();
+        }
+
+        if (task.ChecklistTemplateId is null)
+        {
+            return Results.Conflict(new
+            {
+                error = "This PM has no checklist to fill in. Mark it as done instead.",
+            });
         }
 
         var version = await db.ChecklistTemplateVersions.AsNoTracking()
@@ -121,8 +129,10 @@ public static class PmExecutionEndpoints
             return Results.NotFound();
         }
 
-        var version = await db.ChecklistTemplateVersions.AsNoTracking()
-            .SingleAsync(v => v.Id == completion.ChecklistTemplateVersionId, ct);
+        // A PM with no checklist has no version, no questions and no answers: only who did it and when.
+        var version = completion.ChecklistTemplateVersionId is { } versionId
+            ? await db.ChecklistTemplateVersions.AsNoTracking().SingleAsync(v => v.Id == versionId, ct)
+            : null;
 
         return Results.Ok(new
         {
@@ -136,8 +146,8 @@ public static class PmExecutionEndpoints
             signatureFormat = completion.SignatureFormat,
             outOfRangeCount = completion.OutOfRangeCount,
             failedCheckCount = completion.FailedCheckCount,
-            versionNo = version.VersionNo,
-            definition = version.Definition,
+            versionNo = version?.VersionNo,
+            definition = version?.Definition,
             answers = completion.Answers,
         });
     }
@@ -197,6 +207,11 @@ public static class PmExecutionEndpoints
             .Where(s => s.Id == task.PmScheduleId)
             .Select(s => s.ChecklistTemplateId)
             .SingleAsync(ct);
+
+        if (templateId is null)
+        {
+            return Results.BadRequest(new { error = "This PM has no checklist to fill in. Mark it as done instead." });
+        }
 
         if (version.ChecklistTemplateId != templateId)
         {

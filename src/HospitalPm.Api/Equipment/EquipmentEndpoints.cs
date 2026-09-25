@@ -24,7 +24,8 @@ namespace HospitalPm.Api.Equipment;
 /// machine is created; changing a machine's PM later is done on the PM pages.
 /// </summary>
 public sealed record NewMachinePmRequest(
-    int ChecklistTemplateId,
+    // Optional: a PM is scheduled and recorded as done, and needs no checklist.
+    int? ChecklistTemplateId,
     PmFrequency Frequency,
     DateOnly FirstDueDate,
     int GraceDays = 7,
@@ -635,21 +636,10 @@ public static class EquipmentEndpoints
             return Results.BadRequest(new { error = "Give the date the first PM falls due." });
         }
 
-        var template = await db.ChecklistTemplates
-            .Where(t => t.Id == pm.ChecklistTemplateId && t.Kind == ChecklistKind.Pm)
-            .Select(t => new { t.EquipmentTypeId })
-            .SingleOrDefaultAsync(ct);
-
-        if (template is null)
+        var checklistError = await PmChecklistCheck.ValidateAsync(pm.ChecklistTemplateId, equipmentTypeId, db, ct);
+        if (checklistError is not null)
         {
-            return Results.BadRequest(new { error = "Unknown checklist." });
-        }
-
-        // A ventilator checklist on an ultrasound is a technician being asked questions
-        // that do not apply to the machine in front of them.
-        if (template.EquipmentTypeId != equipmentTypeId)
-        {
-            return Results.BadRequest(new { error = "That checklist belongs to a different equipment type." });
+            return checklistError;
         }
 
         return null;

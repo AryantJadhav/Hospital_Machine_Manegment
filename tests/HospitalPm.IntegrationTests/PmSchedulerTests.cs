@@ -162,19 +162,21 @@ public sealed class PmSchedulerTests(PostgresFixture fixture)
         Assert.Contains("cannot be deleted", ex.MessageText, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
-    public async Task A_completion_missing_its_checklist_version_is_refused()
+    [Theory]
+    [InlineData("completed_by_user_id = 1")]
+    [InlineData("completed_at_utc = now()")]
+    public async Task A_completion_missing_when_or_by_whom_is_refused(string only)
     {
         await using var db = fixture.CreateContext();
         var schedule = await NewScheduleAsync(db, PmFrequency.Monthly, anchor: new DateOnly(2026, 3, 1));
         await Generator(db, new DateTimeOffset(2026, 3, 1, 6, 0, 0, TimeSpan.Zero)).RunAsync();
         var task = await db.PmTasks.AsNoTracking().FirstAsync(t => t.PmScheduleId == schedule.Id);
 
-        // A completion with no version recorded cannot be rendered against
-        // the questions that were asked, so it is not evidence.
+        // A completed PM has to say when it was done and by whom, or it is not a record. It no
+        // longer has to name a checklist version: a PM may have had no checklist at all.
         var ex = await Assert.ThrowsAsync<PostgresException>(() =>
             db.Database.ExecuteSqlRawAsync(
-                "UPDATE pm_task SET status = 40, completed_at_utc = now(), completed_by_user_id = 1 WHERE id = {0}",
+                "UPDATE pm_task SET status = 40, " + only + " WHERE id = {0}",
                 task.Id));
 
         Assert.Equal("23514", ex.SqlState); // check_violation
@@ -360,7 +362,7 @@ public sealed class PmSchedulerTests(PostgresFixture fixture)
 
         var version = new ChecklistTemplateVersion
         {
-            ChecklistTemplateId = templateId,
+            ChecklistTemplateId = templateId!.Value,
             VersionNo = 1,
             Status = ChecklistVersionStatus.Published,
             Definition = new ChecklistDefinition

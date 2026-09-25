@@ -70,7 +70,8 @@ public sealed class PmCompletion
     /// superseded while a technician is mid-round on a ward with no signal,
     /// and the honest record is the questions they were actually asked.
     /// </summary>
-    public int ChecklistTemplateVersionId { get; set; }
+    /// <summary>Null for a PM that has no checklist and was simply recorded as done.</summary>
+    public int? ChecklistTemplateVersionId { get; set; }
 
     /// <summary>Answers keyed by checklist item key.</summary>
     public Dictionary<string, ChecklistAnswer> Answers { get; set; } = [];

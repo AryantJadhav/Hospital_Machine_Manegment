@@ -20,11 +20,16 @@ public sealed class PmSchedule
     public int EquipmentId { get; set; }
 
     /// <summary>
+    /// The checklist to fill in, or null for a PM that is only scheduled and recorded as done,
+    /// with no checklist. Most PMs in a hospital's own register are the second kind: the
+    /// department wants to know that a PM was due, whether it was done, by whom and when, and
+    /// to keep the report, not to answer questions about the machine.
+    ///
     /// The template, not a specific version. Which version applies is decided
     /// when the PM is actually completed, so a checklist updated between
     /// scheduling and execution is the one the technician fills in.
     /// </summary>
-    public int ChecklistTemplateId { get; set; }
+    public int? ChecklistTemplateId { get; set; }
 
     public PmFrequency Frequency { get; set; } = PmFrequency.Quarterly;
 

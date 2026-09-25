@@ -4,8 +4,8 @@ import { api } from '../api/client';
 import { useAuth } from '../auth/useAuth';
 import { ROLES } from '../auth/context';
 import { PmChecklistForm } from './PmChecklistForm';
-import { PmVendorPage } from './PmVendorPage';
-import type { VendorPm } from './PmVendorPage';
+import { PmDonePage } from './PmDonePage';
+import type { RecordPm } from './PmDonePage';
 
 /**
  * Doing one PM, on its own address: /pm/:taskId/do.
@@ -17,8 +17,9 @@ import type { VendorPm } from './PmVendorPage';
  * from - the machine's page shows the new entry in its history, the PM list
  * keeps its filters and its place.
  *
- * A PM that the maintenance contract vendor does has no checklist to fill in: it
- * is recorded, and the vendor's report saved, on its own page instead.
+ * Most PMs have no checklist: they are recorded as done, with who did it, when and the
+ * report if there is one, on a page of their own. Only a PM scheduled with a checklist,
+ * from the Checklists page, is filled in question by question.
  */
 export function PmDoPage() {
   const { taskId } = useParams();
@@ -31,17 +32,18 @@ export function PmDoPage() {
   const valid = Number.isInteger(id) && id > 0;
 
   // The answer, and which PM it is the answer for. undefined while it is asked, and for
-  // as long as it is the answer for a different PM; null when it is an ordinary PM, or could
-  // not be asked, in which case the checklist form is shown and says what is wrong if anything is.
-  const [answer, setAnswer] = useState<{ id: number; vendor: VendorPm | null } | null>(null);
-  const vendor = answer?.id === id ? answer.vendor : undefined;
+  // as long as it is the answer for a different PM; null when it has a checklist to fill in,
+  // or could not be asked, in which case the checklist form is shown and says what is wrong
+  // if anything is.
+  const [answer, setAnswer] = useState<{ id: number; record: RecordPm | null } | null>(null);
+  const record = answer?.id === id ? answer.record : undefined;
 
   const load = useCallback(async () => {
     try {
-      const r = await api.get<VendorPm | { isVendor: false }>(`/api/pm/tasks/${id}/vendor`);
-      setAnswer({ id, vendor: r.isVendor ? r : null });
+      const r = await api.get<RecordPm | { simple: false }>(`/api/pm/tasks/${id}/record`);
+      setAnswer({ id, record: r.simple ? r : null });
     } catch {
-      setAnswer({ id, vendor: null });
+      setAnswer({ id, record: null });
     }
   }, [id]);
 
@@ -62,13 +64,13 @@ export function PmDoPage() {
       state: { handoff: { notice: message, recorded: completed ? task : null } },
     });
 
-  if (vendor === undefined) return <div className="page"><p className="muted">Loading…</p></div>;
+  if (record === undefined) return <div className="page"><p className="muted">Loading…</p></div>;
 
-  if (vendor) {
+  if (record) {
     return (
-      <PmVendorPage
+      <PmDonePage
         key={id}
-        data={vendor}
+        data={record}
         canAdminister={can(ROLES.admin)}
         backLabel={from.startsWith('/equipment') ? 'the machine' : 'the PM list'}
         onClose={back}

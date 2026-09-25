@@ -11,7 +11,8 @@ namespace HospitalPm.Api.Maintenance;
 
 public sealed record ScheduleRequest(
     int EquipmentId,
-    int ChecklistTemplateId,
+    // Optional: a PM is scheduled and recorded as done, and needs no checklist.
+    int? ChecklistTemplateId,
     PmFrequency Frequency,
     int IntervalDays,
     DateOnly AnchorDate,
@@ -50,7 +51,7 @@ public sealed record UpdateScheduleRequest(
 /// </summary>
 public sealed record ManualDatesRequest(
     int EquipmentId,
-    int ChecklistTemplateId,
+    int? ChecklistTemplateId,
     IReadOnlyList<DateOnly> Dates,
     int GraceDays = 7,
     PmPerformedBy PerformedBy = PmPerformedBy.InHouse);
@@ -75,8 +76,8 @@ public sealed record ScheduleResponse(
     int Id,
     int EquipmentId,
     string AssetTag,
-    int ChecklistTemplateId,
-    string ChecklistName,
+    int? ChecklistTemplateId,
+    string? ChecklistName,
     PmFrequency Frequency,
     int IntervalDays,
     DateOnly AnchorDate,
@@ -126,7 +127,9 @@ public sealed record TaskResponse(
     DateOnly DueDate,
     PmTaskStatus Status,
     int DaysLate,
-    PmPerformedBy PerformedBy);
+    PmPerformedBy PerformedBy,
+    // False for a PM that is only scheduled and recorded as done.
+    bool HasChecklist);
 
 public static class PmEndpoints
 {
@@ -213,7 +216,7 @@ public static class PmEndpoints
 
             query = query.Where(t =>
                 machines.Contains(t.EquipmentId) ||
-                templates.Contains(t.Schedule!.ChecklistTemplateId));
+                (t.Schedule!.ChecklistTemplateId != null && templates.Contains(t.Schedule!.ChecklistTemplateId.Value)));
         }
 
         if (locationId is not null)
@@ -247,13 +250,14 @@ public static class PmEndpoints
                 t.Equipment!.AssetTag,
                 t.Equipment!.EquipmentType!.Name,
                 t.Equipment!.Location!.Name,
-                t.Schedule!.ChecklistTemplate!.Name,
+                t.Schedule!.ChecklistTemplate!.Name ?? "PM",
                 t.DueDate,
                 t.Status,
                 // Computed here rather than stored: a stored "days late" is
                 // wrong the moment the clock ticks past midnight.
                 t.DueDate < today ? today.DayNumber - t.DueDate.DayNumber : 0,
-                t.Schedule!.PerformedBy))
+                t.Schedule!.PerformedBy,
+                t.Schedule!.ChecklistTemplateId != null))
             .ToListAsync(ct);
 
         return Results.Ok(new { items, total, page, pageSize });
@@ -543,7 +547,7 @@ public static class PmEndpoints
         t.Equipment!.AssetTag,
         t.Equipment!.EquipmentType!.Name,
         t.Equipment!.Location!.Name,
-        t.Schedule!.ChecklistTemplate!.Name,
+        t.Schedule!.ChecklistTemplate!.Name ?? "PM",
         t.DueDate,
         t.Status));
 
@@ -583,30 +587,15 @@ public static class PmEndpoints
             return Results.BadRequest(new { error = "Unknown equipment." });
         }
 
-        var template = await db.ChecklistTemplates
-            .Where(t => t.Id == request.ChecklistTemplateId && t.Kind == ChecklistKind.Pm)
-            .Select(t => new { t.Id, t.EquipmentTypeId })
-            .SingleOrDefaultAsync(ct);
-
-        if (template is null)
-        {
-            return Results.BadRequest(new { error = "Unknown checklist." });
-        }
-
         var equipmentTypeId = await db.Equipment
             .Where(e => e.Id == request.EquipmentId)
             .Select(e => e.EquipmentTypeId)
             .SingleAsync(ct);
 
-        // A ventilator checklist on an ultrasound is not a validation
-        // technicality; it is a technician being asked questions that do not
-        // apply to the machine in front of them.
-        if (template.EquipmentTypeId != equipmentTypeId)
+        var checklistError = await PmChecklistCheck.ValidateAsync(request.ChecklistTemplateId, equipmentTypeId, db, ct);
+        if (checklistError is not null)
         {
-            return Results.BadRequest(new
-            {
-                error = "That checklist belongs to a different equipment type.",
-            });
+            return checklistError;
         }
 
         if (request.Frequency == PmFrequency.Manual)
@@ -634,13 +623,18 @@ public static class PmEndpoints
             });
         }
 
+        // The same checklist twice, or two schedules with no checklist for the same doer, would
+        // generate duplicate work.
         if (await db.PmSchedules.AnyAsync(
                 s => s.EquipmentId == request.EquipmentId
-                     && s.ChecklistTemplateId == request.ChecklistTemplateId, ct))
+                     && s.ChecklistTemplateId == request.ChecklistTemplateId
+                     && (request.ChecklistTemplateId != null || s.PerformedBy == request.PerformedBy), ct))
         {
             return Results.Conflict(new
             {
-                error = "This machine already has a schedule for that checklist.",
+                error = request.ChecklistTemplateId is null
+                    ? "This machine already has a PM schedule of that kind."
+                    : "This machine already has a schedule for that checklist.",
             });
         }
 
@@ -702,19 +696,11 @@ public static class PmEndpoints
             return Results.Conflict(new { error = "A condemned or disposed machine is never maintained again." });
         }
 
-        var template = await db.ChecklistTemplates.AsNoTracking()
-            .Where(t => t.Id == request.ChecklistTemplateId && t.Kind == ChecklistKind.Pm)
-            .Select(t => new { t.EquipmentTypeId })
-            .SingleOrDefaultAsync(ct);
-
-        if (template is null)
+        var checklistError = await PmChecklistCheck.ValidateAsync(
+            request.ChecklistTemplateId, machine.EquipmentTypeId, db, ct);
+        if (checklistError is not null)
         {
-            return Results.BadRequest(new { error = "Unknown checklist." });
-        }
-
-        if (template.EquipmentTypeId != machine.EquipmentTypeId)
-        {
-            return Results.BadRequest(new { error = "That checklist belongs to a different equipment type." });
+            return checklistError;
         }
 
         if (request.PerformedBy == PmPerformedBy.Vendor && !machine.HasContract)
@@ -725,14 +711,18 @@ public static class PmEndpoints
             });
         }
 
+        // With no checklist, a machine has one such schedule for each of who does it, so the team's
+        // dates and the vendor's are kept apart.
         var schedule = await db.PmSchedules.SingleOrDefaultAsync(
-            s => s.EquipmentId == request.EquipmentId && s.ChecklistTemplateId == request.ChecklistTemplateId, ct);
+            s => s.EquipmentId == request.EquipmentId
+                 && s.ChecklistTemplateId == request.ChecklistTemplateId
+                 && (request.ChecklistTemplateId != null || s.PerformedBy == request.PerformedBy), ct);
 
         if (schedule is not null && schedule.Frequency != PmFrequency.Manual)
         {
             return Results.Conflict(new
             {
-                error = "This machine already has a repeating schedule for that checklist. Its dates follow that pattern.",
+                error = "This machine already has a repeating schedule for that. Its dates follow that pattern.",
             });
         }
 

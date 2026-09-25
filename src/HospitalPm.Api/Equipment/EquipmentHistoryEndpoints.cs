@@ -103,7 +103,7 @@ public static class EquipmentHistoryEndpoints
                 t.Id,
                 t.DueDate,
                 t.Status,
-                ChecklistName = t.Schedule!.ChecklistTemplate!.Name,
+                ChecklistName = t.Schedule!.ChecklistTemplate!.Name ?? "PM",
                 DaysLate = t.DueDate < today ? today.DayNumber - t.DueDate.DayNumber : 0,
             })
             .ToListAsync(ct);
@@ -120,7 +120,7 @@ public static class EquipmentHistoryEndpoints
                 t.Status,
                 t.CompletedAtUtc,
                 t.SkipReason,
-                ChecklistName = t.Schedule!.ChecklistTemplate!.Name,
+                ChecklistName = t.Schedule!.ChecklistTemplate!.Name ?? "PM",
                 CompletedBy = db.Users
                     .Where(u => u.Id == t.CompletedByUserId)
                     .Select(u => u.FullName)
@@ -160,8 +160,10 @@ public static class EquipmentHistoryEndpoints
             // out of spec is the row someone needs to open.
             OutOfRange = byTask.TryGetValue(t.Id, out var c) ? c.OutOfRangeCount : 0,
             FailedChecks = byTask.TryGetValue(t.Id, out var f) ? f.FailedCheckCount : 0,
-            // A vendor's PM has no certificate of ours: their report is the record.
-            HasCertificate = byTask.TryGetValue(t.Id, out var cert) && cert.PerformedBy == PmPerformedBy.InHouse,
+            // Only a PM filled in on a checklist has a certificate. The vendor's report, or a PM
+            // simply recorded as done, is its own record.
+            HasCertificate = byTask.TryGetValue(t.Id, out var cert)
+                && cert.PerformedBy == PmPerformedBy.InHouse && cert.ChecklistTemplateVersionId != null,
             PerformedBy = byTask.TryGetValue(t.Id, out var by) ? by.PerformedBy : PmPerformedBy.InHouse,
             VendorName = byTask.TryGetValue(t.Id, out var vn) ? vn.VendorName : null,
             ReportFiles = reportCounts.GetValueOrDefault(t.Id),

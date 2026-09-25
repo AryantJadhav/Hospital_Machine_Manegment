@@ -41,13 +41,14 @@ public static class ReportEndpoints
             return Results.NotFound(new { error = "This PM has not been completed." });
         }
 
-        if (completion.PerformedBy == HospitalPm.Domain.Maintenance.PmPerformedBy.Vendor)
+        if (completion.PerformedBy == HospitalPm.Domain.Maintenance.PmPerformedBy.Vendor
+            || completion.ChecklistTemplateVersionId is null)
         {
-            // There are no checklist answers or drawn signature to put on it. The vendor's own
-            // report, saved against the PM, is the record.
+            // There are no checklist answers or drawn signature to put on it: either the vendor's
+            // own report is the record, or the PM had no checklist and was recorded as done.
             return Results.Conflict(new
             {
-                error = "This PM was done by the maintenance contract vendor. Its report is the record; open the PM to see it.",
+                error = "This PM has no checklist, so it has no certificate. Open the PM to see who did it and its report.",
             });
         }
 

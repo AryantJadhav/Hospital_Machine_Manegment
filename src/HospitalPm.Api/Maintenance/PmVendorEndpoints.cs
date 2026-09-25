@@ -19,15 +19,17 @@ public sealed record ReportFileResponse(
     DateTime UploadedAtUtc);
 
 /// <summary>
-/// PMs that the maintenance contract vendor does.
+/// Recording that a PM was done, and keeping its report.
 ///
-/// Where a machine is under an AMC or a CMC, its PM can be set to the vendor's. The vendor
-/// does the work and hands over a service report. Our staff record that it was done, on the
-/// vendor's behalf, and save the report, a PDF or a photo, against the PM.
+/// A PM is scheduled, done, and recorded: which day, by whom, any notes, and the report as a PDF
+/// or photos if there is one. It needs no checklist. The hospital's own team and the maintenance
+/// contract vendor (where a machine has an AMC or a CMC) are recorded the same way; for the vendor,
+/// our staff record it on the vendor's behalf and save the report they hand over.
 ///
-/// There is no checklist and no drawn signature for these: the vendor's report is the
-/// record. It is stored in the database, so the nightly backup, a restore and the export all
-/// carry it, and it can be added to later.
+/// A PM that does have a checklist, scheduled from the Checklists page, is still filled in as before.
+///
+/// Files are stored in the database, so the nightly backup, a restore and the export all carry
+/// them, and more can be added later.
 /// </summary>
 public static class PmVendorEndpoints
 {
@@ -38,10 +40,10 @@ public static class PmVendorEndpoints
     {
         var group = app.MapGroup("/api/pm").WithTags("PM vendor reports").RequireAuthorization();
 
-        // Everyone signed in: the report is part of the machine's record, and recording that a
-        // vendor finished is a matter of writing down what happened, as it is for an in-house PM.
-        group.MapGet("/tasks/{id:int}/vendor", VendorAsync);
-        group.MapPost("/tasks/{id:int}/complete-by-vendor", CompleteAsync).DisableAntiforgery();
+        // Everyone signed in: the report is part of the machine's record, and recording that a PM
+        // was done is a matter of writing down what happened.
+        group.MapGet("/tasks/{id:int}/record", RecordAsync);
+        group.MapPost("/tasks/{id:int}/done", DoneAsync).DisableAntiforgery();
         group.MapPost("/tasks/{id:int}/attachments", AddFilesAsync).DisableAntiforgery();
         group.MapGet("/attachments/{attachmentId:int}", DownloadAsync);
 
@@ -59,11 +61,11 @@ public static class PmVendorEndpoints
         CultureInfo.InvariantCulture);
 
     /// <summary>
-    /// What the page for a vendor's PM needs: which machine and contract, whether it has been
-    /// done and by whom, and the files saved against it. For a PM that is not the vendor's it
-    /// says so, and the caller shows the ordinary checklist.
+    /// What the page for recording a PM needs: which machine, who does it, whether it has been done
+    /// and by whom, and the files saved against it. For a PM that has a checklist to fill in it says
+    /// so, and the caller shows the checklist.
     /// </summary>
-    private static async Task<IResult> VendorAsync(
+    private static async Task<IResult> RecordAsync(
         int id, HospitalPmDbContext db, HospitalClock clock, CancellationToken ct)
     {
         var task = await db.PmTasks.AsNoTracking()
@@ -77,7 +79,7 @@ public static class PmVendorEndpoints
                 t.Equipment!.AssetTag,
                 EquipmentTypeName = t.Equipment!.EquipmentType!.Name,
                 LocationName = t.Equipment!.Location!.Name,
-                ChecklistName = t.Schedule!.ChecklistTemplate!.Name,
+                ChecklistName = t.Schedule!.ChecklistTemplate!.Name ?? "PM",
                 t.Schedule!.ChecklistTemplateId,
                 t.Schedule!.PerformedBy,
                 ContractType = t.Equipment!.MaintenanceContractType,
@@ -91,9 +93,10 @@ public static class PmVendorEndpoints
             return Results.NotFound();
         }
 
-        if (task.PerformedBy != PmPerformedBy.Vendor)
+        // The vendor's PM never has its checklist filled in, and a PM with no checklist has none to fill.
+        if (task.PerformedBy != PmPerformedBy.Vendor && task.ChecklistTemplateId is not null)
         {
-            return Results.Ok(new { isVendor = false });
+            return Results.Ok(new { simple = false });
         }
 
         var completion = await db.PmCompletions.AsNoTracking()
@@ -111,12 +114,12 @@ public static class PmVendorEndpoints
 
         var files = await FilesAsync(db, id, ct);
 
-        var canComplete = await db.ChecklistTemplateVersions.AnyAsync(
-            v => v.ChecklistTemplateId == task.ChecklistTemplateId && v.Status == ChecklistVersionStatus.Published, ct);
+        var byVendor = task.PerformedBy == PmPerformedBy.Vendor;
 
         return Results.Ok(new
         {
-            isVendor = true,
+            simple = true,
+            performedBy = task.PerformedBy,
             taskId = task.Id,
             task.Status,
             task.DueDate,
@@ -125,10 +128,9 @@ public static class PmVendorEndpoints
             task.EquipmentTypeName,
             task.LocationName,
             task.ChecklistName,
-            vendorName = completion?.VendorName ?? task.MaintenanceVendor,
-            contractType = task.ContractType,
-            contractNumber = task.MaintenanceContractNumber,
-            canComplete,
+            vendorName = byVendor ? completion?.VendorName ?? task.MaintenanceVendor : null,
+            contractType = byVendor ? task.ContractType : null,
+            contractNumber = byVendor ? task.MaintenanceContractNumber : null,
             today = clock.Today(),
             completion = completion is null
                 ? null
@@ -245,11 +247,11 @@ public static class PmVendorEndpoints
     }
 
     /// <summary>
-    /// Records that the vendor did this PM: the day they did it, their engineer's name, any
-    /// notes, and their report as one or more files. Files may also be added afterwards, as
-    /// a report often arrives after the visit.
+    /// Records that this PM was done: the day, who did it, any notes, and the report as one or more
+    /// files if there is one. Files may also be added afterwards, as a report often arrives after
+    /// the visit.
     /// </summary>
-    private static async Task<IResult> CompleteAsync(
+    private static async Task<IResult> DoneAsync(
         int id,
         HttpRequest request,
         HospitalPmDbContext db,
@@ -259,19 +261,19 @@ public static class PmVendorEndpoints
     {
         if (!request.HasFormContentType || request.ContentLength > MaxRequestBytes)
         {
-            return Results.BadRequest(new { error = "Send the vendor's details and the report files as a form." });
+            return Results.BadRequest(new { error = "Send the details and any report files as a form." });
         }
 
         var form = await TryReadFormAsync(request, ct);
         if (form is null)
         {
-            return Results.BadRequest(new { error = "The upload could not be read. Send the vendor's details and the report files again." });
+            return Results.BadRequest(new { error = "The upload could not be read. Send the details and the report files again." });
         }
 
         if (!DateOnly.TryParseExact(form["performedOn"], "yyyy-MM-dd", CultureInfo.InvariantCulture,
                 DateTimeStyles.None, out var performedOn))
         {
-            return Results.BadRequest(new { error = "Say which day the vendor did the PM." });
+            return Results.BadRequest(new { error = "Say which day the PM was done." });
         }
 
         var today = clock.Today();
@@ -279,14 +281,14 @@ public static class PmVendorEndpoints
         {
             // Not in the future: a PM cannot have been done tomorrow, and every compliance
             // window is counted from the day of the work.
-            return Results.BadRequest(new { error = "The vendor cannot have done the PM on a day that has not come yet." });
+            return Results.BadRequest(new { error = "The PM cannot have been done on a day that has not come yet." });
         }
 
-        var engineer = form["engineerName"].ToString().Trim();
+        var doneBy = form["doneBy"].ToString().Trim();
         var notes = form["notes"].ToString().Trim();
-        if (engineer.Length > 200 || notes.Length > 2000)
+        if (doneBy.Length > 200 || notes.Length > 2000)
         {
-            return Results.BadRequest(new { error = "The engineer's name or the notes are too long." });
+            return Results.BadRequest(new { error = "The name or the notes are too long." });
         }
 
         var task = await db.PmTasks.SingleOrDefaultAsync(t => t.Id == id, ct);
@@ -311,30 +313,22 @@ public static class PmVendorEndpoints
             })
             .SingleAsync(ct);
 
-        if (schedule.PerformedBy != PmPerformedBy.Vendor)
+        var byVendor = schedule.PerformedBy == PmPerformedBy.Vendor;
+
+        // A PM with a checklist is filled in on the checklist. This is for the ones with none, and
+        // for the vendor's, which never has its questions answered.
+        if (!byVendor && schedule.ChecklistTemplateId is not null)
         {
-            return Results.BadRequest(new { error = "This PM is done by the hospital's own team. Fill in its checklist." });
+            return Results.BadRequest(new { error = "This PM has a checklist. Fill it in." });
         }
 
-        if (schedule.MaintenanceContractType is null || string.IsNullOrWhiteSpace(schedule.Vendor))
+        if (byVendor && (schedule.MaintenanceContractType is null || string.IsNullOrWhiteSpace(schedule.Vendor)))
         {
             return Results.Conflict(new
             {
                 error = "This machine no longer has a maintenance contract, so there is no vendor to record. " +
                         "Add its contract on the machine's record first.",
             });
-        }
-
-        // A completion is pinned to a published checklist version, as every completion is.
-        // The vendor is not asked its questions; the version is what the schedule is on.
-        var version = await db.ChecklistTemplateVersions.AsNoTracking()
-            .SingleOrDefaultAsync(
-                v => v.ChecklistTemplateId == schedule.ChecklistTemplateId
-                     && v.Status == ChecklistVersionStatus.Published, ct);
-
-        if (version is null)
-        {
-            return Results.Conflict(new { error = "This PM's checklist has no published version, so it cannot be recorded yet." });
         }
 
         var (error, files) = await ReadFilesAsync(form.Files, alreadyStored: 0, ct);
@@ -352,16 +346,17 @@ public static class PmVendorEndpoints
         {
             PmTaskId = task.Id,
             TenantId = task.TenantId,
-            ChecklistTemplateVersionId = version.Id,
+            // No checklist, so no version and no answers.
+            ChecklistTemplateVersionId = null,
             Answers = [],
-            SignedByName = engineer.Length == 0 ? null : engineer,
+            SignedByName = doneBy.Length == 0 ? null : doneBy,
             CompletedByUserId = userId,
             CompletedAtUtc = now,
             // The day, taken as midday at the hospital, so the date reads the same in any time zone.
             PerformedAtUtc = DateTime.SpecifyKind(performedOn.ToDateTime(new TimeOnly(12, 0)) - clock.Offset, DateTimeKind.Utc),
             Notes = notes.Length == 0 ? null : notes,
-            PerformedBy = PmPerformedBy.Vendor,
-            VendorName = schedule.Vendor.Trim(),
+            PerformedBy = schedule.PerformedBy,
+            VendorName = byVendor ? schedule.Vendor!.Trim() : null,
         };
 
         db.PmCompletions.Add(completion);
@@ -369,7 +364,6 @@ public static class PmVendorEndpoints
         task.Status = PmTaskStatus.Completed;
         task.CompletedAtUtc = now;
         task.CompletedByUserId = userId;
-        task.ChecklistTemplateVersionId = version.Id;
 
         Store(db, task.Id, task.TenantId, userId, now, files);
 
@@ -379,7 +373,7 @@ public static class PmVendorEndpoints
         return Results.Ok(new { completionId = completion.Id, filesSaved = files.Count });
     }
 
-    /// <summary>Adds report files to a PM the vendor has done.</summary>
+    /// <summary>Adds report files to a PM that has been done.</summary>
     private static async Task<IResult> AddFilesAsync(
         int id,
         HttpRequest request,
@@ -399,12 +393,11 @@ public static class PmVendorEndpoints
             return Results.NotFound();
         }
 
-        var byVendor = await db.PmCompletions.AnyAsync(
-            c => c.PmTaskId == id && c.PerformedBy == PmPerformedBy.Vendor, ct);
+        var done = await db.PmCompletions.AnyAsync(c => c.PmTaskId == id, ct);
 
-        if (!byVendor)
+        if (!done)
         {
-            return Results.Conflict(new { error = "Report files are added to a PM that the vendor has done." });
+            return Results.Conflict(new { error = "Report files are added to a PM that has been done." });
         }
 
         var form = await TryReadFormAsync(request, ct);

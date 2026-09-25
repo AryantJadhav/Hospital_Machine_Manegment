@@ -1,16 +1,17 @@
 import { useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../api/client';
+import { useAuth } from '../auth/useAuth';
 import { formatDate, formatDateTime } from '../time';
 import { StatusPill } from '../StatusPill';
 
 /**
- * A PM that the maintenance contract vendor does, on its own address: /pm/:taskId/do.
+ * Recording that a PM was done, on its own address: /pm/:taskId/do.
  *
- * Where a machine is under an AMC or a CMC its PM can be the vendor's. The vendor does the
- * work and hands over a service report, as a PDF or as photos. Somebody from the department
- * records that it was done, on the vendor's behalf, and saves the report here. There is no
- * checklist to fill in and no signature to draw: the report is the record.
+ * A PM is scheduled and then recorded as done: which day, by whom, any notes, and the report as a
+ * PDF or photos if there is one. There is no checklist to fill in and no signature to draw. It is
+ * the same for the hospital's own team and for the maintenance contract vendor (where a machine has
+ * an AMC or a CMC), whose work somebody from the department records on their behalf.
  *
  * The report often arrives after the visit, so a PM can be recorded first and the file added
  * later, and it can be added to, as a report photographed in pieces arrives in pieces.
@@ -25,8 +26,10 @@ export type ReportFile = {
   uploadedAtUtc: string;
 };
 
-export type VendorPm = {
-  isVendor: true;
+export type RecordPm = {
+  simple: true;
+  // 10 our own team, 20 the maintenance contract vendor.
+  performedBy: number;
   taskId: number;
   status: number;
   dueDate: string;
@@ -38,11 +41,10 @@ export type VendorPm = {
   vendorName: string | null;
   contractType: number | null;
   contractNumber: string | null;
-  canComplete: boolean;
   today: string;
   completion: {
     performedOn: string | null;
-    engineerName: string | null;
+    doneBy: string | null;
     notes: string | null;
     recordedBy: string | null;
     completedAtUtc: string;
@@ -145,7 +147,7 @@ function FilePicker({
   );
 }
 
-export function PmVendorPage({
+export function PmDonePage({
   data,
   canAdminister,
   backLabel,
@@ -153,7 +155,7 @@ export function PmVendorPage({
   onDone,
   onChanged,
 }: {
-  data: VendorPm;
+  data: RecordPm;
   /** An Administrator can remove a file, and decide that a PM will not happen. */
   canAdminister: boolean;
   backLabel: string;
@@ -166,7 +168,11 @@ export function PmVendorPage({
   const done = data.status === 40;
 
   const [performedOn, setPerformedOn] = useState(data.today);
-  const [engineer, setEngineer] = useState('');
+  const { user } = useAuth();
+  const byVendor = data.performedBy === 20;
+  // Whoever is signed in is usually the one who did the work, so it starts as their name; it stays
+  // editable for someone recording it on another's behalf. The vendor's engineer starts empty.
+  const [doneBy, setDoneBy] = useState(byVendor ? '' : user?.fullName ?? '');
   const [notes, setNotes] = useState('');
   const [picked, setPicked] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
@@ -184,16 +190,16 @@ export function PmVendorPage({
     try {
       const form = new FormData();
       form.append('performedOn', performedOn);
-      form.append('engineerName', engineer.trim());
+      form.append('doneBy', doneBy.trim());
       form.append('notes', notes.trim());
       picked.forEach((f) => form.append('files', f, f.name));
 
-      await api.postForm(`/api/pm/tasks/${data.taskId}/complete-by-vendor`, form);
+      await api.postForm(`/api/pm/tasks/${data.taskId}/done`, form);
       onDone(
-        picked.length > 0
-          ? `Recorded that ${data.vendorName ?? 'the vendor'} did the PM on ${data.assetTag}, and saved the report.`
-          : `Recorded that ${data.vendorName ?? 'the vendor'} did the PM on ${data.assetTag}. The report has not been saved yet.`,
-        // No certificate of ours: the vendor's report is the record.
+        `Recorded that the PM on ${data.assetTag} was done${byVendor ? ` by ${data.vendorName ?? 'the vendor'}` : ''}. ${
+          picked.length > 0 ? 'The report is saved.' : byVendor ? 'The report has not been saved yet.' : ''
+        }`.trim(),
+        // Nothing to certify: there was no checklist. The record is who did it, when, and the report.
         false,
         task,
       );
@@ -250,7 +256,7 @@ export function PmVendorPage({
     <div className="page">
       <header className="page-head">
         <div>
-          <h1>PM done by the maintenance contract vendor</h1>
+          <h1>{byVendor ? 'PM done by the maintenance contract vendor' : 'Mark this PM as done'}</h1>
           <p className="muted">
             <span className="mono">{data.assetTag}</span> · {data.equipmentTypeName} · {data.locationName}
             {' · due '}{formatDate(data.dueDate)}
@@ -263,10 +269,12 @@ export function PmVendorPage({
 
       <div className="card stack">
         <dl className="detail">
-          <dt>Vendor</dt>
-          <dd>{data.vendorName ?? '—'}{contract && ` (${contract}${data.contractNumber ? ` ${data.contractNumber}` : ''})`}</dd>
-          <dt>Checklist</dt>
-          <dd>{data.checklistName}</dd>
+          <dt>Done by</dt>
+          <dd>
+            {byVendor
+              ? `${data.vendorName ?? 'The vendor'}${contract ? ` (${contract}${data.contractNumber ? ` ${data.contractNumber}` : ''})` : ''}`
+              : 'Our own team'}
+          </dd>
           {data.status === 50 && (
             <>
               <dt>Status</dt>
@@ -276,20 +284,13 @@ export function PmVendorPage({
         </dl>
       </div>
 
-      {open && !data.canComplete && (
-        <p className="alert alert-info">
-          This checklist has no published version yet, so the PM cannot be recorded. Publish it on the
-          Checklists page first.
-        </p>
-      )}
-
-      {open && data.canComplete && (
+      {open && (
         <form className="card stack" onSubmit={record}>
-          <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Record that the vendor did it</h2>
+          <h2 style={{ margin: 0, fontSize: '1.05rem' }}>{byVendor ? 'Record that the vendor did it' : 'Record that it was done'}</h2>
 
           <div style={{ display: 'grid', gap: '0.75rem', gridTemplateColumns: 'repeat(auto-fit, minmax(12rem, 1fr))' }}>
             <label className="stack">
-              <span>Day the vendor did it</span>
+              <span>Day it was done</span>
               <input
                 className="field"
                 type="date"
@@ -301,13 +302,13 @@ export function PmVendorPage({
             </label>
 
             <label className="stack">
-              <span>Vendor&apos;s engineer</span>
+              <span>{byVendor ? "Vendor's engineer" : 'Done by'}</span>
               <input
                 className="field"
                 maxLength={200}
-                placeholder="Name, if it is on the report"
-                value={engineer}
-                onChange={(e) => setEngineer(e.target.value)}
+                placeholder={byVendor ? 'Name, if it is on the report' : 'Who did the PM'}
+                value={doneBy}
+                onChange={(e) => setDoneBy(e.target.value)}
               />
             </label>
           </div>
@@ -317,24 +318,24 @@ export function PmVendorPage({
             <input
               className="field"
               maxLength={2000}
-              placeholder="Anything the vendor said that is not on the report"
+              placeholder={byVendor ? 'Anything the vendor said that is not on the report' : 'Anything worth remembering about this PM'}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
             />
           </label>
 
           <div className="stack">
-            <span>Service report</span>
+            <span>Report or photos (optional)</span>
             <FilePicker files={picked} onChange={setPicked} onError={setError} room={MAX_FILES} />
             <PatientNotice />
             <span className="muted">
-              The report can also be added afterwards if it has not arrived yet.
+              A report can also be added afterwards, if it has not arrived yet.
             </span>
           </div>
 
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             <button className="btn btn-primary" disabled={busy}>
-              {busy ? 'Saving…' : 'Record and save the report'}
+              {busy ? 'Saving…' : picked.length > 0 ? 'Record and save the report' : 'Mark as done'}
             </button>
             <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancel</button>
           </div>
@@ -344,13 +345,13 @@ export function PmVendorPage({
       {done && data.completion && (
         <div className="card stack">
           <h2 style={{ margin: 0, fontSize: '1.05rem' }}>
-            <StatusPill tone="success">Done by the vendor</StatusPill>
+            <StatusPill tone="success">{byVendor ? 'Done by the vendor' : 'Done'}</StatusPill>
           </h2>
           <dl className="detail">
             <dt>Done on</dt>
             <dd>{data.completion.performedOn ? formatDate(data.completion.performedOn) : '—'}</dd>
-            <dt>Vendor&apos;s engineer</dt>
-            <dd>{data.completion.engineerName ?? '—'}</dd>
+            <dt>{byVendor ? "Vendor's engineer" : 'Done by'}</dt>
+            <dd>{data.completion.doneBy ?? '—'}</dd>
             <dt>Recorded by</dt>
             <dd>{data.completion.recordedBy ?? '—'} · {formatDateTime(data.completion.completedAtUtc)}</dd>
             {data.completion.notes && (
@@ -365,10 +366,10 @@ export function PmVendorPage({
 
       {done && (
         <div className="card stack">
-          <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Service report</h2>
+          <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Report</h2>
 
           {data.files.length === 0 && (
-            <p className="alert alert-info">No report has been saved for this PM yet. Add it below when it arrives.</p>
+            <p className="alert alert-info">No report has been saved for this PM. Add one below if there is one.</p>
           )}
 
           {data.files.length > 0 && (

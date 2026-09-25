@@ -265,6 +265,14 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
             e.HasIndex(x => new { x.EquipmentId, x.ChecklistTemplateId })
                 .IsUnique()
                 .HasDatabaseName("ux_pm_schedule_equipment_checklist");
+
+            // A PM with no checklist is not covered by the index above, which sees every empty
+            // checklist as different. One such schedule per machine for each of who does it, the
+            // team or the vendor, so a machine is not scheduled twice for the same thing.
+            e.HasIndex(x => new { x.EquipmentId, x.PerformedBy })
+                .IsUnique()
+                .HasFilter("checklist_template_id IS NULL")
+                .HasDatabaseName("ux_pm_schedule_equipment_plain");
         });
 
         builder.Entity<PmTask>(e =>

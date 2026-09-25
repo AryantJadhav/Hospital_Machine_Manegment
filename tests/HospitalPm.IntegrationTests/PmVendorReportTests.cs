@@ -163,7 +163,7 @@ public sealed class PmVendorReportTests(PostgresFixture fixture) : IAsyncLifetim
     {
         var form = new MultipartFormDataContent();
         if (performedOn is not null) form.Add(new StringContent(performedOn), "performedOn");
-        if (engineer is not null) form.Add(new StringContent(engineer), "engineerName");
+        if (engineer is not null) form.Add(new StringContent(engineer), "doneBy");
         if (notes is not null) form.Add(new StringContent(notes), "notes");
         foreach (var (name, bytes) in files)
         {
@@ -180,10 +180,10 @@ public sealed class PmVendorReportTests(PostgresFixture fixture) : IAsyncLifetim
     private Task<HttpResponseMessage> CompleteAsync(
         HttpClient client, int task, string? performedOn, string? engineer = "R. Sharma", string? notes = null,
         params (string Name, byte[] Bytes)[] files)
-        => client.PostAsync($"/api/pm/tasks/{task}/complete-by-vendor", Form(performedOn, engineer, notes, files));
+        => client.PostAsync($"/api/pm/tasks/{task}/done", Form(performedOn, engineer, notes, files));
 
     private async Task<JsonElement> VendorAsync(int task) =>
-        await _employee.GetFromJsonAsync<JsonElement>($"/api/pm/tasks/{task}/vendor");
+        await _employee.GetFromJsonAsync<JsonElement>($"/api/pm/tasks/{task}/record");
 
     private async Task<PmTask> TaskAsync(int id)
     {
@@ -196,11 +196,10 @@ public sealed class PmVendorReportTests(PostgresFixture fixture) : IAsyncLifetim
     {
         var body = await VendorAsync(_vendorTaskId);
 
-        Assert.True(body.GetProperty("isVendor").GetBoolean());
+        Assert.True(body.GetProperty("simple").GetBoolean());
         Assert.Equal("Philips Healthcare", body.GetProperty("vendorName").GetString());
         Assert.Equal("AMC-42", body.GetProperty("contractNumber").GetString());
         Assert.Equal((int)MaintenanceContractType.Amc, body.GetProperty("contractType").GetInt32());
-        Assert.True(body.GetProperty("canComplete").GetBoolean());
         Assert.Equal(JsonValueKind.Null, body.GetProperty("completion").ValueKind);
         Assert.Equal(0, body.GetProperty("files").GetArrayLength());
     }
@@ -210,13 +209,13 @@ public sealed class PmVendorReportTests(PostgresFixture fixture) : IAsyncLifetim
     {
         var body = await VendorAsync(_inHouseTaskId);
 
-        Assert.False(body.GetProperty("isVendor").GetBoolean());
+        Assert.False(body.GetProperty("simple").GetBoolean());
     }
 
     [Fact]
     public async Task A_PM_that_does_not_exist_is_a_404()
     {
-        Assert.Equal(HttpStatusCode.NotFound, (await _employee.GetAsync("/api/pm/tasks/2000000000/vendor")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await _employee.GetAsync("/api/pm/tasks/2000000000/record")).StatusCode);
     }
 
     [Fact]
@@ -524,7 +523,7 @@ public sealed class PmVendorReportTests(PostgresFixture fixture) : IAsyncLifetim
         var res = await _employee.GetAsync($"/api/reports/pm/{_vendorTaskId}/certificate.pdf");
 
         Assert.Equal(HttpStatusCode.Conflict, res.StatusCode);
-        Assert.Contains("vendor", (await res.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString());
+        Assert.Contains("no certificate", (await res.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString());
     }
 
     [Fact]

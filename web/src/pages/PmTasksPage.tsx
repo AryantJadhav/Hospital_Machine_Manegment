@@ -20,6 +20,8 @@ type PmTask = {
   daysLate: number;
   // 10 our own team, 20 the maintenance contract vendor.
   performedBy: number;
+  // False for a PM that is only scheduled and recorded as done.
+  hasChecklist: boolean;
 };
 
 type Paged<T> = { items: T[]; total: number; page: number; pageSize: number };
@@ -231,11 +233,11 @@ export function PmTasksPage() {
                       // Back here afterwards, with the same filters and search.
                       state={{ from: `${location.pathname}${location.search}` }}
                     >
-                      {t.performedBy === 20 ? 'Record vendor PM' : 'Do PM'}
+                      {t.performedBy === 20 ? 'Record vendor PM' : t.hasChecklist ? 'Do PM' : 'Mark done'}
                     </Link>
                   )}
-                  {t.status === 40 && t.performedBy === 20 && (
-                    // Their report is the record; there is no certificate of ours.
+                  {t.status === 40 && (t.performedBy === 20 || !t.hasChecklist) && (
+                    // Who did it and the report are the record; there is no certificate.
                     <Link
                       className="btn btn-quiet"
                       to={`/pm/${t.id}/do`}
@@ -244,7 +246,7 @@ export function PmTasksPage() {
                       Report
                     </Link>
                   )}
-                  {t.status === 40 && t.performedBy !== 20 && (
+                  {t.status === 40 && t.performedBy !== 20 && t.hasChecklist && (
                     <button className="btn btn-quiet" onClick={() => void certificate(t)}>
                       Certificate
                     </button>

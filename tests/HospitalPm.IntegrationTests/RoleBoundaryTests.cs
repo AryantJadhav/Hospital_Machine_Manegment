@@ -171,8 +171,8 @@ public sealed class RoleBoundaryTests(PostgresFixture fixture) : IAsyncLifetime,
         { "GET", "/api/pm/reminders" },
 
         // A PM the maintenance contract vendor does: recording it, and its report.
-        { "GET", $"/api/pm/tasks/{Missing}/vendor" },
-        { "POST", $"/api/pm/tasks/{Missing}/complete-by-vendor" },
+        { "GET", $"/api/pm/tasks/{Missing}/record" },
+        { "POST", $"/api/pm/tasks/{Missing}/done" },
         { "POST", $"/api/pm/tasks/{Missing}/attachments" },
         { "GET", $"/api/pm/attachments/{Missing}" },
         { "GET", $"/api/pm/tasks/{Missing}/form" },

@@ -76,16 +76,6 @@ const CONTRACTS = [
   { value: 20, label: 'CMC — comprehensive maintenance contract (parts covered)' },
 ];
 
-/** The PM checklist kind, as the server numbers it. */
-const PM_CHECKLIST_KIND = 10;
-
-type PmChecklist = {
-  id: number;
-  name: string;
-  isActive: boolean;
-  publishedVersionNo: number | null;
-};
-
 export function EquipmentForm({
   editing,
   onCancel,
@@ -159,43 +149,11 @@ export function EquipmentForm({
   // The dates, when they are picked one by one instead of following a pattern.
   const [pmDates, setPmDates] = useState<string[]>([]);
   const pickingDates = pmFrequency === MANUAL_FREQUENCY;
-  const [pmChecklists, setPmChecklists] = useState<PmChecklist[] | null>(null);
-  const [pmChecklistId, setPmChecklistId] = useState<number | null>(null);
-
-  // The checklists that can be used depend on the type, so they are fetched when the type
-  // is chosen. Only ones that are switched on and have a published version: a schedule on
-  // a checklist nobody can fill in would put work on the list that cannot be done.
-  async function loadPmChecklists(typeId: number) {
-    setPmChecklistId(null);
-    if (!typeId) {
-      setPmChecklists(null);
-      return;
-    }
-    try {
-      const all = await api.get<PmChecklist[]>(
-        `/api/checklists?equipmentTypeId=${typeId}&kind=${PM_CHECKLIST_KIND}`,
-      );
-      setPmChecklists(all.filter((c) => c.isActive && c.publishedVersionNo !== null));
-    } catch {
-      setPmChecklists([]);
-    }
-  }
-
-  // The checklist on offer is chosen for the person when the type has only one.
-  const offered = pmChecklists ?? [];
-  const pmChecklistChoice =
-    pmChecklistId !== null && offered.some((c) => c.id === pmChecklistId)
-      ? pmChecklistId
-      : offered.length === 1 ? offered[0].id : null;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     if (pmFrequency !== null) {
-      if (pmChecklistChoice === null) {
-        setError('Choose the checklist for the PM, or set the PM schedule to None.');
-        return;
-      }
       if (pickingDates && pmDates.length === 0) {
         setError('Add at least one PM date, or set the PM schedule to None.');
         return;
@@ -240,9 +198,9 @@ export function EquipmentForm({
         // Sent only when adding, and in the same request, so the machine and its PM are
         // added together or not at all.
         pm:
-          !editing && pmFrequency !== null && pmChecklistChoice !== null
+          !editing && pmFrequency !== null
             ? {
-                checklistTemplateId: pmChecklistChoice,
+                // No checklist: a PM is scheduled, and then recorded as done.
                 frequency: pmFrequency,
                 // Not used when the dates are picked by hand; the dates are what matter.
                 firstDueDate: pickingDates ? pmDates[0] : pmFirstDue,
@@ -311,7 +269,6 @@ export function EquipmentForm({
           value={form.equipmentTypeId || ''}
           onChange={(e) => {
             set('equipmentTypeId', Number(e.target.value));
-            if (!editing) void loadPmChecklists(Number(e.target.value));
           }}
         >
           <option value="">Choose…</option>
@@ -630,34 +587,9 @@ export function EquipmentForm({
             </span>
           </label>
 
-          {pmFrequency !== null && form.equipmentTypeId === 0 && (
-            <p className="alert alert-info">Choose the equipment type above first, to pick its PM checklist.</p>
-          )}
-
-          {pmFrequency !== null && pmChecklists !== null && offered.length === 0 && (
-            <p className="alert alert-info">
-              This equipment type has no published PM checklist to schedule. Write and publish one
-              on the <Link to="/checklists">Checklists</Link> page, then schedule it from there.
-              This form closes, so come back afterwards.
-            </p>
-          )}
-
-          {pmFrequency !== null && offered.length > 0 && (
+          {pmFrequency !== null && (
             <>
               <div style={{ display: 'grid', gap: '0.75rem', gridTemplateColumns: 'repeat(auto-fit, minmax(12rem, 1fr))' }}>
-                <label className="stack">
-                  <span>PM checklist</span>
-                  <select
-                    className="field"
-                    required
-                    value={pmChecklistChoice ?? ''}
-                    onChange={(e) => setPmChecklistId(e.target.value ? Number(e.target.value) : null)}
-                  >
-                    <option value="">Choose…</option>
-                    {offered.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </label>
-
                 {hasContract && (
                   <label className="stack">
                     <span>Who does this PM</span>

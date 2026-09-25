@@ -365,7 +365,8 @@ public sealed class DataExportService(
             c => c.Id,
             c => sheet.Row(
                 Number(c.PmTaskId), c.Tag, c.Checklist,
-                Number(definitions.TryGetValue(c.ChecklistTemplateVersionId, out var d) ? d.Version : null),
+                // Blank for a PM that had no checklist.
+                Number(c.ChecklistTemplateVersionId is { } versionId && definitions.TryGetValue(versionId, out var d) ? d.Version : null),
                 Day(c.Due), Instant(c.PerformedAtUtc ?? c.CompletedAtUtc), Instant(c.CompletedAtUtc),
                 person(c.CompletedByUserId), c.SignedByName, c.Notes,
                 Number(c.Answers.Count(a => a.Value.OutOfRange)),
@@ -396,7 +397,10 @@ public sealed class DataExportService(
             c => c.Id,
             c =>
             {
-                definitions.TryGetValue(c.ChecklistTemplateVersionId, out var d);
+                // A PM with no checklist has no answers; the loop below then writes nothing for it.
+                var d = c.ChecklistTemplateVersionId is { } versionId && definitions.TryGetValue(versionId, out var found0)
+                    ? found0
+                    : default;
 
                 foreach (var (key, answer) in c.Answers)
                 {

@@ -278,7 +278,6 @@ export function EquipmentDetailPage() {
       {addingDates && (
         <AddPmDatesForm
           equipmentId={e.id}
-          equipmentTypeId={e.equipmentTypeId}
           hasContract={e.maintenanceContractType != null}
           onCancel={() => setAddingDates(false)}
           onSaved={async (message) => {
@@ -475,7 +474,8 @@ export function EquipmentDetailPage() {
               </div>
             </div>
 
-            {t.performedBy === 20 && t.status === 40 && (
+            {t.status === 40 && !t.hasCertificate && (
+              // Nothing to certify: who did it and the report are the record.
               <Link className="btn btn-quiet" to={`/pm/${t.id}/do`} state={{ from: `/equipment/${e.id}` }}>
                 Report{t.reportFiles > 0 ? ` (${t.reportFiles})` : ''}
               </Link>
