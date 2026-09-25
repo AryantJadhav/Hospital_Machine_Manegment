@@ -5,6 +5,7 @@ import { formatDateTime } from '../time';
 import { HandoffNotice } from '../HandoffNotice';
 import { Tile } from '../Tile';
 import { useHandoff } from '../handoff';
+import { useFeatures } from '../features';
 
 type Dashboard = {
   /* Present for an administrator only. */
@@ -141,6 +142,7 @@ export function DashboardPage() {
    a new install that has not yet reached its first overnight backup - nothing
    is wrong, so nothing is said. */
 function BackupBanner({ backup }: { backup: NonNullable<Dashboard['backup']> }) {
+  const features = useFeatures();
   if (backup.state === 'ok' || backup.state === 'pending') return null;
 
   const last = backup.lastSuccessUtc
@@ -150,7 +152,7 @@ function BackupBanner({ backup }: { backup: NonNullable<Dashboard['backup']> }) 
   return (
     <p className={`alert ${backup.state === 'problem' ? 'alert-error' : 'alert-warn'}`} role="alert">
       {backup.state === 'problem' ? 'Backups are not running. ' : 'The latest backup failed. '}
-      {last} <Link to="/backups">Open Backups</Link>
+      {last}{features?.backups && <> <Link to="/backups">Open Backups</Link></>}
     </p>
   );
 }

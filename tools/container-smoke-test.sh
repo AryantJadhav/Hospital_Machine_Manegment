@@ -23,6 +23,9 @@ export DB_PORT="${DB_PORT:-5490}"
 export PGDATA_VOLUME="hpm-smoke-pgdata"
 export APPDATA_VOLUME="hpm-smoke-appdata"
 export NETWORK_NAME="hpm-smoke"
+# Off in a real install. This test takes a backup and a data export in the container, so it turns those on.
+export FEATURE_BACKUPS=true
+export FEATURE_EXPORT=true
 
 PROJECT="hpmsmoke"
 COMPOSE=(docker compose -p "$PROJECT")

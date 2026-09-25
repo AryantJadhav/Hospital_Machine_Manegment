@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom';
 import { api } from './api/client';
 import { AuthProvider } from './auth/AuthContext';
@@ -28,10 +29,12 @@ import { AdminMenu } from './AdminMenu';
 import { LicenceBanner } from './LicenceBanner';
 import { NotificationBell } from './NotificationBell';
 import { ThemeToggle } from './ThemeToggle';
+import { useFeatures } from './features';
 import { titleForPath, usePageTitle } from './pageTitle';
 import './App.css';
 
 const ADMIN_ONLY = 'That page is for administrators.';
+const SWITCHED_OFF = 'That part of the system is switched off.';
 const NO_SUCH_PAGE = 'There is no page at that address.';
 
 /**
@@ -49,6 +52,12 @@ function Shell() {
   // an Admin decides what gets done. Everything hidden below is a decision
   // about the department rather than a record of a job.
   const isAdmin = can(ROLES.admin);
+  // Import, export, backups and updates can be switched off for everyone. Null until they are known.
+  const features = useFeatures();
+  const gated = (on: boolean | undefined, page: ReactNode) =>
+    !isAdmin ? <Elsewhere notice={ADMIN_ONLY} />
+      : features === null ? <div className="page"><p className="muted">Loading…</p></div>
+        : on ? page : <Elsewhere notice={SWITCHED_OFF} />;
   const { pathname } = useLocation();
   usePageTitle(titleForPath(pathname));
 
@@ -92,7 +101,7 @@ function Shell() {
           </NavLink>
         </div>
 
-        {isAdmin && <AdminMenu />}
+        {isAdmin && <AdminMenu features={features} />}
 
         <div className="nav-right">
           {/* The role is shown next to the name. An Employee who cannot find
@@ -147,27 +156,18 @@ function Shell() {
             path="/compliance"
             element={isAdmin ? <CompliancePage /> : <Elsewhere notice={ADMIN_ONLY} />}
           />
-          <Route
-            path="/export"
-            element={isAdmin ? <ExportPage /> : <Elsewhere notice={ADMIN_ONLY} />}
-          />
+          <Route path="/export" element={gated(features?.export, <ExportPage />)} />
           <Route
             path="/equipment-types"
             element={isAdmin ? <EquipmentTypesPage /> : <Elsewhere notice={ADMIN_ONLY} />}
           />
-          <Route
-            path="/import"
-            element={isAdmin ? <ImportPage /> : <Elsewhere notice={ADMIN_ONLY} />}
-          />
+          <Route path="/import" element={gated(features?.import, <ImportPage />)} />
           <Route
             path="/staff"
             element={isAdmin ? <StaffPage /> : <Elsewhere notice={ADMIN_ONLY} />}
           />
 
-          <Route
-            path="/backups"
-            element={isAdmin ? <BackupsPage /> : <Elsewhere notice={ADMIN_ONLY} />}
-          />
+          <Route path="/backups" element={gated(features?.backups, <BackupsPage />)} />
           <Route
             path="/diagnostics"
             element={isAdmin ? <DiagnosticsPage /> : <Elsewhere notice={ADMIN_ONLY} />}
@@ -176,10 +176,7 @@ function Shell() {
             path="/licence"
             element={isAdmin ? <LicencePage /> : <Elsewhere notice={ADMIN_ONLY} />}
           />
-          <Route
-            path="/updates"
-            element={isAdmin ? <UpdatesPage /> : <Elsewhere notice={ADMIN_ONLY} />}
-          />
+          <Route path="/updates" element={gated(features?.updates, <UpdatesPage />)} />
           <Route path="*" element={<Elsewhere notice={NO_SUCH_PAGE} />} />
         </Routes>
       </main>

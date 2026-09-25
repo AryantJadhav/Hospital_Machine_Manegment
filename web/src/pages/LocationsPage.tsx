@@ -5,6 +5,7 @@ import { useAuth } from '../auth/useAuth';
 import { ROLES } from '../auth/context';
 import { suggestCode, suggestNames } from '../locationSuggestions';
 import { AddPlaceForm } from './AddPlaceForm';
+import { useFeatures } from '../features';
 
 type Location = {
   id: number;
@@ -35,6 +36,7 @@ const EQUIPMENT_LEVEL = 30;
 const COLLAPSED_KEY = 'hospitalpm.collapsedLocations';
 
 export function LocationsPage() {
+  const features = useFeatures();
   const { can } = useAuth();
   const canEdit = can(ROLES.admin);
 
@@ -179,19 +181,21 @@ export function LocationsPage() {
         <div>
           <h1>Locations</h1>
           <p className="muted">
-            Equipment is filed against a location. Build the tree before importing assets.
+            Equipment is filed against a location. Build the tree before adding machines.
           </p>
         </div>
         {canEdit && (
           <div className="row">
-            <button
-              className="btn"
-              onClick={() =>
-                api.download('/api/equipment/import/locations/template', 'locations-template.xlsx')
-              }
-            >
-              Download template
-            </button>
+            {features?.import && (
+              <button
+                className="btn"
+                onClick={() =>
+                  api.download('/api/equipment/import/locations/template', 'locations-template.xlsx')
+                }
+              >
+                Download template
+              </button>
+            )}
             <button
               className="btn btn-primary"
               onClick={() => { setGuided(true); setCreatingUnder(undefined); setEditing(null); setNotice(null); }}
@@ -261,7 +265,9 @@ export function LocationsPage() {
             {!loading && items.length === 0 && (
               <tr>
                 <td colSpan={5} className="empty">
-                  No locations yet. Add one, or import the tree from a spreadsheet.
+                  {features?.import
+                    ? 'No locations yet. Add one, or import the tree from a spreadsheet.'
+                    : 'No locations yet. Add one.'}
                 </td>
               </tr>
             )}

@@ -64,6 +64,13 @@ services:
       # Disable mDNS inside a container — the host network is not available
       # in bridge mode, and multicast does not cross the Docker bridge.
       Mdns__Enabled: "false"
+      # Parts of the product that are switched off for everyone unless set to true here or in
+      # a .env file. The nightly backup runs regardless; Backups is the page, the run-now
+      # button and restoring from one.
+      Features__Import: ${FEATURE_IMPORT:-false}
+      Features__Export: ${FEATURE_EXPORT:-false}
+      Features__Backups: ${FEATURE_BACKUPS:-false}
+      Features__Updates: ${FEATURE_UPDATES:-false}
     volumes:
       - appdata:/var/lib/hospitalpm
     depends_on:

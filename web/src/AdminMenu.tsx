@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
+import type { Features } from './features';
 
-const ITEMS = [
+// A feature here can be switched off for everyone in the settings file. It is offered only while it is on.
+const ITEMS: { to: string; label: string; feature?: keyof Features }[] = [
   { to: '/compliance', label: 'Compliance report' },
-  { to: '/import', label: 'Import' },
-  { to: '/export', label: 'Export data' },
+  { to: '/import', label: 'Import', feature: 'import' },
+  { to: '/export', label: 'Export data', feature: 'export' },
   { to: '/staff', label: 'Staff' },
-  { to: '/backups', label: 'Backups' },
+  { to: '/backups', label: 'Backups', feature: 'backups' },
   { to: '/diagnostics', label: 'Diagnostics' },
   { to: '/licence', label: 'Licence' },
-  { to: '/updates', label: 'Updates' },
+  { to: '/updates', label: 'Updates', feature: 'updates' },
 ];
 
 /**
@@ -20,14 +22,16 @@ const ITEMS = [
  * with it. These are the ones used least and only by an Administrator, so
  * they go here; the daily work stays one click away in the bar.
  */
-export function AdminMenu() {
+export function AdminMenu({ features }: { features: Features | null }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const { pathname } = useLocation();
+  // Until the switches are known, only what is never switched off.
+  const items = ITEMS.filter((i) => !i.feature || features?.[i.feature] === true);
 
   // The button shows as current when the page underneath it is one of these,
   // so the bar still says where you are.
-  const active = ITEMS.some((i) => pathname === i.to || pathname.startsWith(`${i.to}/`));
+  const active = items.some((i) => pathname === i.to || pathname.startsWith(`${i.to}/`));
 
   useEffect(() => {
     if (!open) return;
@@ -61,7 +65,7 @@ export function AdminMenu() {
 
       {open && (
         <div className="nav-menu-list">
-          {ITEMS.map((i) => (
+          {items.map((i) => (
             <NavLink
               key={i.to}
               to={i.to}

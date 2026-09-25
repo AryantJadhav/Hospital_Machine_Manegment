@@ -65,6 +65,7 @@ builder.Services.AddScoped<HospitalPm.Infrastructure.Import.LocationImportServic
 
 builder.Services.Configure<LabelOptions>(builder.Configuration.GetSection(LabelOptions.SectionName));
 builder.Services.Configure<ScheduleOptions>(builder.Configuration.GetSection(ScheduleOptions.SectionName));
+builder.Services.Configure<HospitalPm.Api.Hosting.FeatureOptions>(builder.Configuration.GetSection(HospitalPm.Api.Hosting.FeatureOptions.SectionName));
 builder.Services.Configure<ReportOptions>(builder.Configuration.GetSection(ReportOptions.SectionName));
 builder.Services.AddSingleton<HospitalClock>();
 builder.Services.AddScoped<PmScheduleGenerator>();
@@ -282,9 +283,11 @@ app.MapGet("/health", () => Results.Ok(new
 // This is what makes "one binary" literally true.
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseMiddleware<HospitalPm.Api.Hosting.FeatureSwitchMiddleware>();
 app.UseMiddleware<HospitalPm.Api.Hosting.LicenceReadOnlyMiddleware>();
 
 app.MapSetupEndpoints();
+app.MapFeatureEndpoints();
 app.MapAuthEndpoints();
 app.MapUserEndpoints();
 app.MapEquipmentEndpoints();

@@ -456,7 +456,7 @@ Console.WriteLine($"    {orders} work orders across the lifecycle");
 // So the Backups page is not the one screen in the demo that says "never".
 Console.WriteLine("==> Backup");
 var backup = await http.PostAsJsonAsync("/api/admin/backups/run", new { });
-Console.WriteLine(backup.IsSuccessStatusCode ? "    taken" : "    skipped (not an installed system)");
+Console.WriteLine(backup.IsSuccessStatusCode ? "    taken" : "    skipped (not an installed system, or Backups is switched off)");
 
 Console.WriteLine();
 Console.WriteLine("Done. Sign in as any of:");

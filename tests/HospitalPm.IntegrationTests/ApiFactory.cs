@@ -39,6 +39,13 @@ public sealed class ApiFactory(string connectionString, IReadOnlyDictionary<stri
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:HospitalPm"] = connectionString,
+
+                // Off in a real install. On here, so the tests of import, export, backups and updates
+                // still test those; the tests of the switches turn them off through extraSettings.
+                ["Features:Import"] = "true",
+                ["Features:Export"] = "true",
+                ["Features:Backups"] = "true",
+                ["Features:Updates"] = "true",
             });
 
             if (extraSettings is not null)

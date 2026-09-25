@@ -5,6 +5,7 @@ import { api } from '../api/client';
 import { todayAtHospital } from '../time';
 import { MANUAL_FREQUENCY, PERFORMED_BY, PM_FREQUENCIES } from '../pmSchedule';
 import { PmDatePicker, PmDatePreview } from './PmScheduleFields';
+import { useFeatures } from '../features';
 
 /**
  * Adding or correcting one machine.
@@ -85,6 +86,7 @@ export function EquipmentForm({
   onCancel: () => void;
   onSaved: (id: number) => void | Promise<void>;
 }) {
+  const features = useFeatures();
   const [types, setTypes] = useState<Lookup[]>([]);
   const [locations, setLocations] = useState<LocationLookup[]>([]);
   const [busy, setBusy] = useState(false);
@@ -315,8 +317,7 @@ export function EquipmentForm({
         {locations.length === 0 && (
           <span className="muted">
             No locations yet, and every machine belongs to one. Add a ward or room on the
-            Locations page first, or bring the whole tree in from a spreadsheet on the
-            Import page.
+            Locations page first{features?.import ? ', or bring the whole tree in from a spreadsheet on the Import page' : ''}.
           </span>
         )}
       </label>

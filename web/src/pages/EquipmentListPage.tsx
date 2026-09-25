@@ -6,6 +6,7 @@ import { ROLES } from '../auth/context';
 import { EquipmentForm } from './EquipmentForm';
 import { StatusPill } from '../StatusPill';
 import { CRITICALITY_LABEL, CRITICALITY_LOOK, EQUIPMENT_LOOK } from '../statusTones';
+import { useFeatures } from '../features';
 
 type Equipment = {
   id: number;
@@ -38,6 +39,7 @@ const STATUS: Record<number, string> = {
 const PAGE_SIZE = 25;
 
 export function EquipmentListPage() {
+  const features = useFeatures();
   const { can } = useAuth();
   const canPrint = can(ROLES.admin);
   const canEdit = can(ROLES.admin);
@@ -275,7 +277,9 @@ export function EquipmentListPage() {
                 <td colSpan={canPrint ? 8 : 7} className="empty">
                   {hasFilters
                     ? 'No equipment matches these filters.'
-                    : 'The register is empty. Import a spreadsheet to get started.'}
+                    : features?.import
+                      ? 'The register is empty. Import a spreadsheet to get started.'
+                      : canEdit ? 'The register is empty. Use Add a machine to get started.' : 'The register is empty.'}
                 </td>
               </tr>
             )}

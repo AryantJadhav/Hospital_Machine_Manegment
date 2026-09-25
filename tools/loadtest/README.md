@@ -14,7 +14,9 @@ times every list, search and report endpoint against it.
 4. `bash tools/loadtest/bench.sh` prints the best of three per endpoint, with size.
 
 Also worth timing by hand at this scale: `POST /api/pm/generate` (the nightly
-job) and `POST /api/admin/backups/run`.
+job) and `POST /api/admin/backups/run`. Backups, like import, export and updates,
+is switched off unless `Features:Backups` is set to true, so turn it on for the
+run or that call is refused.
 
 Last run (2026-09-20; 15,000 assets, 113k PM tasks, 50k work orders): every
 endpoint under 100 ms, generation 7 s in steady state, backup 1.4 s.
