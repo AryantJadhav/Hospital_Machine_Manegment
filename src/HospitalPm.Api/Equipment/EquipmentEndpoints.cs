@@ -1,3 +1,4 @@
+using HospitalPm.Api.Maintenance;
 using HospitalPm.Domain.Assets;
 using HospitalPm.Domain.Checklists;
 using HospitalPm.Domain.Identity;
@@ -29,7 +30,10 @@ public sealed record NewMachinePmRequest(
     int GraceDays = 7,
     // Who does it. The vendor only when this same request gives the machine a maintenance
     // contract (AMC or CMC).
-    PmPerformedBy PerformedBy = PmPerformedBy.InHouse);
+    PmPerformedBy PerformedBy = PmPerformedBy.InHouse,
+    // The dates, when the frequency is Manual: each one a PM of its own, picked by hand.
+    // FirstDueDate is not used then.
+    IReadOnlyList<DateOnly>? Dates = null);
 
 public sealed record EquipmentRequest(
     string AssetTag,
@@ -324,6 +328,7 @@ public static class EquipmentEndpoints
         [FromBody] EquipmentRequest request,
         HospitalPmDbContext db,
         PmScheduleGenerator generator,
+        HospitalClock clock,
         CancellationToken ct)
     {
         // Left blank, the software numbers the machine itself.
@@ -378,17 +383,27 @@ public static class EquipmentEndpoints
 
         if (request.Pm is { } pm)
         {
-            // One save, one transaction: the machine and its schedule.
-            db.PmSchedules.Add(new PmSchedule
+            var manual = pm.Frequency == PmFrequency.Manual;
+            var picked = manual ? ManualPmDates.Clean(pm.Dates).Dates! : [];
+
+            // One save, one transaction: the machine, its schedule and, for hand-picked dates,
+            // every one of those PMs.
+            var schedule = new PmSchedule
             {
                 Equipment = entity,
                 ChecklistTemplateId = pm.ChecklistTemplateId,
                 Frequency = pm.Frequency,
                 IntervalDays = 0,
-                AnchorDate = pm.FirstDueDate,
+                AnchorDate = manual ? picked[0] : pm.FirstDueDate,
                 GraceDays = pm.GraceDays,
                 PerformedBy = pm.PerformedBy,
-            });
+            };
+            db.PmSchedules.Add(schedule);
+
+            if (manual)
+            {
+                db.PmTasks.AddRange(ManualPmDates.Tasks(schedule, entity, picked, clock.Today()));
+            }
         }
 
         await db.SaveChangesAsync(ct);
@@ -591,13 +606,22 @@ public static class EquipmentEndpoints
             });
         }
 
+        if (pm.Frequency == PmFrequency.Manual)
+        {
+            // Dates picked one by one: there must be some, and they are what matters, not a first date.
+            var (_, dateError) = ManualPmDates.Clean(pm.Dates);
+            if (dateError is not null)
+            {
+                return Results.BadRequest(new { error = dateError });
+            }
+        }
         // Custom is left to the PM pages, which take an interval in days. This form is
-        // for the named intervals.
-        if (pm.Frequency.Months() is null)
+        // for the named intervals and for dates picked one by one.
+        else if (pm.Frequency.Months() is null)
         {
             return Results.BadRequest(new
             {
-                error = "Choose how often: monthly, every 2 months, quarterly, half-yearly or yearly.",
+                error = "Choose how often: monthly, every 2 months, quarterly, half-yearly or yearly, or pick the dates yourself.",
             });
         }
 
@@ -606,7 +630,7 @@ public static class EquipmentEndpoints
             return Results.BadRequest(new { error = "Grace days must be between 0 and 90." });
         }
 
-        if (pm.FirstDueDate.Year is < 2000 or > 2100)
+        if (pm.Frequency != PmFrequency.Manual && pm.FirstDueDate.Year is < 2000 or > 2100)
         {
             return Results.BadRequest(new { error = "Give the date the first PM falls due." });
         }

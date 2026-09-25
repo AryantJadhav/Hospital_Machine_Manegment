@@ -100,6 +100,7 @@ public sealed class RoleBoundaryTests(PostgresFixture fixture) : IAsyncLifetime,
         { "POST", "/api/pm/schedules" },
         { "POST", "/api/pm/schedules/bulk" },
         { "PUT", $"/api/pm/schedules/{Missing}" },
+        { "POST", "/api/pm/schedules/dates" },
 
         // A report is evidence, and one that should never have been uploaded has to be removable.
         { "DELETE", $"/api/pm/attachments/{Missing}" },

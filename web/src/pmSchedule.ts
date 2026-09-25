@@ -16,5 +16,14 @@ export const PM_FREQUENCIES = [
 /** Who does a PM. The numbers are the server's PmPerformedBy values. */
 export const PERFORMED_BY = { inHouse: 10, vendor: 20 } as const;
 
+/**
+ * No pattern: every PM date is picked by hand, one at a time. Offered as "Choose the dates
+ * myself" next to the named frequencies. The server's PmFrequency.Manual.
+ */
+export const MANUAL_FREQUENCY = 95;
+
+/** The most dates the server takes for one machine at a time. */
+export const MAX_MANUAL_DATES = 60;
+
 /** A number of days between PMs, set on the PM pages. Never offered on the form, and it has no preview. */
 export const CUSTOM_FREQUENCY = 90;

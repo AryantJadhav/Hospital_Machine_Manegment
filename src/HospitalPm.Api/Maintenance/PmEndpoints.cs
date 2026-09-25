@@ -43,6 +43,18 @@ public sealed record UpdateScheduleRequest(
     int GraceDays,
     bool IsActive);
 
+/// <summary>
+/// PM dates picked one by one for a machine that already exists: a date at a time, or several,
+/// and more later. They are added to that machine's hand-picked schedule for the checklist,
+/// which is made the first time.
+/// </summary>
+public sealed record ManualDatesRequest(
+    int EquipmentId,
+    int ChecklistTemplateId,
+    IReadOnlyList<DateOnly> Dates,
+    int GraceDays = 7,
+    PmPerformedBy PerformedBy = PmPerformedBy.InHouse);
+
 public sealed record BulkScheduleRequest(
     int ChecklistTemplateId,
     PmFrequency Frequency,
@@ -137,6 +149,7 @@ public static class PmEndpoints
         owner.MapPost("/schedules", CreateScheduleAsync);
         owner.MapPost("/schedules/bulk", CreateSchedulesBulkAsync);
         owner.MapPut("/schedules/{id:int}", UpdateScheduleAsync);
+        owner.MapPost("/schedules/dates", AddDatesAsync);
         owner.MapPost("/generate", GenerateAsync);
     }
 
@@ -290,11 +303,14 @@ public static class PmEndpoints
                     .FirstOrDefault()))
             .ToListAsync(ct);
 
-        var items = rows.Select(r => r with
-        {
-            // First occurrence on or after today.
-            NextUpcomingDate = PmDueDates.NextAfter(r.AnchorDate, r.Frequency, r.IntervalDays, today.AddDays(-1)),
-        });
+        var items = rows.Select(r => r.Frequency == PmFrequency.Manual
+            // Hand-picked dates have no pattern to say where it falls next.
+            ? r
+            : r with
+            {
+                // First occurrence on or after today.
+                NextUpcomingDate = PmDueDates.NextAfter(r.AnchorDate, r.Frequency, r.IntervalDays, today.AddDays(-1)),
+            });
 
         return Results.Ok(new { items, total, page, pageSize });
     }
@@ -368,6 +384,11 @@ public static class PmEndpoints
             {
                 error = "That checklist has never been published, so it cannot be scheduled yet.",
             });
+        }
+
+        if (request.Frequency == PmFrequency.Manual)
+        {
+            return Results.BadRequest(new { error = "Dates that are picked one by one are added to a machine, not scheduled here." });
         }
 
         if (request.Frequency == PmFrequency.Custom && request.IntervalDays < 1)
@@ -588,6 +609,11 @@ public static class PmEndpoints
             });
         }
 
+        if (request.Frequency == PmFrequency.Manual)
+        {
+            return Results.BadRequest(new { error = "Dates that are picked one by one are added to a machine, not scheduled here." });
+        }
+
         if (request.Frequency == PmFrequency.Custom && request.IntervalDays < 1)
         {
             return Results.BadRequest(new { error = "A custom frequency needs an interval in days." });
@@ -639,6 +665,118 @@ public static class PmEndpoints
         return Results.Created($"/api/pm/schedules/{schedule.Id}", new { schedule.Id });
     }
 
+    private static async Task<IResult> AddDatesAsync(
+        [FromBody] ManualDatesRequest request,
+        HospitalPmDbContext db,
+        HospitalClock clock,
+        CancellationToken ct)
+    {
+        var (dates, dateError) = ManualPmDates.Clean(request.Dates);
+        if (dateError is not null)
+        {
+            return Results.BadRequest(new { error = dateError });
+        }
+
+        if (request.GraceDays is < 0 or > 90)
+        {
+            return Results.BadRequest(new { error = "Grace days must be between 0 and 90." });
+        }
+
+        if (!Enum.IsDefined(request.PerformedBy))
+        {
+            return Results.BadRequest(new { error = "Say whether the hospital's team or the vendor does this PM." });
+        }
+
+        var machine = await db.Equipment.AsNoTracking()
+            .Where(e => e.Id == request.EquipmentId)
+            .Select(e => new { e.Status, e.EquipmentTypeId, HasContract = e.MaintenanceContractType != null })
+            .SingleOrDefaultAsync(ct);
+
+        if (machine is null)
+        {
+            return Results.BadRequest(new { error = "Unknown equipment." });
+        }
+
+        if (machine.Status is EquipmentStatus.Condemned or EquipmentStatus.Disposed)
+        {
+            return Results.Conflict(new { error = "A condemned or disposed machine is never maintained again." });
+        }
+
+        var template = await db.ChecklistTemplates.AsNoTracking()
+            .Where(t => t.Id == request.ChecklistTemplateId && t.Kind == ChecklistKind.Pm)
+            .Select(t => new { t.EquipmentTypeId })
+            .SingleOrDefaultAsync(ct);
+
+        if (template is null)
+        {
+            return Results.BadRequest(new { error = "Unknown checklist." });
+        }
+
+        if (template.EquipmentTypeId != machine.EquipmentTypeId)
+        {
+            return Results.BadRequest(new { error = "That checklist belongs to a different equipment type." });
+        }
+
+        if (request.PerformedBy == PmPerformedBy.Vendor && !machine.HasContract)
+        {
+            return Results.BadRequest(new
+            {
+                error = "The vendor can only do the PM on a machine that has a maintenance contract (AMC or CMC).",
+            });
+        }
+
+        var schedule = await db.PmSchedules.SingleOrDefaultAsync(
+            s => s.EquipmentId == request.EquipmentId && s.ChecklistTemplateId == request.ChecklistTemplateId, ct);
+
+        if (schedule is not null && schedule.Frequency != PmFrequency.Manual)
+        {
+            return Results.Conflict(new
+            {
+                error = "This machine already has a repeating schedule for that checklist. Its dates follow that pattern.",
+            });
+        }
+
+        if (schedule is not null && schedule.PerformedBy != request.PerformedBy)
+        {
+            return Results.Conflict(new
+            {
+                error = "This machine's dates for that checklist are already set to be done by "
+                        + (schedule.PerformedBy == PmPerformedBy.Vendor ? "the vendor" : "the hospital's own team") + ".",
+            });
+        }
+
+        if (schedule is null)
+        {
+            schedule = new PmSchedule
+            {
+                EquipmentId = request.EquipmentId,
+                ChecklistTemplateId = request.ChecklistTemplateId,
+                Frequency = PmFrequency.Manual,
+                IntervalDays = 0,
+                AnchorDate = dates![0],
+                GraceDays = request.GraceDays,
+                PerformedBy = request.PerformedBy,
+            };
+            db.PmSchedules.Add(schedule);
+        }
+        else
+        {
+            schedule.IsActive = true;
+        }
+
+        // A date that is already a PM on this schedule is left as it is, not made twice.
+        var have = schedule.Id == 0
+            ? new HashSet<DateOnly>()
+            : (await db.PmTasks.Where(t => t.PmScheduleId == schedule.Id).Select(t => t.DueDate).ToListAsync(ct)).ToHashSet();
+
+        var toAdd = dates!.Where(d => !have.Contains(d)).ToList();
+        db.PmTasks.AddRange(ManualPmDates.Tasks(schedule, equipment: null, toAdd, clock.Today()));
+
+        await db.SaveChangesAsync(ct);
+
+        return Results.Ok(new { scheduleId = schedule.Id, added = toAdd.Count, alreadyThere = dates!.Count - toAdd.Count });
+    }
+
     /// <summary>
     /// Changes how a machine's PM runs.
     ///
@@ -663,6 +801,13 @@ public static class PmEndpoints
         if (schedule is null)
         {
             return Results.NotFound();
+        }
+
+        // A schedule of hand-picked dates has no pattern to change, and a repeating one cannot
+        // become one: its dates are added, and skipped when they will not happen.
+        if (schedule.Frequency == PmFrequency.Manual || request.Frequency == PmFrequency.Manual)
+        {
+            return Results.BadRequest(new { error = "The dates of this schedule are picked one by one, so there is no pattern to change." });
         }
 
         if (request.Frequency == PmFrequency.Custom)

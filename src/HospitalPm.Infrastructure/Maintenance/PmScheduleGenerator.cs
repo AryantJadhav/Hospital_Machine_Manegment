@@ -31,6 +31,8 @@ public sealed class PmScheduleGenerator(
 
         var schedules = await db.PmSchedules
             .Where(s => s.IsActive)
+            // Dates picked by hand are the PMs themselves; there is no pattern to work out.
+            .Where(s => s.Frequency != PmFrequency.Manual)
             // A condemned or disposed machine stays on the register so its
             // certificates remain readable, and is never maintained again.
             // Without this, a schedule on one keeps producing PM tasks

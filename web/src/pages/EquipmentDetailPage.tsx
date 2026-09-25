@@ -4,6 +4,7 @@ import { api, ApiError } from '../api/client';
 import { useAuth } from '../auth/useAuth';
 import { ROLES } from '../auth/context';
 import { EquipmentForm } from './EquipmentForm';
+import { AddPmDatesForm } from './AddPmDatesForm';
 import { MoveMachineForm } from './MoveMachineForm';
 import { formatDate, formatDateTime, todayAtHospital } from '../time';
 import { formatRupees } from '../money';
@@ -133,6 +134,7 @@ export function EquipmentDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [moving, setMoving] = useState(false);
+  const [addingDates, setAddingDates] = useState(false);
   const [moves, setMoves] = useState<Move[]>([]);
   const [checks, setChecks] = useState<Check[]>([]);
   const [movedNote, setMovedNote] = useState<string | null>(null);
@@ -236,6 +238,9 @@ export function EquipmentDetailPage() {
           {e.status !== 40 && e.status !== 50 && !moving && (
             <button className="btn" onClick={() => { setMoving(true); setMovedNote(null); }}>Move</button>
           )}
+          {canEdit && e.status !== 40 && e.status !== 50 && !addingDates && (
+            <button className="btn" onClick={() => { setAddingDates(true); setMovedNote(null); }}>Add PM dates</button>
+          )}
           {canPrint && (
             <button
               className="btn"
@@ -269,6 +274,20 @@ export function EquipmentDetailPage() {
       {actionError && <p className="alert alert-error" role="alert">{actionError}</p>}
 
       {movedNote && <p className="alert alert-ok" role="status">{movedNote}</p>}
+
+      {addingDates && (
+        <AddPmDatesForm
+          equipmentId={e.id}
+          equipmentTypeId={e.equipmentTypeId}
+          hasContract={e.maintenanceContractType != null}
+          onCancel={() => setAddingDates(false)}
+          onSaved={async (message) => {
+            setAddingDates(false);
+            setMovedNote(message);
+            await load();
+          }}
+        />
+      )}
 
       {moving && (
         <MoveMachineForm

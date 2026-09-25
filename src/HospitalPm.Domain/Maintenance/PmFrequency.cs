@@ -20,6 +20,12 @@ public enum PmFrequency
 
     /// <summary>Interval given in days on the schedule.</summary>
     Custom = 90,
+
+    /// <summary>
+    /// No pattern at all: every date is picked by hand, one PM at a time, and more can be added
+    /// later. The nightly job creates nothing for these.
+    /// </summary>
+    Manual = 95,
 }
 
 public static class PmFrequencyExtensions

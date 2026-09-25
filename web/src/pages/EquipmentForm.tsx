@@ -3,8 +3,8 @@ import type { FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { todayAtHospital } from '../time';
-import { PERFORMED_BY, PM_FREQUENCIES } from '../pmSchedule';
-import { PmDatePreview } from './PmScheduleFields';
+import { MANUAL_FREQUENCY, PERFORMED_BY, PM_FREQUENCIES } from '../pmSchedule';
+import { PmDatePicker, PmDatePreview } from './PmScheduleFields';
 
 /**
  * Adding or correcting one machine.
@@ -156,6 +156,9 @@ export function EquipmentForm({
   const [pmGrace, setPmGrace] = useState('7');
   // Who does it. The vendor only where this same form gives the machine a maintenance contract.
   const [pmBy, setPmBy] = useState<number>(PERFORMED_BY.inHouse);
+  // The dates, when they are picked one by one instead of following a pattern.
+  const [pmDates, setPmDates] = useState<string[]>([]);
+  const pickingDates = pmFrequency === MANUAL_FREQUENCY;
   const [pmChecklists, setPmChecklists] = useState<PmChecklist[] | null>(null);
   const [pmChecklistId, setPmChecklistId] = useState<number | null>(null);
 
@@ -193,7 +196,11 @@ export function EquipmentForm({
         setError('Choose the checklist for the PM, or set the PM schedule to None.');
         return;
       }
-      if (!pmFirstDue) {
+      if (pickingDates && pmDates.length === 0) {
+        setError('Add at least one PM date, or set the PM schedule to None.');
+        return;
+      }
+      if (!pickingDates && !pmFirstDue) {
         setError('Give the date the first PM falls due.');
         return;
       }
@@ -237,7 +244,9 @@ export function EquipmentForm({
             ? {
                 checklistTemplateId: pmChecklistChoice,
                 frequency: pmFrequency,
-                firstDueDate: pmFirstDue,
+                // Not used when the dates are picked by hand; the dates are what matter.
+                firstDueDate: pickingDates ? pmDates[0] : pmFirstDue,
+                dates: pickingDates ? pmDates : undefined,
                 graceDays: Number(pmGrace) || 0,
                 // The vendor only counts while a contract is chosen above.
                 performedBy: hasContract ? pmBy : PERFORMED_BY.inHouse,
@@ -613,10 +622,11 @@ export function EquipmentForm({
             >
               <option value="">None — set it up later</option>
               {PM_FREQUENCIES.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+              <option value={MANUAL_FREQUENCY}>Choose the dates myself — one PM at a time</option>
             </select>
             <span className="muted">
-              How often this machine is serviced. You decide, and the due dates follow from the
-              first one. Everyone is reminded 7 days before each one.
+              Pick how often this machine is serviced and the due dates follow from the first one, or
+              choose every date yourself. Everyone is reminded 7 days before each one.
             </span>
           </label>
 
@@ -662,16 +672,18 @@ export function EquipmentForm({
                   </label>
                 )}
 
-                <label className="stack">
-                  <span>First PM due</span>
-                  <input
-                    className="field"
-                    type="date"
-                    required
-                    value={pmFirstDue}
-                    onChange={(e) => setPmFirstDue(e.target.value)}
-                  />
-                </label>
+                {!pickingDates && (
+                  <label className="stack">
+                    <span>First PM due</span>
+                    <input
+                      className="field"
+                      type="date"
+                      required
+                      value={pmFirstDue}
+                      onChange={(e) => setPmFirstDue(e.target.value)}
+                    />
+                  </label>
+                )}
 
                 <label className="stack">
                   <span>Days of grace</span>
@@ -688,13 +700,15 @@ export function EquipmentForm({
 
               <span className="muted">
                 Days of grace are how many days after a due date the PM can still be done before it
-                counts as overdue. The first PM appears on the work list as soon as you add the machine.
+                counts as overdue. The PMs appear on the work list as soon as you add the machine.
                 {hasContract && pmBy === PERFORMED_BY.vendor && (
                   <> When the vendor has done it, record that and save their report on the PM.</>
                 )}
               </span>
 
-              <PmDatePreview frequency={pmFrequency} anchor={pmFirstDue} />
+              {pickingDates
+                ? <PmDatePicker dates={pmDates} onChange={setPmDates} />
+                : <PmDatePreview frequency={pmFrequency} anchor={pmFirstDue} />}
             </>
           )}
         </fieldset>
