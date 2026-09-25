@@ -86,6 +86,26 @@ public sealed class Equipment
     /// <summary>What the policy costs, in rupees. Set only when <see cref="IsInsured"/>, and optional even then.</summary>
     public decimal? InsuranceCost { get; set; }
 
+    /// <summary>
+    /// AMC or CMC, or null when the machine is not under a maintenance contract. When
+    /// null, every other maintenance-contract field is empty; the database enforces it.
+    /// </summary>
+    public MaintenanceContractType? MaintenanceContractType { get; set; }
+
+    /// <summary>The company that services the machine under the contract.</summary>
+    public string? MaintenanceVendor { get; set; }
+
+    /// <summary>The contract's own number, for the phone call when the machine fails. Optional.</summary>
+    public string? MaintenanceContractNumber { get; set; }
+
+    public DateOnly? MaintenanceStartDate { get; set; }
+
+    /// <summary>The last day the contract covers. Never before <see cref="MaintenanceStartDate"/>.</summary>
+    public DateOnly? MaintenanceEndDate { get; set; }
+
+    /// <summary>What the contract costs, in rupees. Optional.</summary>
+    public decimal? MaintenanceCost { get; set; }
+
     /// <summary>Free-text notes from the biomedical team. Not a clinical record.</summary>
     public string? Notes { get; set; }
 

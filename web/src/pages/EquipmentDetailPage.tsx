@@ -11,7 +11,7 @@ import { useHandoff } from '../handoff';
 import { HandoffNotice } from '../HandoffNotice';
 import { StatusPill } from '../StatusPill';
 import { Tile } from '../Tile';
-import { CRITICALITY_LABEL, CRITICALITY_LOOK, DIAGNOSIS_LOOK, DIAGNOSIS_WORDS, EQUIPMENT_LOOK, PM_LOOK, PRIORITY_LOOK, WORK_ORDER_LOOK } from '../statusTones';
+import { CONTRACT_LABEL, CRITICALITY_LABEL, CRITICALITY_LOOK, DIAGNOSIS_LOOK, DIAGNOSIS_WORDS, EQUIPMENT_LOOK, PM_LOOK, PRIORITY_LOOK, WORK_ORDER_LOOK } from '../statusTones';
 
 type History = {
   equipment: {
@@ -31,6 +31,12 @@ type History = {
     insurancePolicyNumber: string | null;
     insuranceExpiryDate: string | null;
     insuranceCost: number | null;
+    maintenanceContractType: number | null;
+    maintenanceVendor: string | null;
+    maintenanceContractNumber: string | null;
+    maintenanceStartDate: string | null;
+    maintenanceEndDate: string | null;
+    maintenanceCost: number | null;
     notes: string | null;
     // Returned by the history endpoint and simply not declared here until the
     // edit form needed it to prefill the type.
@@ -195,6 +201,11 @@ export function EquipmentDetailPage() {
   // Same reading as the warranty: the policy covers its last day in full.
   const insuredUntil = e.isInsured ? e.insuranceExpiryDate : null;
   const insuranceCurrent = insuredUntil !== null && insuredUntil >= todayAtHospital();
+  // A contract may not have started yet, may be running, or may have lapsed.
+  const contract = e.maintenanceContractType != null ? CONTRACT_LABEL[e.maintenanceContractType] ?? 'Contract' : null;
+  const contractEnds = e.maintenanceEndDate;
+  const contractNotStarted = e.maintenanceStartDate != null && e.maintenanceStartDate > todayAtHospital();
+  const contractCurrent = contractEnds !== null && contractEnds >= todayAtHospital() && !contractNotStarted;
 
   return (
     <div className="page">
@@ -289,6 +300,12 @@ export function EquipmentDetailPage() {
             insurancePolicyNumber: e.insurancePolicyNumber ?? null,
             insuranceExpiryDate: e.insuranceExpiryDate ?? null,
             insuranceCost: e.insuranceCost ?? null,
+            maintenanceContractType: e.maintenanceContractType ?? null,
+            maintenanceVendor: e.maintenanceVendor ?? null,
+            maintenanceContractNumber: e.maintenanceContractNumber ?? null,
+            maintenanceStartDate: e.maintenanceStartDate ?? null,
+            maintenanceEndDate: e.maintenanceEndDate ?? null,
+            maintenanceCost: e.maintenanceCost ?? null,
             notes: e.notes ?? null,
           }}
           onCancel={() => setEditing(false)}
@@ -308,6 +325,16 @@ export function EquipmentDetailPage() {
           // A lapsed policy is something to renew, so it is a warning; a current one is good news.
           <StatusPill tone={insuranceCurrent ? 'success' : 'warning'}>
             {insuranceCurrent ? 'Insured until' : 'Insurance expired'} {formatDate(insuredUntil)}
+          </StatusPill>
+        )}
+        {contract && contractEnds && (
+          // Lapsed is something to renew, so a warning. Not started yet is neither.
+          <StatusPill tone={contractNotStarted ? 'neutral' : contractCurrent ? 'success' : 'warning'}>
+            {contractNotStarted
+              ? `${contract} starts ${formatDate(e.maintenanceStartDate)}`
+              : contractCurrent
+                ? `${contract} until ${formatDate(contractEnds)}`
+                : `${contract} expired ${formatDate(contractEnds)}`}
           </StatusPill>
         )}
         {data.summary.currentlyDown && <StatusPill tone="danger">Currently down</StatusPill>}
@@ -339,6 +366,15 @@ export function EquipmentDetailPage() {
                 <Row label="Policy number" value={e.insurancePolicyNumber} mono />
                 <Row label="Insurance expires" value={formatDate(e.insuranceExpiryDate)} />
                 <Row label="Cost of the insurance" value={e.insuranceCost == null ? null : formatRupees(e.insuranceCost)} />
+              </>
+            )}
+            {contract && (
+              <>
+                <Row label="Maintenance contract" value={contract} />
+                <Row label="Contract vendor" value={e.maintenanceVendor} />
+                <Row label="Contract number" value={e.maintenanceContractNumber} mono />
+                <Row label="Contract period" value={`${formatDate(e.maintenanceStartDate)} to ${formatDate(e.maintenanceEndDate)}`} />
+                <Row label="Cost of the contract" value={e.maintenanceCost == null ? null : formatRupees(e.maintenanceCost)} />
               </>
             )}
           </dl>

@@ -511,6 +511,12 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
             e.Property(x => x.InsurancePolicyNumber).HasColumnName("insurance_policy_number").HasMaxLength(100);
             e.Property(x => x.InsuranceExpiryDate).HasColumnName("insurance_expiry_date");
             e.Property(x => x.InsuranceCost).HasColumnName("insurance_cost").HasPrecision(14, 2);
+            e.Property(x => x.MaintenanceContractType).HasColumnName("maintenance_contract_type").HasConversion<int?>();
+            e.Property(x => x.MaintenanceVendor).HasColumnName("maintenance_vendor").HasMaxLength(200);
+            e.Property(x => x.MaintenanceContractNumber).HasColumnName("maintenance_contract_number").HasMaxLength(100);
+            e.Property(x => x.MaintenanceStartDate).HasColumnName("maintenance_start_date");
+            e.Property(x => x.MaintenanceEndDate).HasColumnName("maintenance_end_date");
+            e.Property(x => x.MaintenanceCost).HasColumnName("maintenance_cost").HasPrecision(14, 2);
             e.Property(x => x.Notes).HasColumnName("notes");
             e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").HasDefaultValueSql("now()");
             e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").HasDefaultValueSql("now()");

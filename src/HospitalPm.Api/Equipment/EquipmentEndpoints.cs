@@ -44,7 +44,17 @@ public sealed record EquipmentRequest(
     // What the machine cost, and what its insurance costs, in rupees. Blank is
     // "not known". The insurance cost follows IsInsured like the other details.
     decimal? PurchaseCost = null,
-    decimal? InsuranceCost = null);
+    decimal? InsuranceCost = null,
+    // A maintenance contract, AMC or CMC. HasMaintenanceContract left out means
+    // "do not touch". False clears every detail. True needs the type, the vendor
+    // and the start and end dates; the number and the cost are optional.
+    bool? HasMaintenanceContract = null,
+    MaintenanceContractType? MaintenanceContractType = null,
+    string? MaintenanceVendor = null,
+    string? MaintenanceContractNumber = null,
+    DateOnly? MaintenanceStartDate = null,
+    DateOnly? MaintenanceEndDate = null,
+    decimal? MaintenanceCost = null);
 
 public sealed record EquipmentResponse(
     int Id,
@@ -67,7 +77,13 @@ public sealed record EquipmentResponse(
     string? InsurancePolicyNumber,
     DateOnly? InsuranceExpiryDate,
     decimal? PurchaseCost,
-    decimal? InsuranceCost);
+    decimal? InsuranceCost,
+    MaintenanceContractType? MaintenanceContractType,
+    string? MaintenanceVendor,
+    string? MaintenanceContractNumber,
+    DateOnly? MaintenanceStartDate,
+    DateOnly? MaintenanceEndDate,
+    decimal? MaintenanceCost);
 
 public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Total, int Page, int PageSize);
 
@@ -191,7 +207,13 @@ public static class EquipmentEndpoints
                 e.InsurancePolicyNumber,
                 e.InsuranceExpiryDate,
                 e.PurchaseCost,
-                e.InsuranceCost))
+                e.InsuranceCost,
+                e.MaintenanceContractType,
+                e.MaintenanceVendor,
+                e.MaintenanceContractNumber,
+                e.MaintenanceStartDate,
+                e.MaintenanceEndDate,
+                e.MaintenanceCost))
             .ToListAsync(ct);
 
         return Results.Ok(new PagedResult<EquipmentResponse>(items, total, page, pageSize));
@@ -222,7 +244,13 @@ public static class EquipmentEndpoints
                 e.InsurancePolicyNumber,
                 e.InsuranceExpiryDate,
                 e.PurchaseCost,
-                e.InsuranceCost))
+                e.InsuranceCost,
+                e.MaintenanceContractType,
+                e.MaintenanceVendor,
+                e.MaintenanceContractNumber,
+                e.MaintenanceStartDate,
+                e.MaintenanceEndDate,
+                e.MaintenanceCost))
             .SingleOrDefaultAsync(ct);
 
         return item is null ? Results.NotFound() : Results.Ok(item);
@@ -260,7 +288,13 @@ public static class EquipmentEndpoints
                 e.InsurancePolicyNumber,
                 e.InsuranceExpiryDate,
                 e.PurchaseCost,
-                e.InsuranceCost))
+                e.InsuranceCost,
+                e.MaintenanceContractType,
+                e.MaintenanceVendor,
+                e.MaintenanceContractNumber,
+                e.MaintenanceStartDate,
+                e.MaintenanceEndDate,
+                e.MaintenanceCost))
             .SingleOrDefaultAsync(ct);
 
         return item is null ? Results.NotFound() : Results.Ok(item);
@@ -309,6 +343,7 @@ public static class EquipmentEndpoints
             PurchaseCost = Money(request.PurchaseCost),
         };
         ApplyInsurance(entity, request);
+        ApplyMaintenanceContract(entity, request);
 
         db.Equipment.Add(entity);
         await db.SaveChangesAsync(ct);
@@ -387,6 +422,7 @@ public static class EquipmentEndpoints
         entity.Criticality = request.Criticality ?? entity.Criticality;
         entity.PurchaseCost = Money(request.PurchaseCost);
         ApplyInsurance(entity, request);
+        ApplyMaintenanceContract(entity, request);
 
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
@@ -443,6 +479,40 @@ public static class EquipmentEndpoints
         }
     }
 
+    /// <summary>
+    /// Says whether the machine is under an AMC or a CMC, and keeps the details
+    /// consistent with the answer. "No" empties them, so a lapsed contract is not left
+    /// behind on a machine that says it has none.
+    /// </summary>
+    private static void ApplyMaintenanceContract(Domain.Assets.Equipment entity, EquipmentRequest request)
+    {
+        switch (request.HasMaintenanceContract)
+        {
+            case null:
+                return;
+
+            case false:
+                entity.MaintenanceContractType = null;
+                entity.MaintenanceVendor = null;
+                entity.MaintenanceContractNumber = null;
+                entity.MaintenanceStartDate = null;
+                entity.MaintenanceEndDate = null;
+                entity.MaintenanceCost = null;
+                return;
+
+            case true:
+                entity.MaintenanceContractType = request.MaintenanceContractType;
+                entity.MaintenanceVendor = request.MaintenanceVendor?.Trim();
+                entity.MaintenanceContractNumber = string.IsNullOrWhiteSpace(request.MaintenanceContractNumber)
+                    ? null
+                    : request.MaintenanceContractNumber.Trim();
+                entity.MaintenanceStartDate = request.MaintenanceStartDate;
+                entity.MaintenanceEndDate = request.MaintenanceEndDate;
+                entity.MaintenanceCost = Money(request.MaintenanceCost);
+                return;
+        }
+    }
+
     /// <summary>The largest amount the column holds: twelve digits before the paise.</summary>
     private const decimal MaxCost = 999_999_999_999.99m;
 
@@ -477,6 +547,34 @@ public static class EquipmentEndpoints
         if (IsBadAmount(request.InsuranceCost))
         {
             return Results.BadRequest(new { error = "The cost of the insurance cannot be negative." });
+        }
+
+        if (IsBadAmount(request.MaintenanceCost))
+        {
+            return Results.BadRequest(new { error = "The cost of the maintenance contract cannot be negative." });
+        }
+
+        if (request.HasMaintenanceContract == true)
+        {
+            if (request.MaintenanceContractType is not { } contractType || !Enum.IsDefined(contractType))
+            {
+                return Results.BadRequest(new { error = "Say whether the maintenance contract is an AMC or a CMC." });
+            }
+
+            if (string.IsNullOrWhiteSpace(request.MaintenanceVendor))
+            {
+                return Results.BadRequest(new { error = "Say which vendor holds the maintenance contract." });
+            }
+
+            if (request.MaintenanceStartDate is null || request.MaintenanceEndDate is null)
+            {
+                return Results.BadRequest(new { error = "Say when the maintenance contract starts and ends." });
+            }
+
+            if (request.MaintenanceEndDate < request.MaintenanceStartDate)
+            {
+                return Results.BadRequest(new { error = "The maintenance contract cannot end before it starts." });
+            }
         }
 
         if (request.IsInsured == true)

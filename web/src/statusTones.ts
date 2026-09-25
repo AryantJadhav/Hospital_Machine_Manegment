@@ -30,6 +30,12 @@ export const CRITICALITY_LOOK: Record<number, Look> = {
   10: T('neutral'),
 };
 
+/** The short name of each kind of maintenance contract. */
+export const CONTRACT_LABEL: Record<number, string> = {
+  10: 'AMC',
+  20: 'CMC',
+};
+
 /** Equipment: In store, In use, Under repair, Condemned, Disposed. */
 export const EQUIPMENT_LOOK: Record<number, Look> = {
   10: T('neutral'),

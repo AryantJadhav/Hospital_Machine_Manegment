@@ -35,6 +35,13 @@ export type EquipmentDraft = {
   insurancePolicyNumber: string | null;
   insuranceExpiryDate: string | null;
   insuranceCost: number | null;
+  // null is "no maintenance contract"; the rest are only used when there is one.
+  maintenanceContractType: number | null;
+  maintenanceVendor: string | null;
+  maintenanceContractNumber: string | null;
+  maintenanceStartDate: string | null;
+  maintenanceEndDate: string | null;
+  maintenanceCost: number | null;
   notes: string | null;
 };
 
@@ -58,6 +65,11 @@ const CRITICALITIES = [
   { value: 30, label: 'Critical — its failure puts a patient at risk' },
   { value: 20, label: 'Semi-critical — its failure delays or degrades care' },
   { value: 10, label: 'Non-critical — its failure does not affect care' },
+];
+
+const CONTRACTS = [
+  { value: 10, label: 'AMC — annual maintenance contract' },
+  { value: 20, label: 'CMC — comprehensive maintenance contract (parts covered)' },
 ];
 
 export function EquipmentForm({
@@ -93,6 +105,12 @@ export function EquipmentForm({
       insurancePolicyNumber: null,
       insuranceExpiryDate: null,
       insuranceCost: null,
+      maintenanceContractType: null,
+      maintenanceVendor: null,
+      maintenanceContractNumber: null,
+      maintenanceStartDate: null,
+      maintenanceEndDate: null,
+      maintenanceCost: null,
       notes: null,
     },
   );
@@ -115,6 +133,8 @@ export function EquipmentForm({
   function set<K extends keyof EquipmentDraft>(key: K, value: EquipmentDraft[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
+
+  const hasContract = form.maintenanceContractType !== null;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -141,6 +161,15 @@ export function EquipmentForm({
         insurancePolicyNumber: form.isInsured ? form.insurancePolicyNumber?.trim() || null : null,
         insuranceExpiryDate: form.isInsured ? form.insuranceExpiryDate || null : null,
         insuranceCost: form.isInsured ? form.insuranceCost : null,
+        // No contract sends nothing else, and the server clears whatever the machine
+        // had, so an old contract cannot outlive the answer "none".
+        hasMaintenanceContract: hasContract,
+        maintenanceContractType: hasContract ? form.maintenanceContractType : null,
+        maintenanceVendor: hasContract ? form.maintenanceVendor?.trim() || null : null,
+        maintenanceContractNumber: hasContract ? form.maintenanceContractNumber?.trim() || null : null,
+        maintenanceStartDate: hasContract ? form.maintenanceStartDate || null : null,
+        maintenanceEndDate: hasContract ? form.maintenanceEndDate || null : null,
+        maintenanceCost: hasContract ? form.maintenanceCost : null,
         notes: form.notes?.trim() || null,
       };
 
@@ -406,6 +435,80 @@ export function EquipmentForm({
               inputMode="decimal"
               value={form.insuranceCost ?? ''}
               onChange={(e) => set('insuranceCost', e.target.value === '' ? null : Number(e.target.value))}
+            />
+          </label>
+        </div>
+      )}
+
+      <label className="stack">
+        <span>Maintenance contract</span>
+        <select
+          className="field"
+          value={form.maintenanceContractType ?? ''}
+          onChange={(e) => set('maintenanceContractType', e.target.value ? Number(e.target.value) : null)}
+        >
+          <option value="">None</option>
+          {CONTRACTS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+        </select>
+      </label>
+
+      {hasContract && (
+        <div style={{ display: 'grid', gap: '0.75rem', gridTemplateColumns: 'repeat(auto-fit, minmax(12rem, 1fr))' }}>
+          <label className="stack">
+            <span>Vendor</span>
+            <input
+              className="field"
+              required
+              maxLength={200}
+              placeholder="Philips Healthcare"
+              value={form.maintenanceVendor ?? ''}
+              onChange={(e) => set('maintenanceVendor', e.target.value || null)}
+            />
+          </label>
+
+          <label className="stack">
+            <span>Contract number</span>
+            <input
+              className="field mono"
+              maxLength={100}
+              value={form.maintenanceContractNumber ?? ''}
+              onChange={(e) => set('maintenanceContractNumber', e.target.value || null)}
+            />
+          </label>
+
+          <label className="stack">
+            <span>Contract starts</span>
+            <input
+              className="field"
+              type="date"
+              required
+              value={form.maintenanceStartDate ?? ''}
+              onChange={(e) => set('maintenanceStartDate', e.target.value || null)}
+            />
+          </label>
+
+          <label className="stack">
+            <span>Contract ends</span>
+            <input
+              className="field"
+              type="date"
+              required
+              min={form.maintenanceStartDate ?? undefined}
+              value={form.maintenanceEndDate ?? ''}
+              onChange={(e) => set('maintenanceEndDate', e.target.value || null)}
+            />
+          </label>
+
+          <label className="stack">
+            <span>Cost of the contract (₹)</span>
+            <input
+              className="field mono"
+              type="number"
+              min={0}
+              step="0.01"
+              inputMode="decimal"
+              value={form.maintenanceCost ?? ''}
+              onChange={(e) => set('maintenanceCost', e.target.value === '' ? null : Number(e.target.value))}
             />
           </label>
         </div>

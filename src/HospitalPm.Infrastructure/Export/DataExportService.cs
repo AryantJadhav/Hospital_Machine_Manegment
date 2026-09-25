@@ -189,7 +189,7 @@ public sealed class DataExportService(
     {
         // The first eleven columns are the ones the import template uses, in its
         // order, so this file can be opened in Excel, saved as .xlsx and imported
-        // into another installation. Criticality, insurance and costs come last so those stay put.
+        // into another installation. Criticality, insurance, costs and the maintenance contract come last so those stay put.
         await using var sheet = new Sheet(zip, "equipment.csv",
         [
             "Asset Tag", "Serial Number", "Equipment Type", "Location", "Manufacturer", "Model", "Status",
@@ -197,6 +197,8 @@ public sealed class DataExportService(
             "Equipment Type Code", "Location Name", "Created", "Last Changed",
             "Criticality", "Insured", "Insurer", "Insurance Policy Number", "Insurance Expires",
             "Purchase Cost", "Insurance Cost",
+            "Maintenance Contract", "Contract Vendor", "Contract Number", "Contract Starts", "Contract Ends",
+            "Contract Cost",
         ]);
 
         await EachBatchAsync(
@@ -212,6 +214,8 @@ public sealed class DataExportService(
                     e.CreatedAtUtc, e.UpdatedAtUtc, e.Criticality,
                     e.IsInsured, e.InsuranceProvider, e.InsurancePolicyNumber, e.InsuranceExpiryDate,
                     e.PurchaseCost, e.InsuranceCost,
+                    e.MaintenanceContractType, e.MaintenanceVendor, e.MaintenanceContractNumber,
+                    e.MaintenanceStartDate, e.MaintenanceEndDate, e.MaintenanceCost,
                 }).ToListAsync(ct),
             e => e.Id,
             e => sheet.Row(
@@ -220,7 +224,10 @@ public sealed class DataExportService(
                 e.TypeCode, e.LocationName, Instant(e.CreatedAtUtc), Instant(e.UpdatedAtUtc),
                 e.Criticality?.ToString(),
                 e.IsInsured ? "Yes" : "No", e.InsuranceProvider, e.InsurancePolicyNumber, Day(e.InsuranceExpiryDate),
-                Amount(e.PurchaseCost), Amount(e.InsuranceCost)));
+                Amount(e.PurchaseCost), Amount(e.InsuranceCost),
+                e.MaintenanceContractType?.ToString().ToUpperInvariant(), e.MaintenanceVendor,
+                e.MaintenanceContractNumber, Day(e.MaintenanceStartDate), Day(e.MaintenanceEndDate),
+                Amount(e.MaintenanceCost)));
 
         return new FileNote("equipment.csv", sheet.Rows,
             "The equipment register. The first eleven columns match the import template.");
