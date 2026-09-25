@@ -18,6 +18,8 @@ type PmTask = {
   dueDate: string;
   status: number;
   daysLate: number;
+  // 10 our own team, 20 the maintenance contract vendor.
+  performedBy: number;
 };
 
 type Paged<T> = { items: T[]; total: number; page: number; pageSize: number };
@@ -212,7 +214,10 @@ export function PmTasksPage() {
                 <td className="mono">{t.assetTag}</td>
                 <td>{t.equipmentTypeName}</td>
                 <td>{t.locationName}</td>
-                <td>{t.checklistName}</td>
+                <td>
+                  {t.checklistName}
+                  {t.performedBy === 20 && <StatusPill tone="info" className="hist-flag">Vendor</StatusPill>}
+                </td>
                 <td><StatusPill look={PM_LOOK[t.status]}>{STATUS[t.status] ?? '—'}</StatusPill></td>
                 <td style={{ whiteSpace: 'nowrap' }}>
                   {/* Scheduled, Due and Overdue are open work. Completed and
@@ -226,10 +231,20 @@ export function PmTasksPage() {
                       // Back here afterwards, with the same filters and search.
                       state={{ from: `${location.pathname}${location.search}` }}
                     >
-                      Do PM
+                      {t.performedBy === 20 ? 'Record vendor PM' : 'Do PM'}
                     </Link>
                   )}
-                  {t.status === 40 && (
+                  {t.status === 40 && t.performedBy === 20 && (
+                    // Their report is the record; there is no certificate of ours.
+                    <Link
+                      className="btn btn-quiet"
+                      to={`/pm/${t.id}/do`}
+                      state={{ from: `${location.pathname}${location.search}` }}
+                    >
+                      Report
+                    </Link>
+                  )}
+                  {t.status === 40 && t.performedBy !== 20 && (
                     <button className="btn btn-quiet" onClick={() => void certificate(t)}>
                       Certificate
                     </button>

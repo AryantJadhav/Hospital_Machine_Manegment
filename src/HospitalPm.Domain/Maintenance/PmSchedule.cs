@@ -49,6 +49,12 @@ public sealed class PmSchedule
 
     public bool IsActive { get; set; } = true;
 
+    /// <summary>
+    /// Who does this PM: the hospital's own team, or the contract vendor. A schedule can
+    /// only be the vendor's on a machine that has a maintenance contract (AMC or CMC).
+    /// </summary>
+    public PmPerformedBy PerformedBy { get; set; } = PmPerformedBy.InHouse;
+
     public DateTime CreatedAtUtc { get; set; }
 
     public DateTime UpdatedAtUtc { get; set; }

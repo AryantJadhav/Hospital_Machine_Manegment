@@ -3,7 +3,7 @@ import type { FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { todayAtHospital } from '../time';
-import { PM_FREQUENCIES } from '../pmSchedule';
+import { PERFORMED_BY, PM_FREQUENCIES } from '../pmSchedule';
 import { PmDatePreview } from './PmScheduleFields';
 
 /**
@@ -154,6 +154,8 @@ export function EquipmentForm({
   const [pmFrequency, setPmFrequency] = useState<number | null>(null);
   const [pmFirstDue, setPmFirstDue] = useState(todayAtHospital);
   const [pmGrace, setPmGrace] = useState('7');
+  // Who does it. The vendor only where this same form gives the machine a maintenance contract.
+  const [pmBy, setPmBy] = useState<number>(PERFORMED_BY.inHouse);
   const [pmChecklists, setPmChecklists] = useState<PmChecklist[] | null>(null);
   const [pmChecklistId, setPmChecklistId] = useState<number | null>(null);
 
@@ -237,6 +239,8 @@ export function EquipmentForm({
                 frequency: pmFrequency,
                 firstDueDate: pmFirstDue,
                 graceDays: Number(pmGrace) || 0,
+                // The vendor only counts while a contract is chosen above.
+                performedBy: hasContract ? pmBy : PERFORMED_BY.inHouse,
               }
             : undefined,
         notes: form.notes?.trim() || null,
@@ -644,6 +648,20 @@ export function EquipmentForm({
                   </select>
                 </label>
 
+                {hasContract && (
+                  <label className="stack">
+                    <span>Who does this PM</span>
+                    <select
+                      className="field"
+                      value={pmBy}
+                      onChange={(e) => setPmBy(Number(e.target.value))}
+                    >
+                      <option value={PERFORMED_BY.inHouse}>Our own team</option>
+                      <option value={PERFORMED_BY.vendor}>The maintenance contract vendor</option>
+                    </select>
+                  </label>
+                )}
+
                 <label className="stack">
                   <span>First PM due</span>
                   <input
@@ -671,6 +689,9 @@ export function EquipmentForm({
               <span className="muted">
                 Days of grace are how many days after a due date the PM can still be done before it
                 counts as overdue. The first PM appears on the work list as soon as you add the machine.
+                {hasContract && pmBy === PERFORMED_BY.vendor && (
+                  <> When the vendor has done it, record that and save their report on the PM.</>
+                )}
               </span>
 
               <PmDatePreview frequency={pmFrequency} anchor={pmFirstDue} />

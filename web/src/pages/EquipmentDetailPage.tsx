@@ -58,6 +58,10 @@ type History = {
     outOfRange: number;
     failedChecks: number;
     hasCertificate: boolean;
+    // 10 our own team, 20 the maintenance contract vendor, whose report is the record.
+    performedBy: number;
+    vendorName: string | null;
+    reportFiles: number;
   }[];
   workOrders: {
     id: number;
@@ -435,14 +439,28 @@ export function EquipmentDetailPage() {
                     {t.outOfRange} out of spec
                   </StatusPill>
                 )}
+                {t.performedBy === 20 && (
+                  <StatusPill tone="info" className="hist-flag">Vendor</StatusPill>
+                )}
+                {t.performedBy === 20 && t.reportFiles === 0 && (
+                  <StatusPill tone="warning" className="hist-flag">No report yet</StatusPill>
+                )}
               </div>
               <div className="muted hist-meta">
                 {t.status === 50
                   ? `Skipped — ${t.skipReason ?? 'no reason given'}`
-                  : `${formatDateTime(t.completedAtUtc)} · ${t.completedBy ?? 'unknown'}`}
+                  : t.performedBy === 20
+                    ? `${formatDateTime(t.completedAtUtc)} · done by ${t.vendorName ?? 'the vendor'}, recorded by ${t.completedBy ?? 'unknown'}`
+                    : `${formatDateTime(t.completedAtUtc)} · ${t.completedBy ?? 'unknown'}`}
                 {' · due '}{formatDate(t.dueDate)}
               </div>
             </div>
+
+            {t.performedBy === 20 && t.status === 40 && (
+              <Link className="btn btn-quiet" to={`/pm/${t.id}/do`} state={{ from: `/equipment/${e.id}` }}>
+                Report{t.reportFiles > 0 ? ` (${t.reportFiles})` : ''}
+              </Link>
+            )}
 
             {t.hasCertificate && (
               <button

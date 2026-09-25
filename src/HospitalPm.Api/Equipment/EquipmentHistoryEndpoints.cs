@@ -141,6 +141,12 @@ public static class EquipmentHistoryEndpoints
 
         var byTask = completions.ToDictionary(c => c.PmTaskId);
 
+        var reportCounts = await db.PmTaskAttachments.AsNoTracking()
+            .Where(a => closedIds.Contains(a.PmTaskId))
+            .GroupBy(a => a.PmTaskId)
+            .Select(g => new { TaskId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.TaskId, x => x.Count, ct);
+
         var completedPm = closedPm.Select(t => new
         {
             t.Id,
@@ -154,7 +160,11 @@ public static class EquipmentHistoryEndpoints
             // out of spec is the row someone needs to open.
             OutOfRange = byTask.TryGetValue(t.Id, out var c) ? c.OutOfRangeCount : 0,
             FailedChecks = byTask.TryGetValue(t.Id, out var f) ? f.FailedCheckCount : 0,
-            HasCertificate = byTask.ContainsKey(t.Id),
+            // A vendor's PM has no certificate of ours: their report is the record.
+            HasCertificate = byTask.TryGetValue(t.Id, out var cert) && cert.PerformedBy == PmPerformedBy.InHouse,
+            PerformedBy = byTask.TryGetValue(t.Id, out var by) ? by.PerformedBy : PmPerformedBy.InHouse,
+            VendorName = byTask.TryGetValue(t.Id, out var vn) ? vn.VendorName : null,
+            ReportFiles = reportCounts.GetValueOrDefault(t.Id),
         }).ToList();
 
         var workOrders = await db.WorkOrders.AsNoTracking()

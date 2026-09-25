@@ -126,6 +126,19 @@ public sealed class PmCompletion
 
     public string? Notes { get; set; }
 
+    /// <summary>
+    /// Who did the work. A vendor's PM has no checklist answers and no drawn signature: their
+    /// service report, attached to the PM, is the record, and <see cref="SignedByName"/> is
+    /// their engineer's name.
+    /// </summary>
+    public PmPerformedBy PerformedBy { get; set; } = PmPerformedBy.InHouse;
+
+    /// <summary>
+    /// The vendor's name as it was when this was recorded. Copied rather than read from the
+    /// machine, because the machine's contract can change and the record must not.
+    /// </summary>
+    public string? VendorName { get; set; }
+
     public DateTime CreatedAtUtc { get; set; }
 
     public PmTask? Task { get; set; }

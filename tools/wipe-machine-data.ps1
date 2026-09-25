@@ -88,6 +88,7 @@ ALTER TABLE diagnosis       DISABLE TRIGGER trg_diagnosis_immutable;
 
 DELETE FROM work_order_note;
 DELETE FROM work_order;
+DELETE FROM pm_task_attachment;
 DELETE FROM pm_completion;
 DELETE FROM pm_task;
 DELETE FROM pm_schedule;

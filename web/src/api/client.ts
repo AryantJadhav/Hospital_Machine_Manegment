@@ -142,6 +142,32 @@ export const api = {
   put: <T>(path: string, body: unknown) =>
     request<T>(path, { method: 'PUT', body: JSON.stringify(body) }),
   del: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+  /** Sends a form with files. The browser adds its own multipart boundary. */
+  postForm: <T>(path: string, form: FormData) => request<T>(path, { method: 'POST', body: form }),
+  /**
+   * Opens a saved file in a new tab. The file is fetched with the sign-in and shown from
+   * a temporary local address, because a plain link to it would arrive without the sign-in.
+   * The tab is opened first, in the click, or the browser takes a tab opened later for a pop-up.
+   */
+  view: async (path: string): Promise<void> => {
+    const tab = window.open('', '_blank');
+    try {
+      const send = () =>
+        fetch(path, { headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {} });
+      let res = await send();
+      if (res.status === 401 && (await refresh())) res = await send();
+      if (!res.ok) throw new ApiError(res.status, `Could not open the file (${res.status})`);
+
+      const url = URL.createObjectURL(await res.blob());
+      if (tab) tab.location.href = url;
+      else window.location.href = url;
+      // Left for a minute so the tab can load it, then let go of it.
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err) {
+      tab?.close();
+      throw err;
+    }
+  },
   upload: <T>(path: string, file: File) => {
     const form = new FormData();
     form.append('file', file);

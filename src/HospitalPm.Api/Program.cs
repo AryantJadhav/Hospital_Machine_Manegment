@@ -299,6 +299,7 @@ app.MapLabelEndpoints();
 app.MapChecklistEndpoints();
 app.MapPmEndpoints();
 app.MapPmExecutionEndpoints();
+app.MapPmVendorEndpoints();
 app.MapWorkOrderEndpoints();
 app.MapReportEndpoints();
 app.MapBackupEndpoints();

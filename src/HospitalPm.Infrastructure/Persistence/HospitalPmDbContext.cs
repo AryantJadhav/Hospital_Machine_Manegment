@@ -47,6 +47,10 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
 
     public DbSet<PmCompletion> PmCompletions => Set<PmCompletion>();
 
+    public DbSet<PmTaskAttachment> PmTaskAttachments => Set<PmTaskAttachment>();
+
+    public DbSet<PmTaskAttachmentData> PmTaskAttachmentData => Set<PmTaskAttachmentData>();
+
     public DbSet<WorkOrder> WorkOrders => Set<WorkOrder>();
 
     public DbSet<WorkOrderNote> WorkOrderNotes => Set<WorkOrderNote>();
@@ -116,6 +120,43 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
                 .OnDelete(DeleteBehavior.Restrict);
 
             e.HasIndex(x => x.CategoryId).HasDatabaseName("ix_equipment_type_category_category");
+        });
+
+        builder.Entity<PmTaskAttachment>(e =>
+        {
+            e.ToTable("pm_task_attachment");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.PmTaskId).HasColumnName("pm_task_id");
+            e.Property(x => x.FileName).HasColumnName("file_name").HasMaxLength(255).IsRequired();
+            e.Property(x => x.ContentType).HasColumnName("content_type").HasMaxLength(100).IsRequired();
+            e.Property(x => x.SizeBytes).HasColumnName("size_bytes");
+            e.Property(x => x.UploadedByUserId).HasColumnName("uploaded_by_user_id");
+            e.Property(x => x.UploadedAtUtc).HasColumnName("uploaded_at_utc").HasDefaultValueSql("now()");
+
+            // A completed PM cannot be deleted, so its files are never orphaned by that; the
+            // Restrict is what stops a task being removed while it still has any.
+            e.HasOne(x => x.Task)
+                .WithMany()
+                .HasForeignKey(x => x.PmTaskId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Data)
+                .WithOne(x => x.Attachment)
+                .HasForeignKey<PmTaskAttachmentData>(x => x.AttachmentId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(x => x.PmTaskId).HasDatabaseName("ix_pm_task_attachment_task");
+        });
+
+        builder.Entity<PmTaskAttachmentData>(e =>
+        {
+            e.ToTable("pm_task_attachment_data");
+            e.HasKey(x => x.AttachmentId);
+            e.Property(x => x.AttachmentId).HasColumnName("attachment_id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.Data).HasColumnName("data").IsRequired();
         });
 
         builder.Entity<ChecklistTemplate>(e =>
@@ -203,6 +244,7 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
             e.Property(x => x.AnchorDate).HasColumnName("anchor_date");
             e.Property(x => x.GraceDays).HasColumnName("grace_days");
             e.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(true);
+            e.Property(x => x.PerformedBy).HasColumnName("performed_by").HasConversion<int>().HasDefaultValue(PmPerformedBy.InHouse);
             e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").HasDefaultValueSql("now()");
             e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").HasDefaultValueSql("now()");
 
@@ -277,6 +319,8 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
             e.Property(x => x.PerformedAtUtc).HasColumnName("performed_at_utc");
             e.Property(x => x.ClientSubmissionId).HasColumnName("client_submission_id");
             e.Property(x => x.Notes).HasColumnName("notes");
+            e.Property(x => x.PerformedBy).HasColumnName("performed_by").HasConversion<int>().HasDefaultValue(PmPerformedBy.InHouse);
+            e.Property(x => x.VendorName).HasColumnName("vendor_name").HasMaxLength(200);
             e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").HasDefaultValueSql("now()");
 
             e.Property(x => x.Answers)

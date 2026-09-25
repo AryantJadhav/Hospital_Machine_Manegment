@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using HospitalPm.Domain.Checklists;
+using HospitalPm.Domain.Maintenance;
 using HospitalPm.Infrastructure.Maintenance;
 using HospitalPm.Infrastructure.Persistence;
 using HospitalPm.Infrastructure.Reports;
@@ -67,6 +68,8 @@ public sealed class DataExportService(
         {
             notes.Add(await SignaturesAsync(zip, ct));
         }
+
+        notes.AddRange(await ReportsAsync(zip, Person, ct));
 
         notes.Add(await WorkOrdersAsync(zip, Person, ct));
         notes.Add(await WorkOrderNotesAsync(zip, Person, ct));
@@ -346,6 +349,7 @@ public sealed class DataExportService(
         [
             "Task Id", "Asset Tag", "Checklist", "Checklist Version", "Due Date", "Performed", "Recorded",
             "Performed By", "Signed Name", "Notes", "Out Of Range", "Failed Checks",
+            "Carried Out By", "Vendor",
         ]);
 
         await EachBatchAsync(
@@ -356,7 +360,7 @@ public sealed class DataExportService(
                     c.Id, c.PmTaskId, c.ChecklistTemplateVersionId, c.Answers,
                     Tag = c.Task!.Equipment!.AssetTag, Checklist = c.Task!.Schedule!.ChecklistTemplate!.Name,
                     Due = c.Task!.DueDate, c.PerformedAtUtc, c.CompletedAtUtc,
-                    c.CompletedByUserId, c.SignedByName, c.Notes,
+                    c.CompletedByUserId, c.SignedByName, c.Notes, c.PerformedBy, c.VendorName,
                 }).ToListAsync(ct),
             c => c.Id,
             c => sheet.Row(
@@ -365,10 +369,12 @@ public sealed class DataExportService(
                 Day(c.Due), Instant(c.PerformedAtUtc ?? c.CompletedAtUtc), Instant(c.CompletedAtUtc),
                 person(c.CompletedByUserId), c.SignedByName, c.Notes,
                 Number(c.Answers.Count(a => a.Value.OutOfRange)),
-                Number(c.Answers.Count(a => a.Value.IsFailedCheck()))));
+                Number(c.Answers.Count(a => a.Value.IsFailedCheck())),
+                c.PerformedBy == PmPerformedBy.Vendor ? "Vendor" : "Our team", c.VendorName));
 
         return new FileNote("pm_completions.csv", sheet.Rows,
-            "One row per completed PM: who did it, when, and how many readings were out of range or checks failed.");
+            "One row per completed PM: who did it, when, and how many readings were out of range or checks failed. " +
+            "Carried Out By says whether our team or the maintenance contract vendor did it.");
     }
 
     private async Task<FileNote> AnswersAsync(
@@ -429,6 +435,62 @@ public sealed class DataExportService(
             });
 
         return new FileNote("signatures/", count, "The technician's signature for each completed PM, named by Task Id.");
+    }
+
+    /// <summary>
+    /// The service reports a maintenance contract vendor handed over, as the files they were
+    /// uploaded as, with a list saying which PM each belongs to. Without them an export would
+    /// say a vendor did a PM and hold nothing that shows it.
+    /// </summary>
+    private async Task<FileNote[]> ReportsAsync(ZipArchive zip, Func<int?, string> person, CancellationToken ct)
+    {
+        // The files first, then the list. A zip can have only one entry open at a time, and the
+        // list is one, so the rows are kept (they are only descriptions) and written after.
+        var rows = new List<string?[]>();
+
+        await EachBatchAsync(
+            // A few at a time: each file can be ten megabytes.
+            last => db.PmTaskAttachments.AsNoTracking()
+                .Where(a => a.Id > last).OrderBy(a => a.Id).Take(5)
+                .Select(a => new
+                {
+                    a.Id, a.PmTaskId, a.FileName, a.ContentType, a.SizeBytes, a.UploadedByUserId, a.UploadedAtUtc,
+                    Tag = a.Task!.Equipment!.AssetTag, Due = a.Task!.DueDate,
+                    a.Data!.Data,
+                }).ToListAsync(ct),
+            a => a.Id,
+            a =>
+            {
+                var path = $"pm_reports/task-{a.PmTaskId}-file-{a.Id}-{a.FileName}";
+                var entry = zip.CreateEntry(path, CompressionLevel.NoCompression);
+                using (var stream = entry.Open())
+                {
+                    stream.Write(a.Data);
+                }
+
+                rows.Add(
+                [
+                    Number(a.Id), Number(a.PmTaskId), a.Tag, Day(a.Due), a.FileName, a.ContentType,
+                    Number(a.SizeBytes), person(a.UploadedByUserId), Instant(a.UploadedAtUtc), path,
+                ]);
+            });
+
+        await using var sheet = new Sheet(zip, "pm_reports.csv",
+        [
+            "File Id", "Task Id", "Asset Tag", "Due Date", "File Name", "Type", "Size (bytes)",
+            "Uploaded By", "Uploaded", "File In This Export",
+        ]);
+
+        foreach (var row in rows)
+        {
+            sheet.Row(row);
+        }
+
+        return
+        [
+            new FileNote("pm_reports.csv", sheet.Rows, "Each report file a maintenance contract vendor's PM was saved with, and which PM it belongs to."),
+            new FileNote("pm_reports/", rows.Count, "The report files themselves (PDFs and photos), named by Task Id."),
+        ];
     }
 
     private async Task<FileNote> WorkOrdersAsync(ZipArchive zip, Func<int?, string> person, CancellationToken ct)

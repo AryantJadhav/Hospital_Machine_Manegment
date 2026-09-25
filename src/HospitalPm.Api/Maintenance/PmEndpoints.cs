@@ -15,7 +15,10 @@ public sealed record ScheduleRequest(
     PmFrequency Frequency,
     int IntervalDays,
     DateOnly AnchorDate,
-    int GraceDays);
+    int GraceDays,
+    // Who does the PM. Left out, the hospital's own team. The vendor only on a machine that
+    // has a maintenance contract (AMC or CMC).
+    PmPerformedBy PerformedBy = PmPerformedBy.InHouse);
 
 /// <summary>
 /// Schedules one checklist across a whole equipment type at once.
@@ -110,7 +113,8 @@ public sealed record TaskResponse(
     string ChecklistName,
     DateOnly DueDate,
     PmTaskStatus Status,
-    int DaysLate);
+    int DaysLate,
+    PmPerformedBy PerformedBy);
 
 public static class PmEndpoints
 {
@@ -235,7 +239,8 @@ public static class PmEndpoints
                 t.Status,
                 // Computed here rather than stored: a stored "days late" is
                 // wrong the moment the clock ticks past midnight.
-                t.DueDate < today ? today.DayNumber - t.DueDate.DayNumber : 0))
+                t.DueDate < today ? today.DayNumber - t.DueDate.DayNumber : 0,
+                t.Schedule!.PerformedBy))
             .ToListAsync(ct);
 
         return Results.Ok(new { items, total, page, pageSize });
@@ -588,6 +593,21 @@ public static class PmEndpoints
             return Results.BadRequest(new { error = "A custom frequency needs an interval in days." });
         }
 
+        if (!Enum.IsDefined(request.PerformedBy))
+        {
+            return Results.BadRequest(new { error = "Say whether the hospital's team or the vendor does this PM." });
+        }
+
+        if (request.PerformedBy == PmPerformedBy.Vendor
+            && !await db.Equipment.AnyAsync(
+                e => e.Id == request.EquipmentId && e.MaintenanceContractType != null, ct))
+        {
+            return Results.BadRequest(new
+            {
+                error = "The vendor can only do the PM on a machine that has a maintenance contract (AMC or CMC).",
+            });
+        }
+
         if (await db.PmSchedules.AnyAsync(
                 s => s.EquipmentId == request.EquipmentId
                      && s.ChecklistTemplateId == request.ChecklistTemplateId, ct))
@@ -606,6 +626,7 @@ public static class PmEndpoints
             IntervalDays = request.Frequency == PmFrequency.Custom ? request.IntervalDays : 0,
             AnchorDate = request.AnchorDate,
             GraceDays = request.GraceDays,
+            PerformedBy = request.PerformedBy,
         };
 
         db.PmSchedules.Add(schedule);

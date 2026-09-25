@@ -13,5 +13,8 @@ export const PM_FREQUENCIES = [
   { value: 40, label: 'Yearly — once a year' },
 ];
 
+/** Who does a PM. The numbers are the server's PmPerformedBy values. */
+export const PERFORMED_BY = { inHouse: 10, vendor: 20 } as const;
+
 /** A number of days between PMs, set on the PM pages. Never offered on the form, and it has no preview. */
 export const CUSTOM_FREQUENCY = 90;

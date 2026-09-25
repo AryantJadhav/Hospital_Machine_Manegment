@@ -41,6 +41,16 @@ public static class ReportEndpoints
             return Results.NotFound(new { error = "This PM has not been completed." });
         }
 
+        if (completion.PerformedBy == HospitalPm.Domain.Maintenance.PmPerformedBy.Vendor)
+        {
+            // There are no checklist answers or drawn signature to put on it. The vendor's own
+            // report, saved against the PM, is the record.
+            return Results.Conflict(new
+            {
+                error = "This PM was done by the maintenance contract vendor. Its report is the record; open the PM to see it.",
+            });
+        }
+
         var task = await db.PmTasks.AsNoTracking()
             .Where(t => t.Id == taskId)
             .Select(t => new

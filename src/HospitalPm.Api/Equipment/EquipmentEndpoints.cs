@@ -26,7 +26,10 @@ public sealed record NewMachinePmRequest(
     int ChecklistTemplateId,
     PmFrequency Frequency,
     DateOnly FirstDueDate,
-    int GraceDays = 7);
+    int GraceDays = 7,
+    // Who does it. The vendor only when this same request gives the machine a maintenance
+    // contract (AMC or CMC).
+    PmPerformedBy PerformedBy = PmPerformedBy.InHouse);
 
 public sealed record EquipmentRequest(
     string AssetTag,
@@ -332,7 +335,7 @@ public static class EquipmentEndpoints
 
         // Checked before anything is written, so a PM that cannot be scheduled does not
         // leave the machine added without it.
-        var pmError = await ValidatePmAsync(request.Pm, request.EquipmentTypeId, db, ct);
+        var pmError = await ValidatePmAsync(request, db, ct);
         if (pmError is not null)
         {
             return pmError;
@@ -384,6 +387,7 @@ public static class EquipmentEndpoints
                 IntervalDays = 0,
                 AnchorDate = pm.FirstDueDate,
                 GraceDays = pm.GraceDays,
+                PerformedBy = pm.PerformedBy,
             });
         }
 
@@ -562,11 +566,29 @@ public static class EquipmentEndpoints
     }
 
     private static async Task<IResult?> ValidatePmAsync(
-        NewMachinePmRequest? pm, int equipmentTypeId, HospitalPmDbContext db, CancellationToken ct)
+        EquipmentRequest request, HospitalPmDbContext db, CancellationToken ct)
     {
+        var pm = request.Pm;
+        var equipmentTypeId = request.EquipmentTypeId;
+
         if (pm is null)
         {
             return null;
+        }
+
+        if (!Enum.IsDefined(pm.PerformedBy))
+        {
+            return Results.BadRequest(new { error = "Say whether the hospital's team or the vendor does this PM." });
+        }
+
+        // The contract is given in this same request, so it is what is checked here.
+        if (pm.PerformedBy == PmPerformedBy.Vendor
+            && !(request.HasMaintenanceContract == true && request.MaintenanceContractType is not null))
+        {
+            return Results.BadRequest(new
+            {
+                error = "The vendor can only do the PM on a machine that has a maintenance contract (AMC or CMC).",
+            });
         }
 
         // Custom is left to the PM pages, which take an interval in days. This form is

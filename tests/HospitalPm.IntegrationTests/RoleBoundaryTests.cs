@@ -100,6 +100,9 @@ public sealed class RoleBoundaryTests(PostgresFixture fixture) : IAsyncLifetime,
         { "POST", "/api/pm/schedules" },
         { "POST", "/api/pm/schedules/bulk" },
         { "PUT", $"/api/pm/schedules/{Missing}" },
+
+        // A report is evidence, and one that should never have been uploaded has to be removable.
+        { "DELETE", $"/api/pm/attachments/{Missing}" },
         { "POST", "/api/pm/generate" },
 
         // The register itself.
@@ -165,6 +168,12 @@ public sealed class RoleBoundaryTests(PostgresFixture fixture) : IAsyncLifetime,
         { "GET", "/api/pm/tasks" },
         { "GET", "/api/pm/summary" },
         { "GET", "/api/pm/reminders" },
+
+        // A PM the maintenance contract vendor does: recording it, and its report.
+        { "GET", $"/api/pm/tasks/{Missing}/vendor" },
+        { "POST", $"/api/pm/tasks/{Missing}/complete-by-vendor" },
+        { "POST", $"/api/pm/tasks/{Missing}/attachments" },
+        { "GET", $"/api/pm/attachments/{Missing}" },
         { "GET", $"/api/pm/tasks/{Missing}/form" },
         { "POST", $"/api/pm/tasks/{Missing}/complete" },
 
