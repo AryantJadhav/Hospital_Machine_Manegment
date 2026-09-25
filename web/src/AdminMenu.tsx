@@ -3,7 +3,6 @@ import { NavLink, useLocation } from 'react-router-dom';
 
 const ITEMS = [
   { to: '/compliance', label: 'Compliance report' },
-  { to: '/equipment-types', label: 'Equipment types' },
   { to: '/import', label: 'Import' },
   { to: '/export', label: 'Export data' },
   { to: '/staff', label: 'Staff' },

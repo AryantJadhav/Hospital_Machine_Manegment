@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 
 /**
@@ -235,6 +236,15 @@ export function EquipmentForm({
           Decides which PM checklist applies, so it is worth getting right.
         </span>
       </label>
+
+      {/* Only when adding a machine: that is when a missing type is found out. It sits
+          outside the label so it is not read out as part of the dropdown's name. */}
+      {!editing && (
+        <p className="muted" style={{ margin: 0 }}>
+          Not in the list? <Link to="/equipment-types">Add or edit equipment types</Link>. This form
+          closes, so come back and add the machine afterwards.
+        </p>
+      )}
 
       <label className="stack">
         <span>Location</span>
