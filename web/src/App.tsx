@@ -28,6 +28,7 @@ import { DiagnosisPage, DiagnosisViewPage } from './pages/DiagnosisPage';
 import { RoundsPage } from './pages/RoundsPage';
 import { AdminMenu } from './AdminMenu';
 import { LicenceBanner } from './LicenceBanner';
+import { NotificationBell } from './NotificationBell';
 import { ThemeToggle } from './ThemeToggle';
 import { titleForPath, usePageTitle } from './pageTitle';
 import './App.css';
@@ -109,6 +110,8 @@ function Shell() {
               {isAdmin ? 'Administrator' : 'Employee'}
             </span>
           </span>
+          {/* For everyone signed in, not only an Administrator: a PM is the department's work. */}
+          <NotificationBell />
           <ThemeToggle />
           <button
             className="btn btn-quiet"

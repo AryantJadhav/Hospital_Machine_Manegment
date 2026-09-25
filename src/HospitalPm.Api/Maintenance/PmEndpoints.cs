@@ -74,6 +74,32 @@ public sealed record ScheduleResponse(
     // overdue date would count new PMs from the past.
     DateOnly? NextUpcomingDate = null);
 
+/// <summary>One PM that somebody needs to know about.</summary>
+public sealed record ReminderItem(
+    int TaskId,
+    int EquipmentId,
+    string AssetTag,
+    string EquipmentTypeName,
+    string LocationName,
+    string ChecklistName,
+    DateOnly DueDate,
+    PmTaskStatus Status,
+    // Days from today to the due date. Negative once it has passed.
+    int DaysFromToday);
+
+/// <summary>
+/// What the bell in the top bar shows.
+///
+/// The counts are of everything that qualifies; the lists are the first few of each, so a
+/// hospital with 300 overdue PMs is not sent 300 rows every time somebody looks.
+/// </summary>
+public sealed record RemindersResponse(
+    int LeadDays,
+    int OverdueCount,
+    int UpcomingCount,
+    IReadOnlyList<ReminderItem> Overdue,
+    IReadOnlyList<ReminderItem> Upcoming);
+
 public sealed record TaskResponse(
     int Id,
     int PmScheduleId,
@@ -99,6 +125,7 @@ public static class PmEndpoints
         group.MapGet("/schedules", SchedulesAsync);
         group.MapGet("/summary", SummaryAsync);
         group.MapGet("/preview", Preview);
+        group.MapGet("/reminders", RemindersAsync);
 
         var owner = group.MapGroup(string.Empty)
             .RequireAuthorization(p => p.RequireRole(Roles.Admin));
@@ -431,6 +458,68 @@ public static class PmEndpoints
             SkippedNotYetInService: skippedNotYetInService,
             Considered: equipment.Count));
     }
+
+    /// <summary>
+    /// The PMs everyone should know about: those already overdue, and those that fall due
+    /// within the reminder lead time (seven days by default).
+    ///
+    /// Open to every role, and the same for all of them. PMs are not assigned to a person:
+    /// the work list is the department's, so the reminder is too. Worked out when asked,
+    /// from the tasks themselves, so nothing has to be sent, stored or marked as read, and
+    /// it needs no mail server, no internet and no new background job.
+    /// </summary>
+    private static async Task<IResult> RemindersAsync(
+        HospitalPmDbContext db,
+        HospitalClock clock,
+        Microsoft.Extensions.Options.IOptions<ScheduleOptions> options,
+        CancellationToken ct)
+    {
+        const int MaxListed = 25;
+
+        var today = clock.Today();
+        var leadDays = Math.Max(0, options.Value.ReminderLeadDays);
+        var until = today.AddDays(leadDays);
+
+        var overdue = db.PmTasks.AsNoTracking().Where(t => t.Status == PmTaskStatus.Overdue);
+
+        // Due, or still to come, but not past its grace. Completed and skipped are done.
+        var upcoming = db.PmTasks.AsNoTracking()
+            .Where(t => (t.Status == PmTaskStatus.Due || t.Status == PmTaskStatus.Scheduled)
+                        && t.DueDate <= until);
+
+        var overdueCount = await overdue.CountAsync(ct);
+        var upcomingCount = await upcoming.CountAsync(ct);
+
+        // The most overdue first, then the soonest, which is the order somebody would act in.
+        // Ordered and cut before they are shaped: EF cannot order by a field of a record
+        // that has just been built in the same query.
+        var overdueRows = await Project(
+            overdue.OrderBy(t => t.DueDate).ThenBy(t => t.Id).Take(MaxListed)).ToListAsync(ct);
+        var upcomingRows = await Project(
+            upcoming.OrderBy(t => t.DueDate).ThenBy(t => t.Id).Take(MaxListed)).ToListAsync(ct);
+
+        ReminderItem Item(ReminderRow r) => new(
+            r.TaskId, r.EquipmentId, r.AssetTag, r.EquipmentTypeName, r.LocationName, r.ChecklistName,
+            r.DueDate, r.Status, r.DueDate.DayNumber - today.DayNumber);
+
+        return Results.Ok(new RemindersResponse(
+            leadDays, overdueCount, upcomingCount,
+            overdueRows.Select(Item).ToList(), upcomingRows.Select(Item).ToList()));
+    }
+
+    private sealed record ReminderRow(
+        int TaskId, int EquipmentId, string AssetTag, string EquipmentTypeName, string LocationName,
+        string ChecklistName, DateOnly DueDate, PmTaskStatus Status);
+
+    private static IQueryable<ReminderRow> Project(IQueryable<PmTask> tasks) => tasks.Select(t => new ReminderRow(
+        t.Id,
+        t.EquipmentId,
+        t.Equipment!.AssetTag,
+        t.Equipment!.EquipmentType!.Name,
+        t.Equipment!.Location!.Name,
+        t.Schedule!.ChecklistTemplate!.Name,
+        t.DueDate,
+        t.Status));
 
     /// <summary>
     /// The dates a schedule would fall due on in its first year, worked out by the same

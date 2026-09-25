@@ -27,6 +27,13 @@ public sealed class ScheduleOptions
     /// of rows nobody will look at.
     /// </summary>
     public int HorizonDays { get; set; } = 60;
+
+    /// <summary>
+    /// How many days before a PM's due date everyone starts being reminded of it. A week
+    /// is long enough to arrange the machine and the person, and short enough that the
+    /// reminder is about this week's work rather than next month's.
+    /// </summary>
+    public int ReminderLeadDays { get; set; } = 7;
 }
 
 /// <summary>

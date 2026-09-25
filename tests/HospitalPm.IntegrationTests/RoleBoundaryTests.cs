@@ -164,6 +164,7 @@ public sealed class RoleBoundaryTests(PostgresFixture fixture) : IAsyncLifetime,
         // The work list, and doing the work on it.
         { "GET", "/api/pm/tasks" },
         { "GET", "/api/pm/summary" },
+        { "GET", "/api/pm/reminders" },
         { "GET", $"/api/pm/tasks/{Missing}/form" },
         { "POST", $"/api/pm/tasks/{Missing}/complete" },
 
