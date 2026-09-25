@@ -186,12 +186,13 @@ public sealed class DataExportService(
     {
         // The first eleven columns are the ones the import template uses, in its
         // order, so this file can be opened in Excel, saved as .xlsx and imported
-        // into another installation.
+        // into another installation. Criticality comes last so those stay put.
         await using var sheet = new Sheet(zip, "equipment.csv",
         [
             "Asset Tag", "Serial Number", "Equipment Type", "Location", "Manufacturer", "Model", "Status",
             "Purchase Date", "Installation Date", "Warranty Expiry", "Notes",
             "Equipment Type Code", "Location Name", "Created", "Last Changed",
+            "Criticality",
         ]);
 
         await EachBatchAsync(
@@ -204,13 +205,14 @@ public sealed class DataExportService(
                     LocationCode = e.Location!.Code, LocationName = e.Location!.Name,
                     e.Manufacturer, e.Model, e.Status,
                     e.PurchaseDate, e.InstallationDate, e.WarrantyExpiryDate, e.Notes,
-                    e.CreatedAtUtc, e.UpdatedAtUtc,
+                    e.CreatedAtUtc, e.UpdatedAtUtc, e.Criticality,
                 }).ToListAsync(ct),
             e => e.Id,
             e => sheet.Row(
                 e.AssetTag, e.SerialNumber, e.Type, e.LocationCode, e.Manufacturer, e.Model, e.Status.ToString(),
                 Day(e.PurchaseDate), Day(e.InstallationDate), Day(e.WarrantyExpiryDate), e.Notes,
-                e.TypeCode, e.LocationName, Instant(e.CreatedAtUtc), Instant(e.UpdatedAtUtc)));
+                e.TypeCode, e.LocationName, Instant(e.CreatedAtUtc), Instant(e.UpdatedAtUtc),
+                e.Criticality?.ToString()));
 
         return new FileNote("equipment.csv", sheet.Rows,
             "The equipment register. The first eleven columns match the import template.");

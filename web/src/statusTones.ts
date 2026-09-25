@@ -14,6 +14,22 @@ export type Look = { tone: Tone; icon?: 'pause'; strong?: boolean };
 
 const T = (tone: Tone, extra: Omit<Look, 'tone'> = {}): Look => ({ tone, ...extra });
 
+/**
+ * How much care depends on a machine, as a word and a tone. Critical is the one to
+ * notice, semi-critical is the one to keep an eye on, and non-critical is inert.
+ */
+export const CRITICALITY_LABEL: Record<number, string> = {
+  30: 'Critical',
+  20: 'Semi-critical',
+  10: 'Non-critical',
+};
+
+export const CRITICALITY_LOOK: Record<number, Look> = {
+  30: T('danger'),
+  20: T('warning'),
+  10: T('neutral'),
+};
+
 /** Equipment: In store, In use, Under repair, Condemned, Disposed. */
 export const EQUIPMENT_LOOK: Record<number, Look> = {
   10: T('neutral'),

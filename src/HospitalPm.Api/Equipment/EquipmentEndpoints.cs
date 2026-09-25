@@ -29,7 +29,11 @@ public sealed record EquipmentRequest(
     DateOnly? PurchaseDate,
     DateOnly? InstallationDate,
     DateOnly? WarrantyExpiryDate,
-    string? Notes);
+    string? Notes,
+    // Optional for the same reason as Status: an older client, or a spreadsheet
+    // import, does not send it. A new machine is then left unclassified, and an
+    // existing one keeps the level it has.
+    EquipmentCriticality? Criticality = null);
 
 public sealed record EquipmentResponse(
     int Id,
@@ -45,7 +49,8 @@ public sealed record EquipmentResponse(
     DateOnly? PurchaseDate,
     DateOnly? InstallationDate,
     DateOnly? WarrantyExpiryDate,
-    string? Notes);
+    string? Notes,
+    EquipmentCriticality? Criticality);
 
 public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Total, int Page, int PageSize);
 
@@ -88,6 +93,7 @@ public static class EquipmentEndpoints
         [FromQuery] int? locationId,
         [FromQuery] int? equipmentTypeId,
         [FromQuery] EquipmentStatus? status,
+        [FromQuery] EquipmentCriticality? criticality,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
         CancellationToken ct = default)
@@ -136,6 +142,11 @@ public static class EquipmentEndpoints
             query = query.Where(e => e.Status == status);
         }
 
+        if (criticality is not null)
+        {
+            query = query.Where(e => e.Criticality == criticality);
+        }
+
         var total = await query.CountAsync(ct);
 
         var items = await query
@@ -156,7 +167,8 @@ public static class EquipmentEndpoints
                 e.PurchaseDate,
                 e.InstallationDate,
                 e.WarrantyExpiryDate,
-                e.Notes))
+                e.Notes,
+                e.Criticality))
             .ToListAsync(ct);
 
         return Results.Ok(new PagedResult<EquipmentResponse>(items, total, page, pageSize));
@@ -180,7 +192,8 @@ public static class EquipmentEndpoints
                 e.PurchaseDate,
                 e.InstallationDate,
                 e.WarrantyExpiryDate,
-                e.Notes))
+                e.Notes,
+                e.Criticality))
             .SingleOrDefaultAsync(ct);
 
         return item is null ? Results.NotFound() : Results.Ok(item);
@@ -211,7 +224,8 @@ public static class EquipmentEndpoints
                 e.PurchaseDate,
                 e.InstallationDate,
                 e.WarrantyExpiryDate,
-                e.Notes))
+                e.Notes,
+                e.Criticality))
             .SingleOrDefaultAsync(ct);
 
         return item is null ? Results.NotFound() : Results.Ok(item);
@@ -256,6 +270,7 @@ public static class EquipmentEndpoints
             InstallationDate = request.InstallationDate,
             WarrantyExpiryDate = request.WarrantyExpiryDate,
             Notes = request.Notes,
+            Criticality = request.Criticality,
         };
 
         db.Equipment.Add(entity);
@@ -332,6 +347,7 @@ public static class EquipmentEndpoints
         entity.InstallationDate = request.InstallationDate;
         entity.WarrantyExpiryDate = request.WarrantyExpiryDate;
         entity.Notes = request.Notes;
+        entity.Criticality = request.Criticality ?? entity.Criticality;
 
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
@@ -367,6 +383,11 @@ public static class EquipmentEndpoints
         if (request.Status is { } status && !Enum.IsDefined(status))
         {
             return Results.BadRequest(new { error = "Unknown status." });
+        }
+
+        if (request.Criticality is { } criticality && !Enum.IsDefined(criticality))
+        {
+            return Results.BadRequest(new { error = "Unknown criticality." });
         }
 
         if (!await db.EquipmentTypes.AnyAsync(t => t.Id == request.EquipmentTypeId, ct))

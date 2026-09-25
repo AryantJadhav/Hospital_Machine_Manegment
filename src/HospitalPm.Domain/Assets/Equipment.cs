@@ -48,6 +48,13 @@ public sealed class Equipment
 
     public EquipmentStatus Status { get; set; } = EquipmentStatus.InService;
 
+    /// <summary>
+    /// Critical, semi-critical or non-critical. Null for a machine nobody has
+    /// classified yet, which is every machine registered before this field
+    /// existed and any imported from a spreadsheet that has no such column.
+    /// </summary>
+    public EquipmentCriticality? Criticality { get; set; }
+
     public DateOnly? PurchaseDate { get; set; }
 
     public DateOnly? InstallationDate { get; set; }

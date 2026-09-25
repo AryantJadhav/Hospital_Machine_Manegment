@@ -10,7 +10,7 @@ import { useHandoff } from '../handoff';
 import { HandoffNotice } from '../HandoffNotice';
 import { StatusPill } from '../StatusPill';
 import { Tile } from '../Tile';
-import { DIAGNOSIS_LOOK, DIAGNOSIS_WORDS, EQUIPMENT_LOOK, PM_LOOK, PRIORITY_LOOK, WORK_ORDER_LOOK } from '../statusTones';
+import { CRITICALITY_LABEL, CRITICALITY_LOOK, DIAGNOSIS_LOOK, DIAGNOSIS_WORDS, EQUIPMENT_LOOK, PM_LOOK, PRIORITY_LOOK, WORK_ORDER_LOOK } from '../statusTones';
 
 type History = {
   equipment: {
@@ -20,6 +20,7 @@ type History = {
     manufacturer: string | null;
     model: string | null;
     status: number;
+    criticality: number | null;
     purchaseDate: string | null;
     installationDate: string | null;
     warrantyExpiryDate: string | null;
@@ -268,6 +269,7 @@ export function EquipmentDetailPage() {
             manufacturer: e.manufacturer ?? null,
             model: e.model ?? null,
             status: e.status,
+            criticality: e.criticality ?? null,
             purchaseDate: e.purchaseDate ?? null,
             installationDate: e.installationDate ?? null,
             warrantyExpiryDate: e.warrantyExpiryDate ?? null,
@@ -283,6 +285,9 @@ export function EquipmentDetailPage() {
 
       <div className="row">
         <StatusPill look={EQUIPMENT_LOOK[e.status]}>{EQUIPMENT_STATUS[e.status] ?? '—'}</StatusPill>
+        {e.criticality != null && (
+          <StatusPill look={CRITICALITY_LOOK[e.criticality]}>{CRITICALITY_LABEL[e.criticality] ?? '—'}</StatusPill>
+        )}
         {data.summary.currentlyDown && <StatusPill tone="danger">Currently down</StatusPill>}
         {data.summary.overduePmCount > 0 && (
           <StatusPill tone="danger">{data.summary.overduePmCount} PM overdue</StatusPill>

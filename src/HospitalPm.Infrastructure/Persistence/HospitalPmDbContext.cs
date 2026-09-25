@@ -501,6 +501,7 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
             e.Property(x => x.Manufacturer).HasColumnName("manufacturer").HasMaxLength(200);
             e.Property(x => x.Model).HasColumnName("model").HasMaxLength(200);
             e.Property(x => x.Status).HasColumnName("status").HasConversion<int>();
+            e.Property(x => x.Criticality).HasColumnName("criticality").HasConversion<int?>();
             e.Property(x => x.PurchaseDate).HasColumnName("purchase_date");
             e.Property(x => x.InstallationDate).HasColumnName("installation_date");
             e.Property(x => x.WarrantyExpiryDate).HasColumnName("warranty_expiry_date");

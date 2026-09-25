@@ -25,6 +25,7 @@ export type EquipmentDraft = {
   manufacturer: string | null;
   model: string | null;
   status: number;
+  criticality: number | null;
   purchaseDate: string | null;
   installationDate: string | null;
   warrantyExpiryDate: string | null;
@@ -44,6 +45,13 @@ const STATUSES = [
   { value: 10, label: 'In store — received, not yet commissioned' },
   { value: 20, label: 'In use' },
   { value: 30, label: 'Under repair' },
+];
+
+// Most serious first, which is the order people think of them in.
+const CRITICALITIES = [
+  { value: 30, label: 'Critical — its failure puts a patient at risk' },
+  { value: 20, label: 'Semi-critical — its failure delays or degrades care' },
+  { value: 10, label: 'Non-critical — its failure does not affect care' },
 ];
 
 export function EquipmentForm({
@@ -69,6 +77,7 @@ export function EquipmentForm({
       manufacturer: null,
       model: null,
       status: 20,
+      criticality: null,
       purchaseDate: null,
       installationDate: null,
       warrantyExpiryDate: null,
@@ -108,6 +117,7 @@ export function EquipmentForm({
         manufacturer: form.manufacturer?.trim() || null,
         model: form.model?.trim() || null,
         status: Number(form.status),
+        criticality: Number(form.criticality),
         purchaseDate: form.purchaseDate || null,
         installationDate: form.installationDate || null,
         warrantyExpiryDate: form.warrantyExpiryDate || null,
@@ -219,6 +229,23 @@ export function EquipmentForm({
         >
           {STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
         </select>
+      </label>
+
+      <label className="stack">
+        <span>Criticality</span>
+        <select
+          className="field"
+          required
+          value={form.criticality ?? ''}
+          onChange={(e) => set('criticality', e.target.value ? Number(e.target.value) : null)}
+        >
+          <option value="">Choose…</option>
+          {CRITICALITIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+        </select>
+        <span className="muted">
+          How much a patient&apos;s care depends on this machine working. It says how closely the
+          machine should be maintained; it is not about any patient.
+        </span>
       </label>
 
       <div style={{ display: 'grid', gap: '0.75rem', gridTemplateColumns: 'repeat(auto-fit, minmax(12rem, 1fr))' }}>

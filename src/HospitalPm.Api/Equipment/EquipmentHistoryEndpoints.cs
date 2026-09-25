@@ -47,6 +47,7 @@ public static class EquipmentHistoryEndpoints
                 e.Manufacturer,
                 e.Model,
                 e.Status,
+                e.Criticality,
                 e.PurchaseDate,
                 e.InstallationDate,
                 e.WarrantyExpiryDate,

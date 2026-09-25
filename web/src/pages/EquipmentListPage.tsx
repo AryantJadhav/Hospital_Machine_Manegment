@@ -5,7 +5,7 @@ import { useAuth } from '../auth/useAuth';
 import { ROLES } from '../auth/context';
 import { EquipmentForm } from './EquipmentForm';
 import { StatusPill } from '../StatusPill';
-import { EQUIPMENT_LOOK } from '../statusTones';
+import { CRITICALITY_LABEL, CRITICALITY_LOOK, EQUIPMENT_LOOK } from '../statusTones';
 
 type Equipment = {
   id: number;
@@ -18,6 +18,7 @@ type Equipment = {
   manufacturer: string | null;
   model: string | null;
   status: number;
+  criticality: number | null;
   purchaseDate: string | null;
   warrantyExpiryDate: string | null;
 };
@@ -261,16 +262,17 @@ export function EquipmentListPage() {
               <th>Manufacturer</th>
               <th>Serial</th>
               <th>Status</th>
+              <th>Criticality</th>
             </tr>
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={canPrint ? 7 : 6} className="empty">Loading…</td></tr>
+              <tr><td colSpan={canPrint ? 8 : 7} className="empty">Loading…</td></tr>
             )}
 
             {!loading && data?.items.length === 0 && (
               <tr>
-                <td colSpan={canPrint ? 7 : 6} className="empty">
+                <td colSpan={canPrint ? 8 : 7} className="empty">
                   {hasFilters
                     ? 'No equipment matches these filters.'
                     : 'The register is empty. Import a spreadsheet to get started.'}
@@ -299,6 +301,15 @@ export function EquipmentListPage() {
                 <td className="mono">{e.serialNumber ?? <span className="muted">—</span>}</td>
                 <td>
                   <StatusPill look={EQUIPMENT_LOOK[e.status]}>{STATUS[e.status] ?? 'Unknown'}</StatusPill>
+                </td>
+                <td>
+                  {e.criticality != null ? (
+                    <StatusPill look={CRITICALITY_LOOK[e.criticality]}>
+                      {CRITICALITY_LABEL[e.criticality] ?? 'Unknown'}
+                    </StatusPill>
+                  ) : (
+                    <span className="muted">Not set</span>
+                  )}
                 </td>
               </tr>
             ))}
