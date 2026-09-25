@@ -96,16 +96,3 @@ export const UPDATE_LOOK: Record<string, Look> = {
   InstallerAltered: T('danger'),
   NotOurs: T('danger'),
 };
-
-/** The verdict of a daily check: Working, Needs attention, Not working. */
-export const DIAGNOSIS_LOOK: Record<number, Look> = {
-  10: T('success'),
-  20: T('warning'),
-  30: T('danger'),
-};
-
-export const DIAGNOSIS_WORDS: Record<number, string> = {
-  10: 'Working',
-  20: 'Needs attention',
-  30: 'Not working',
-};

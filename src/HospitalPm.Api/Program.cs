@@ -293,7 +293,6 @@ app.MapLookupEndpoints();
 app.MapEquipmentTypeEndpoints();
 app.MapEquipmentHistoryEndpoints();
 app.MapEquipmentMoveEndpoints();
-app.MapDiagnosisEndpoints();
 app.MapLocationEndpoints();
 app.MapLabelEndpoints();
 app.MapChecklistEndpoints();

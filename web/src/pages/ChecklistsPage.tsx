@@ -40,7 +40,6 @@ type Template = {
   kind: number;
 };
 
-const DIAGNOSIS = 20;
 
 type ItemType = 10 | 20 | 30 | 40 | 50;
 
@@ -208,9 +207,8 @@ export function ChecklistsPage() {
         <div>
           <h1>Checklists</h1>
           <p className="muted">
-            What a technician is asked to check: on a PM round, and in the everyday check of a
-            machine. A type can have one of each. Publishing freezes a checklist so past records
-            stay readable.
+            What a technician is asked to check on a PM. A type can have one. Publishing freezes a
+            checklist so past records stay readable.
           </p>
         </div>
         {canAuthor && (
@@ -291,7 +289,6 @@ export function ChecklistsPage() {
                 <td>
                   <div>
                     {t.name}
-                    {t.kind === DIAGNOSIS && <StatusPill tone="info" className="hist-flag">Daily check</StatusPill>}
                   </div>
                   <div className="mono muted">{t.code}</div>
                 </td>
@@ -312,7 +309,7 @@ export function ChecklistsPage() {
                       action belongs beside the thing it acts on. Only once
                       published — scheduling a draft would promise a technician
                       work with no questions in it. */}
-                  {canAuthor && t.publishedVersionNo !== null && t.kind !== DIAGNOSIS && (
+                  {canAuthor && t.publishedVersionNo !== null && (
                     <button className="btn btn-quiet" onClick={() => setScheduling(t)}>
                       Schedule…
                     </button>
@@ -545,7 +542,8 @@ function TemplateForm({
   onSaved: (createdId: number) => void | Promise<void>;
   onError: (msg: string | null) => void;
 }) {
-  const [kind, setKind] = useState(10);
+  // Every checklist is a PM checklist; the everyday check that used a second kind is gone.
+  const kind = 10;
   const [equipmentTypeId, setEquipmentTypeId] = useState('');
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
@@ -584,19 +582,6 @@ function TemplateForm({
   return (
     <form className="card stack" onSubmit={submit}>
       <h2 style={{ margin: 0, fontSize: '1.05rem' }}>New checklist</h2>
-
-      <label className="stack">
-        <span>What it is for</span>
-        <select
-          className="field"
-          aria-label="What it is for"
-          value={kind}
-          onChange={(e) => { setKind(Number(e.target.value)); setEquipmentTypeId(''); }}
-        >
-          <option value={10}>A PM, done on a schedule</option>
-          <option value={20}>The everyday check of a machine (diagnosis)</option>
-        </select>
-      </label>
 
       <label className="stack">
         <span>Equipment type</span>

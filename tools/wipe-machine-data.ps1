@@ -84,7 +84,6 @@ BEGIN;
 ALTER TABLE work_order_note DISABLE TRIGGER trg_work_order_note_append_only;
 ALTER TABLE pm_completion   DISABLE TRIGGER trg_pm_completion_immutable;
 ALTER TABLE pm_task         DISABLE TRIGGER trg_pm_task_no_delete_completed;
-ALTER TABLE diagnosis       DISABLE TRIGGER trg_diagnosis_immutable;
 
 DELETE FROM work_order_note;
 DELETE FROM work_order;
@@ -92,14 +91,23 @@ DELETE FROM pm_task_attachment;
 DELETE FROM pm_completion;
 DELETE FROM pm_task;
 DELETE FROM pm_schedule;
-DELETE FROM diagnosis;
+-- The daily check is gone from the product, and its table with it, except in a database that had
+-- records in it, where the table was kept. Those have to go before the machines they point at.
+DO $$
+BEGIN
+    IF to_regclass('public.diagnosis') IS NOT NULL THEN
+        ALTER TABLE diagnosis DISABLE TRIGGER trg_diagnosis_immutable;
+        DELETE FROM diagnosis;
+        ALTER TABLE diagnosis ENABLE TRIGGER trg_diagnosis_immutable;
+    END IF;
+END
+$$;
 DELETE FROM equipment_move;
 DELETE FROM equipment;
 --LOCATIONS--
 ALTER TABLE work_order_note ENABLE TRIGGER trg_work_order_note_append_only;
 ALTER TABLE pm_completion   ENABLE TRIGGER trg_pm_completion_immutable;
 ALTER TABLE pm_task         ENABLE TRIGGER trg_pm_task_no_delete_completed;
-ALTER TABLE diagnosis       ENABLE TRIGGER trg_diagnosis_immutable;
 
 ALTER SEQUENCE work_order_number_seq RESTART;
 

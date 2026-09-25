@@ -67,7 +67,9 @@ public static class ChecklistEndpoints
     private static async Task<IResult> ListAsync(
         HospitalPmDbContext db, [FromQuery] int? equipmentTypeId, [FromQuery] ChecklistKind? kind, CancellationToken ct)
     {
-        var query = db.ChecklistTemplates.AsNoTracking();
+        // Only PM checklists. The daily check that used a second kind is gone, and any that were
+        // written for it are not listed.
+        var query = db.ChecklistTemplates.AsNoTracking().Where(t => t.Kind == ChecklistKind.Pm);
 
         if (kind is not null)
         {

@@ -47,9 +47,6 @@ public enum ChecklistKind
 {
     /// <summary>Preventive maintenance, run from a schedule and signed.</summary>
     Pm = 10,
-
-    /// <summary>The everyday check an engineer makes of a machine on a round.</summary>
-    Diagnosis = 20,
 }
 
 public enum ChecklistVersionStatus

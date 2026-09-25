@@ -24,8 +24,6 @@ import { CompliancePage } from './pages/CompliancePage';
 import { ExportPage } from './pages/ExportPage';
 import { ChecklistsPage } from './pages/ChecklistsPage';
 import { WorkOrdersPage } from './pages/WorkOrdersPage';
-import { DiagnosisPage, DiagnosisViewPage } from './pages/DiagnosisPage';
-import { RoundsPage } from './pages/RoundsPage';
 import { AdminMenu } from './AdminMenu';
 import { LicenceBanner } from './LicenceBanner';
 import { NotificationBell } from './NotificationBell';
@@ -66,10 +64,6 @@ function Shell() {
 
           <NavLink to="/pm" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
             PM
-          </NavLink>
-
-          <NavLink to="/rounds" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-            Daily round
           </NavLink>
 
           <NavLink to="/work-orders" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
@@ -146,9 +140,6 @@ function Shell() {
           <Route path="/work-orders" element={<WorkOrdersPage />} />
           <Route path="/equipment" element={<EquipmentListPage />} />
           <Route path="/equipment/:id" element={<EquipmentDetailPage />} />
-          <Route path="/equipment/:id/diagnose" element={<DiagnosisPage />} />
-          <Route path="/diagnoses/:id" element={<DiagnosisViewPage />} />
-          <Route path="/rounds" element={<RoundsPage />} />
           <Route path="/locations" element={<LocationsPage />} />
           <Route path="/checklists" element={<ChecklistsPage />} />
           <Route path="/scan" element={<ScanPage />} />

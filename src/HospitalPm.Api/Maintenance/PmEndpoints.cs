@@ -363,7 +363,6 @@ public static class PmEndpoints
         CancellationToken ct)
     {
         var template = await db.ChecklistTemplates
-            // A diagnosis checklist is for the everyday round, not for a PM schedule.
             .Where(t => t.Id == request.ChecklistTemplateId && t.Kind == ChecklistKind.Pm)
             .Select(t => new
             {

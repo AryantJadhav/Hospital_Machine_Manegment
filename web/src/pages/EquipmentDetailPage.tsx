@@ -12,7 +12,7 @@ import { useHandoff } from '../handoff';
 import { HandoffNotice } from '../HandoffNotice';
 import { StatusPill } from '../StatusPill';
 import { Tile } from '../Tile';
-import { CONTRACT_LABEL, CRITICALITY_LABEL, CRITICALITY_LOOK, DIAGNOSIS_LOOK, DIAGNOSIS_WORDS, EQUIPMENT_LOOK, PM_LOOK, PRIORITY_LOOK, WORK_ORDER_LOOK } from '../statusTones';
+import { CONTRACT_LABEL, CRITICALITY_LABEL, CRITICALITY_LOOK, EQUIPMENT_LOOK, PM_LOOK, PRIORITY_LOOK, WORK_ORDER_LOOK } from '../statusTones';
 
 type History = {
   equipment: {
@@ -85,17 +85,6 @@ type History = {
   };
 };
 
-type Check = {
-  id: number;
-  performedAtUtc: string;
-  outcome: number;
-  notes: string | null;
-  failedChecks: number;
-  outOfRange: number;
-  location: string | null;
-  performedBy: string | null;
-};
-
 type Move = {
   id: number;
   movedAtUtc: string;
@@ -136,7 +125,6 @@ export function EquipmentDetailPage() {
   const [moving, setMoving] = useState(false);
   const [addingDates, setAddingDates] = useState(false);
   const [moves, setMoves] = useState<Move[]>([]);
-  const [checks, setChecks] = useState<Check[]>([]);
   const [movedNote, setMovedNote] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   // What the PM or fault form we sent them to just did, said here, where the
@@ -149,7 +137,6 @@ export function EquipmentDetailPage() {
     try {
       setData(await api.get<History>(`/api/equipment/${id}/history`));
       setMoves(await api.get<Move[]>(`/api/equipment/${id}/moves`));
-      setChecks(await api.get<Check[]>(`/api/equipment/${id}/diagnoses`));
     } catch (e) {
       setError(
         e instanceof ApiError && e.status === 404
@@ -229,11 +216,6 @@ export function EquipmentDetailPage() {
         <div className="row">
           {canEdit && !editing && (
             <button className="btn" onClick={() => setEditing(true)}>Edit</button>
-          )}
-          {e.status !== 40 && e.status !== 50 && (
-            <Link className="btn btn-primary" to={`/equipment/${e.id}/diagnose`} state={{ from: `/equipment/${e.id}` }}>
-              Diagnose
-            </Link>
           )}
           {e.status !== 40 && e.status !== 50 && !moving && (
             <button className="btn" onClick={() => { setMoving(true); setMovedNote(null); }}>Move</button>
@@ -494,25 +476,6 @@ export function EquipmentDetailPage() {
                 Certificate
               </button>
             )}
-          </div>
-        ))}
-      </Section>
-
-      <Section title="Daily checks" empty="This machine has not been checked yet.">
-        {checks.map((c) => (
-          <div key={c.id} className="hist-row">
-            <div className="grow">
-              <div>
-                <StatusPill look={DIAGNOSIS_LOOK[c.outcome]}>{DIAGNOSIS_WORDS[c.outcome]}</StatusPill>
-                {c.failedChecks > 0 && <StatusPill tone="danger" className="hist-flag">{c.failedChecks} failed</StatusPill>}
-                {c.outOfRange > 0 && <StatusPill tone="warning" className="hist-flag">{c.outOfRange} out of range</StatusPill>}
-              </div>
-              <div className="muted hist-meta">
-                {formatDateTime(c.performedAtUtc)} · {c.performedBy ?? 'unknown'}{c.location ? ` · ${c.location}` : ''}
-                {c.notes && ` · ${c.notes}`}
-              </div>
-            </div>
-            <Link className="btn btn-quiet" to={`/diagnoses/${c.id}`}>View</Link>
           </div>
         ))}
       </Section>
