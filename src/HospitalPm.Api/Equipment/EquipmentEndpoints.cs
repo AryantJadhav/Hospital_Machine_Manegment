@@ -40,7 +40,11 @@ public sealed record EquipmentRequest(
     bool? IsInsured = null,
     string? InsuranceProvider = null,
     string? InsurancePolicyNumber = null,
-    DateOnly? InsuranceExpiryDate = null);
+    DateOnly? InsuranceExpiryDate = null,
+    // What the machine cost, and what its insurance costs, in rupees. Blank is
+    // "not known". The insurance cost follows IsInsured like the other details.
+    decimal? PurchaseCost = null,
+    decimal? InsuranceCost = null);
 
 public sealed record EquipmentResponse(
     int Id,
@@ -61,7 +65,9 @@ public sealed record EquipmentResponse(
     bool IsInsured,
     string? InsuranceProvider,
     string? InsurancePolicyNumber,
-    DateOnly? InsuranceExpiryDate);
+    DateOnly? InsuranceExpiryDate,
+    decimal? PurchaseCost,
+    decimal? InsuranceCost);
 
 public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Total, int Page, int PageSize);
 
@@ -183,7 +189,9 @@ public static class EquipmentEndpoints
                 e.IsInsured,
                 e.InsuranceProvider,
                 e.InsurancePolicyNumber,
-                e.InsuranceExpiryDate))
+                e.InsuranceExpiryDate,
+                e.PurchaseCost,
+                e.InsuranceCost))
             .ToListAsync(ct);
 
         return Results.Ok(new PagedResult<EquipmentResponse>(items, total, page, pageSize));
@@ -212,7 +220,9 @@ public static class EquipmentEndpoints
                 e.IsInsured,
                 e.InsuranceProvider,
                 e.InsurancePolicyNumber,
-                e.InsuranceExpiryDate))
+                e.InsuranceExpiryDate,
+                e.PurchaseCost,
+                e.InsuranceCost))
             .SingleOrDefaultAsync(ct);
 
         return item is null ? Results.NotFound() : Results.Ok(item);
@@ -248,7 +258,9 @@ public static class EquipmentEndpoints
                 e.IsInsured,
                 e.InsuranceProvider,
                 e.InsurancePolicyNumber,
-                e.InsuranceExpiryDate))
+                e.InsuranceExpiryDate,
+                e.PurchaseCost,
+                e.InsuranceCost))
             .SingleOrDefaultAsync(ct);
 
         return item is null ? Results.NotFound() : Results.Ok(item);
@@ -294,6 +306,7 @@ public static class EquipmentEndpoints
             WarrantyExpiryDate = request.WarrantyExpiryDate,
             Notes = request.Notes,
             Criticality = request.Criticality,
+            PurchaseCost = Money(request.PurchaseCost),
         };
         ApplyInsurance(entity, request);
 
@@ -372,6 +385,7 @@ public static class EquipmentEndpoints
         entity.WarrantyExpiryDate = request.WarrantyExpiryDate;
         entity.Notes = request.Notes;
         entity.Criticality = request.Criticality ?? entity.Criticality;
+        entity.PurchaseCost = Money(request.PurchaseCost);
         ApplyInsurance(entity, request);
 
         await db.SaveChangesAsync(ct);
@@ -414,6 +428,7 @@ public static class EquipmentEndpoints
                 entity.InsuranceProvider = null;
                 entity.InsurancePolicyNumber = null;
                 entity.InsuranceExpiryDate = null;
+                entity.InsuranceCost = null;
                 return;
 
             case true:
@@ -423,9 +438,18 @@ public static class EquipmentEndpoints
                     ? null
                     : request.InsurancePolicyNumber.Trim();
                 entity.InsuranceExpiryDate = request.InsuranceExpiryDate;
+                entity.InsuranceCost = Money(request.InsuranceCost);
                 return;
         }
     }
+
+    /// <summary>The largest amount the column holds: twelve digits before the paise.</summary>
+    private const decimal MaxCost = 999_999_999_999.99m;
+
+    /// <summary>Whole paise, so 1234.567 is stored as 1234.57 rather than refused or silently cut.</summary>
+    private static decimal? Money(decimal? amount) => amount is null ? null : Math.Round(amount.Value, 2);
+
+    private static bool IsBadAmount(decimal? amount) => amount is < 0 or > MaxCost;
 
     private static async Task<IResult?> ValidateAsync(
         EquipmentRequest request, HospitalPmDbContext db, CancellationToken ct, bool tagRequired = true)
@@ -443,6 +467,16 @@ public static class EquipmentEndpoints
         if (request.Criticality is { } criticality && !Enum.IsDefined(criticality))
         {
             return Results.BadRequest(new { error = "Unknown criticality." });
+        }
+
+        if (IsBadAmount(request.PurchaseCost))
+        {
+            return Results.BadRequest(new { error = "The cost of the machine cannot be negative." });
+        }
+
+        if (IsBadAmount(request.InsuranceCost))
+        {
+            return Results.BadRequest(new { error = "The cost of the insurance cannot be negative." });
         }
 
         if (request.IsInsured == true)

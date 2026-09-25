@@ -52,6 +52,8 @@ public static class EquipmentHistoryEndpoints
                 e.InsuranceProvider,
                 e.InsurancePolicyNumber,
                 e.InsuranceExpiryDate,
+                e.PurchaseCost,
+                e.InsuranceCost,
                 e.PurchaseDate,
                 e.InstallationDate,
                 e.WarrantyExpiryDate,

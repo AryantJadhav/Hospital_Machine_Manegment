@@ -6,6 +6,7 @@ import { ROLES } from '../auth/context';
 import { EquipmentForm } from './EquipmentForm';
 import { MoveMachineForm } from './MoveMachineForm';
 import { formatDate, formatDateTime, todayAtHospital } from '../time';
+import { formatRupees } from '../money';
 import { useHandoff } from '../handoff';
 import { HandoffNotice } from '../HandoffNotice';
 import { StatusPill } from '../StatusPill';
@@ -22,12 +23,14 @@ type History = {
     status: number;
     criticality: number | null;
     purchaseDate: string | null;
+    purchaseCost: number | null;
     installationDate: string | null;
     warrantyExpiryDate: string | null;
     isInsured: boolean;
     insuranceProvider: string | null;
     insurancePolicyNumber: string | null;
     insuranceExpiryDate: string | null;
+    insuranceCost: number | null;
     notes: string | null;
     // Returned by the history endpoint and simply not declared here until the
     // edit form needed it to prefill the type.
@@ -278,12 +281,14 @@ export function EquipmentDetailPage() {
             status: e.status,
             criticality: e.criticality ?? null,
             purchaseDate: e.purchaseDate ?? null,
+            purchaseCost: e.purchaseCost ?? null,
             installationDate: e.installationDate ?? null,
             warrantyExpiryDate: e.warrantyExpiryDate ?? null,
             isInsured: e.isInsured,
             insuranceProvider: e.insuranceProvider ?? null,
             insurancePolicyNumber: e.insurancePolicyNumber ?? null,
             insuranceExpiryDate: e.insuranceExpiryDate ?? null,
+            insuranceCost: e.insuranceCost ?? null,
             notes: e.notes ?? null,
           }}
           onCancel={() => setEditing(false)}
@@ -326,12 +331,14 @@ export function EquipmentDetailPage() {
             <Row label="Model" value={e.model} />
             <Row label="Location" value={e.locationName} strong />
             <Row label="Purchased" value={formatDate(e.purchaseDate)} />
+            <Row label="Cost of the machine" value={e.purchaseCost == null ? null : formatRupees(e.purchaseCost)} />
             <Row label="Installed" value={formatDate(e.installationDate)} />
             {e.isInsured && (
               <>
                 <Row label="Insurer" value={e.insuranceProvider} />
                 <Row label="Policy number" value={e.insurancePolicyNumber} mono />
                 <Row label="Insurance expires" value={formatDate(e.insuranceExpiryDate)} />
+                <Row label="Cost of the insurance" value={e.insuranceCost == null ? null : formatRupees(e.insuranceCost)} />
               </>
             )}
           </dl>

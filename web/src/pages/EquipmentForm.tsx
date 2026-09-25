@@ -27,12 +27,14 @@ export type EquipmentDraft = {
   status: number;
   criticality: number | null;
   purchaseDate: string | null;
+  purchaseCost: number | null;
   installationDate: string | null;
   warrantyExpiryDate: string | null;
   isInsured: boolean;
   insuranceProvider: string | null;
   insurancePolicyNumber: string | null;
   insuranceExpiryDate: string | null;
+  insuranceCost: number | null;
   notes: string | null;
 };
 
@@ -83,12 +85,14 @@ export function EquipmentForm({
       status: 20,
       criticality: null,
       purchaseDate: null,
+      purchaseCost: null,
       installationDate: null,
       warrantyExpiryDate: null,
       isInsured: false,
       insuranceProvider: null,
       insurancePolicyNumber: null,
       insuranceExpiryDate: null,
+      insuranceCost: null,
       notes: null,
     },
   );
@@ -127,6 +131,7 @@ export function EquipmentForm({
         status: Number(form.status),
         criticality: Number(form.criticality),
         purchaseDate: form.purchaseDate || null,
+        purchaseCost: form.purchaseCost,
         installationDate: form.installationDate || null,
         warrantyExpiryDate: form.warrantyExpiryDate || null,
         // Not insured means nothing else is sent, and the server clears whatever a
@@ -135,6 +140,7 @@ export function EquipmentForm({
         insuranceProvider: form.isInsured ? form.insuranceProvider?.trim() || null : null,
         insurancePolicyNumber: form.isInsured ? form.insurancePolicyNumber?.trim() || null : null,
         insuranceExpiryDate: form.isInsured ? form.insuranceExpiryDate || null : null,
+        insuranceCost: form.isInsured ? form.insuranceCost : null,
         notes: form.notes?.trim() || null,
       };
 
@@ -330,6 +336,20 @@ export function EquipmentForm({
       </div>
 
       <label className="stack">
+        <span>Cost of the machine (₹)</span>
+        <input
+          className="field mono"
+          type="number"
+          min={0}
+          step="0.01"
+          inputMode="decimal"
+          placeholder="250000"
+          value={form.purchaseCost ?? ''}
+          onChange={(e) => set('purchaseCost', e.target.value === '' ? null : Number(e.target.value))}
+        />
+      </label>
+
+      <label className="stack">
         <span>Insurance available</span>
         <select
           className="field"
@@ -373,6 +393,19 @@ export function EquipmentForm({
               required
               value={form.insuranceExpiryDate ?? ''}
               onChange={(e) => set('insuranceExpiryDate', e.target.value || null)}
+            />
+          </label>
+
+          <label className="stack">
+            <span>Cost of the insurance (₹)</span>
+            <input
+              className="field mono"
+              type="number"
+              min={0}
+              step="0.01"
+              inputMode="decimal"
+              value={form.insuranceCost ?? ''}
+              onChange={(e) => set('insuranceCost', e.target.value === '' ? null : Number(e.target.value))}
             />
           </label>
         </div>

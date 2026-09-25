@@ -57,6 +57,12 @@ public sealed class Equipment
 
     public DateOnly? PurchaseDate { get; set; }
 
+    /// <summary>
+    /// What the machine cost, in rupees. Null when nobody knows: an older register
+    /// often has no figure, and a blank is truer than a zero.
+    /// </summary>
+    public decimal? PurchaseCost { get; set; }
+
     public DateOnly? InstallationDate { get; set; }
 
     public DateOnly? WarrantyExpiryDate { get; set; }
@@ -76,6 +82,9 @@ public sealed class Equipment
 
     /// <summary>The last day the policy covers the machine. Set whenever <see cref="IsInsured"/>.</summary>
     public DateOnly? InsuranceExpiryDate { get; set; }
+
+    /// <summary>What the policy costs, in rupees. Set only when <see cref="IsInsured"/>, and optional even then.</summary>
+    public decimal? InsuranceCost { get; set; }
 
     /// <summary>Free-text notes from the biomedical team. Not a clinical record.</summary>
     public string? Notes { get; set; }
