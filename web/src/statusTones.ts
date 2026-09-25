@@ -14,7 +14,7 @@ export type Look = { tone: Tone; icon?: 'pause'; strong?: boolean };
 
 const T = (tone: Tone, extra: Omit<Look, 'tone'> = {}): Look => ({ tone, ...extra });
 
-/** Equipment: In store, In service, Under repair, Condemned, Disposed. */
+/** Equipment: In store, In use, Under repair, Condemned, Disposed. */
 export const EQUIPMENT_LOOK: Record<number, Look> = {
   10: T('neutral'),
   20: T('success'),

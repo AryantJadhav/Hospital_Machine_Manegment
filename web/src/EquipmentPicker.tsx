@@ -14,7 +14,7 @@ type Page = { items: Machine[]; total: number };
 
 const STATUS: Record<number, string> = {
   10: 'In store',
-  20: 'In service',
+  20: 'In use',
   30: 'Under repair',
   40: 'Condemned',
   50: 'Disposed',
@@ -175,7 +175,7 @@ export function EquipmentPicker({
                   {m.locationName}
                   {/* Said only when it is not the ordinary case, and only when
                       it is a status we know: a machine the ward is reporting
-                      as broken is usually In service, and "In service" on
+                      as broken is usually In use, and "In use" on
                       every row would be noise. */}
                   {m.status !== 20 && STATUS[m.status] && ` · ${STATUS[m.status]}`}
                 </span>

@@ -25,7 +25,7 @@ type Equipment = {
 
 const STATUS: Record<number, string> = {
   10: 'In store',
-  20: 'In service',
+  20: 'In use',
   30: 'Under repair',
   40: 'Condemned',
   50: 'Disposed',

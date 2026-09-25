@@ -126,7 +126,7 @@ export function DashboardPage() {
             <h2 className="section-h">Register</h2>
             <div className="tiles tiles-plain">
               <Tile label="Assets" value={data.equipment.total} to="/equipment" />
-              <Tile label="In service" value={data.equipment.inService} to="/equipment?status=20" />
+              <Tile label="In use" value={data.equipment.inService} to="/equipment?status=20" />
               <Tile label="Under repair" value={data.equipment.underRepair} to="/equipment?status=30" />
             </div>
           </div>

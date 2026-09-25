@@ -21,7 +21,7 @@ public sealed record EquipmentRequest(
     int LocationId,
     string? Manufacturer,
     string? Model,
-    // Optional. Left out, a new machine is In service and an existing one keeps
+    // Optional. Left out, a new machine is In use and an existing one keeps
     // the status it has. It used to be required by type only, so a request
     // without it arrived as 0 - a status that is not one of the five - and was
     // stored.

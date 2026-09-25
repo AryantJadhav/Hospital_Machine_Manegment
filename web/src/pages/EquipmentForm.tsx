@@ -42,7 +42,7 @@ const FIRST_PLACEABLE_LEVEL = 30;
 // so it is its own confirmed action rather than an option in a dropdown.
 const STATUSES = [
   { value: 10, label: 'In store — received, not yet commissioned' },
-  { value: 20, label: 'In service' },
+  { value: 20, label: 'In use' },
   { value: 30, label: 'Under repair' },
 ];
 

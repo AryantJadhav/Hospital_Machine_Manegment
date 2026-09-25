@@ -87,7 +87,7 @@ type Move = {
 };
 
 const EQUIPMENT_STATUS: Record<number, string> = {
-  10: 'In store', 20: 'In service', 30: 'Under repair', 40: 'Condemned', 50: 'Disposed',
+  10: 'In store', 20: 'In use', 30: 'Under repair', 40: 'Condemned', 50: 'Disposed',
 };
 
 const PM_STATUS: Record<number, string> = {

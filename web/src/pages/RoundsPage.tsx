@@ -134,7 +134,7 @@ export function RoundsPage() {
               </thead>
               <tbody>
                 {round.items.length === 0 && (
-                  <tr><td colSpan={5} className="empty">No machines in service here.</td></tr>
+                  <tr><td colSpan={5} className="empty">No machines in use here.</td></tr>
                 )}
 
                 {round.items.map((r) => (
