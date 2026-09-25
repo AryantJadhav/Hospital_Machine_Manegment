@@ -7,6 +7,7 @@ import { ROLES } from './auth/context';
 import { LoginPage } from './pages/LoginPage';
 import { EquipmentListPage } from './pages/EquipmentListPage';
 import { EquipmentDetailPage } from './pages/EquipmentDetailPage';
+import { EquipmentTypesPage } from './pages/EquipmentTypesPage';
 import { ImportPage } from './pages/ImportPage';
 import { SetupPage } from './pages/SetupPage';
 import { LocationsPage } from './pages/LocationsPage';
@@ -155,6 +156,10 @@ function Shell() {
           <Route
             path="/export"
             element={isAdmin ? <ExportPage /> : <Elsewhere notice={ADMIN_ONLY} />}
+          />
+          <Route
+            path="/equipment-types"
+            element={isAdmin ? <EquipmentTypesPage /> : <Elsewhere notice={ADMIN_ONLY} />}
           />
           <Route
             path="/import"

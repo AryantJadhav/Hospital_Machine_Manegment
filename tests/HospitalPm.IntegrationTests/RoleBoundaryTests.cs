@@ -109,6 +109,11 @@ public sealed class RoleBoundaryTests(PostgresFixture fixture) : IAsyncLifetime,
         { "PUT", $"/api/locations/{Missing}" },
         { "DELETE", $"/api/locations/{Missing}" },
 
+        // What the department calls a kind of machine.
+        { "GET", "/api/equipment-types" },
+        { "POST", "/api/equipment-types" },
+        { "PUT", $"/api/equipment-types/{Missing}" },
+
         // What the checklists say, which is what a PM means.
         { "POST", "/api/checklists" },
         { "PUT", $"/api/checklists/{Missing}/draft" },

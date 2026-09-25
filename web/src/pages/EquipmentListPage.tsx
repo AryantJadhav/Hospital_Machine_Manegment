@@ -170,9 +170,12 @@ export function EquipmentListPage() {
           )}
         </div>
         {canEdit && selected.size === 0 && (
-          <button className="btn btn-primary" onClick={() => setAdding(true)}>
-            Add a machine
-          </button>
+          <div className="row">
+            <Link className="btn" to="/equipment-types">Equipment types</Link>
+            <button className="btn btn-primary" onClick={() => setAdding(true)}>
+              Add a machine
+            </button>
+          </div>
         )}
         {canPrint && selected.size > 0 && (
           <div className="row">

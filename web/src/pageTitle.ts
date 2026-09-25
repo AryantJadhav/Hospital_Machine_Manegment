@@ -10,6 +10,7 @@ const TITLES: [prefix: string, title: string][] = [
   ['/diagnoses', 'Daily check'],
   ['/work-orders', 'Work orders'],
   ['/equipment', 'Equipment'],
+  ['/equipment-types', 'Equipment types'],
   ['/scan', 'Scan'],
   ['/locations', 'Locations'],
   ['/checklists', 'Checklists'],

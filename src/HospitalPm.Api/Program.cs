@@ -290,6 +290,7 @@ app.MapUserEndpoints();
 app.MapEquipmentEndpoints();
 app.MapImportEndpoints();
 app.MapLookupEndpoints();
+app.MapEquipmentTypeEndpoints();
 app.MapEquipmentHistoryEndpoints();
 app.MapEquipmentMoveEndpoints();
 app.MapDiagnosisEndpoints();
