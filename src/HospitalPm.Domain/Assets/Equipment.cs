@@ -61,6 +61,22 @@ public sealed class Equipment
 
     public DateOnly? WarrantyExpiryDate { get; set; }
 
+    /// <summary>
+    /// Whether the machine is insured. When false the three insurance details below
+    /// are all empty; the database enforces it, so a machine that says it is not
+    /// insured cannot still carry a policy that appears to be current.
+    /// </summary>
+    public bool IsInsured { get; set; }
+
+    /// <summary>The insurer. Set only when <see cref="IsInsured"/>.</summary>
+    public string? InsuranceProvider { get; set; }
+
+    /// <summary>The policy's number, for the person who has to make a claim. Optional even when insured.</summary>
+    public string? InsurancePolicyNumber { get; set; }
+
+    /// <summary>The last day the policy covers the machine. Set whenever <see cref="IsInsured"/>.</summary>
+    public DateOnly? InsuranceExpiryDate { get; set; }
+
     /// <summary>Free-text notes from the biomedical team. Not a clinical record.</summary>
     public string? Notes { get; set; }
 

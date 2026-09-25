@@ -33,7 +33,14 @@ public sealed record EquipmentRequest(
     // Optional for the same reason as Status: an older client, or a spreadsheet
     // import, does not send it. A new machine is then left unclassified, and an
     // existing one keeps the level it has.
-    EquipmentCriticality? Criticality = null);
+    EquipmentCriticality? Criticality = null,
+    // Insurance. IsInsured left out means "do not touch": a new machine is not
+    // insured and an existing one keeps its policy. False clears every detail.
+    // True needs an insurer and an expiry date; the policy number is optional.
+    bool? IsInsured = null,
+    string? InsuranceProvider = null,
+    string? InsurancePolicyNumber = null,
+    DateOnly? InsuranceExpiryDate = null);
 
 public sealed record EquipmentResponse(
     int Id,
@@ -50,7 +57,11 @@ public sealed record EquipmentResponse(
     DateOnly? InstallationDate,
     DateOnly? WarrantyExpiryDate,
     string? Notes,
-    EquipmentCriticality? Criticality);
+    EquipmentCriticality? Criticality,
+    bool IsInsured,
+    string? InsuranceProvider,
+    string? InsurancePolicyNumber,
+    DateOnly? InsuranceExpiryDate);
 
 public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Total, int Page, int PageSize);
 
@@ -168,7 +179,11 @@ public static class EquipmentEndpoints
                 e.InstallationDate,
                 e.WarrantyExpiryDate,
                 e.Notes,
-                e.Criticality))
+                e.Criticality,
+                e.IsInsured,
+                e.InsuranceProvider,
+                e.InsurancePolicyNumber,
+                e.InsuranceExpiryDate))
             .ToListAsync(ct);
 
         return Results.Ok(new PagedResult<EquipmentResponse>(items, total, page, pageSize));
@@ -193,7 +208,11 @@ public static class EquipmentEndpoints
                 e.InstallationDate,
                 e.WarrantyExpiryDate,
                 e.Notes,
-                e.Criticality))
+                e.Criticality,
+                e.IsInsured,
+                e.InsuranceProvider,
+                e.InsurancePolicyNumber,
+                e.InsuranceExpiryDate))
             .SingleOrDefaultAsync(ct);
 
         return item is null ? Results.NotFound() : Results.Ok(item);
@@ -225,7 +244,11 @@ public static class EquipmentEndpoints
                 e.InstallationDate,
                 e.WarrantyExpiryDate,
                 e.Notes,
-                e.Criticality))
+                e.Criticality,
+                e.IsInsured,
+                e.InsuranceProvider,
+                e.InsurancePolicyNumber,
+                e.InsuranceExpiryDate))
             .SingleOrDefaultAsync(ct);
 
         return item is null ? Results.NotFound() : Results.Ok(item);
@@ -272,6 +295,7 @@ public static class EquipmentEndpoints
             Notes = request.Notes,
             Criticality = request.Criticality,
         };
+        ApplyInsurance(entity, request);
 
         db.Equipment.Add(entity);
         await db.SaveChangesAsync(ct);
@@ -348,6 +372,7 @@ public static class EquipmentEndpoints
         entity.WarrantyExpiryDate = request.WarrantyExpiryDate;
         entity.Notes = request.Notes;
         entity.Criticality = request.Criticality ?? entity.Criticality;
+        ApplyInsurance(entity, request);
 
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
@@ -372,6 +397,36 @@ public static class EquipmentEndpoints
         return Results.NoContent();
     }
 
+    /// <summary>
+    /// Says whether the machine is insured, and keeps the details consistent with the
+    /// answer. "No" empties them, so a machine that is not insured never carries an
+    /// old policy that would read as current.
+    /// </summary>
+    private static void ApplyInsurance(Domain.Assets.Equipment entity, EquipmentRequest request)
+    {
+        switch (request.IsInsured)
+        {
+            case null:
+                return;
+
+            case false:
+                entity.IsInsured = false;
+                entity.InsuranceProvider = null;
+                entity.InsurancePolicyNumber = null;
+                entity.InsuranceExpiryDate = null;
+                return;
+
+            case true:
+                entity.IsInsured = true;
+                entity.InsuranceProvider = request.InsuranceProvider?.Trim();
+                entity.InsurancePolicyNumber = string.IsNullOrWhiteSpace(request.InsurancePolicyNumber)
+                    ? null
+                    : request.InsurancePolicyNumber.Trim();
+                entity.InsuranceExpiryDate = request.InsuranceExpiryDate;
+                return;
+        }
+    }
+
     private static async Task<IResult?> ValidateAsync(
         EquipmentRequest request, HospitalPmDbContext db, CancellationToken ct, bool tagRequired = true)
     {
@@ -388,6 +443,19 @@ public static class EquipmentEndpoints
         if (request.Criticality is { } criticality && !Enum.IsDefined(criticality))
         {
             return Results.BadRequest(new { error = "Unknown criticality." });
+        }
+
+        if (request.IsInsured == true)
+        {
+            if (string.IsNullOrWhiteSpace(request.InsuranceProvider))
+            {
+                return Results.BadRequest(new { error = "Say which insurer covers this machine." });
+            }
+
+            if (request.InsuranceExpiryDate is null)
+            {
+                return Results.BadRequest(new { error = "Say when the insurance expires." });
+            }
         }
 
         if (!await db.EquipmentTypes.AnyAsync(t => t.Id == request.EquipmentTypeId, ct))

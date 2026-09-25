@@ -24,6 +24,10 @@ type History = {
     purchaseDate: string | null;
     installationDate: string | null;
     warrantyExpiryDate: string | null;
+    isInsured: boolean;
+    insuranceProvider: string | null;
+    insurancePolicyNumber: string | null;
+    insuranceExpiryDate: string | null;
     notes: string | null;
     // Returned by the history endpoint and simply not declared here until the
     // edit form needed it to prefill the type.
@@ -185,6 +189,9 @@ export function EquipmentDetailPage() {
   // current moment called it expired from the morning of that day.
   const warranty = e.warrantyExpiryDate;
   const inWarranty = warranty !== null && warranty >= todayAtHospital();
+  // Same reading as the warranty: the policy covers its last day in full.
+  const insuredUntil = e.isInsured ? e.insuranceExpiryDate : null;
+  const insuranceCurrent = insuredUntil !== null && insuredUntil >= todayAtHospital();
 
   return (
     <div className="page">
@@ -273,6 +280,10 @@ export function EquipmentDetailPage() {
             purchaseDate: e.purchaseDate ?? null,
             installationDate: e.installationDate ?? null,
             warrantyExpiryDate: e.warrantyExpiryDate ?? null,
+            isInsured: e.isInsured,
+            insuranceProvider: e.insuranceProvider ?? null,
+            insurancePolicyNumber: e.insurancePolicyNumber ?? null,
+            insuranceExpiryDate: e.insuranceExpiryDate ?? null,
             notes: e.notes ?? null,
           }}
           onCancel={() => setEditing(false)}
@@ -287,6 +298,12 @@ export function EquipmentDetailPage() {
         <StatusPill look={EQUIPMENT_LOOK[e.status]}>{EQUIPMENT_STATUS[e.status] ?? '—'}</StatusPill>
         {e.criticality != null && (
           <StatusPill look={CRITICALITY_LOOK[e.criticality]}>{CRITICALITY_LABEL[e.criticality] ?? '—'}</StatusPill>
+        )}
+        {insuredUntil && (
+          // A lapsed policy is something to renew, so it is a warning; a current one is good news.
+          <StatusPill tone={insuranceCurrent ? 'success' : 'warning'}>
+            {insuranceCurrent ? 'Insured until' : 'Insurance expired'} {formatDate(insuredUntil)}
+          </StatusPill>
         )}
         {data.summary.currentlyDown && <StatusPill tone="danger">Currently down</StatusPill>}
         {data.summary.overduePmCount > 0 && (
@@ -310,6 +327,13 @@ export function EquipmentDetailPage() {
             <Row label="Location" value={e.locationName} strong />
             <Row label="Purchased" value={formatDate(e.purchaseDate)} />
             <Row label="Installed" value={formatDate(e.installationDate)} />
+            {e.isInsured && (
+              <>
+                <Row label="Insurer" value={e.insuranceProvider} />
+                <Row label="Policy number" value={e.insurancePolicyNumber} mono />
+                <Row label="Insurance expires" value={formatDate(e.insuranceExpiryDate)} />
+              </>
+            )}
           </dl>
           {e.notes && <p className="muted" style={{ marginBottom: 0 }}>{e.notes}</p>}
         </div>

@@ -29,6 +29,10 @@ export type EquipmentDraft = {
   purchaseDate: string | null;
   installationDate: string | null;
   warrantyExpiryDate: string | null;
+  isInsured: boolean;
+  insuranceProvider: string | null;
+  insurancePolicyNumber: string | null;
+  insuranceExpiryDate: string | null;
   notes: string | null;
 };
 
@@ -81,6 +85,10 @@ export function EquipmentForm({
       purchaseDate: null,
       installationDate: null,
       warrantyExpiryDate: null,
+      isInsured: false,
+      insuranceProvider: null,
+      insurancePolicyNumber: null,
+      insuranceExpiryDate: null,
       notes: null,
     },
   );
@@ -121,6 +129,12 @@ export function EquipmentForm({
         purchaseDate: form.purchaseDate || null,
         installationDate: form.installationDate || null,
         warrantyExpiryDate: form.warrantyExpiryDate || null,
+        // Not insured means nothing else is sent, and the server clears whatever a
+        // machine had before, so a policy cannot outlive the answer "no".
+        isInsured: form.isInsured,
+        insuranceProvider: form.isInsured ? form.insuranceProvider?.trim() || null : null,
+        insurancePolicyNumber: form.isInsured ? form.insurancePolicyNumber?.trim() || null : null,
+        insuranceExpiryDate: form.isInsured ? form.insuranceExpiryDate || null : null,
         notes: form.notes?.trim() || null,
       };
 
@@ -314,6 +328,55 @@ export function EquipmentForm({
           />
         </label>
       </div>
+
+      <label className="stack">
+        <span>Insurance available</span>
+        <select
+          className="field"
+          value={form.isInsured ? 'yes' : 'no'}
+          onChange={(e) => set('isInsured', e.target.value === 'yes')}
+        >
+          <option value="no">No</option>
+          <option value="yes">Yes</option>
+        </select>
+      </label>
+
+      {form.isInsured && (
+        <div style={{ display: 'grid', gap: '0.75rem', gridTemplateColumns: 'repeat(auto-fit, minmax(12rem, 1fr))' }}>
+          <label className="stack">
+            <span>Insurer</span>
+            <input
+              className="field"
+              required
+              maxLength={200}
+              placeholder="New India Assurance"
+              value={form.insuranceProvider ?? ''}
+              onChange={(e) => set('insuranceProvider', e.target.value || null)}
+            />
+          </label>
+
+          <label className="stack">
+            <span>Policy number</span>
+            <input
+              className="field mono"
+              maxLength={100}
+              value={form.insurancePolicyNumber ?? ''}
+              onChange={(e) => set('insurancePolicyNumber', e.target.value || null)}
+            />
+          </label>
+
+          <label className="stack">
+            <span>Insurance expires</span>
+            <input
+              className="field"
+              type="date"
+              required
+              value={form.insuranceExpiryDate ?? ''}
+              onChange={(e) => set('insuranceExpiryDate', e.target.value || null)}
+            />
+          </label>
+        </div>
+      )}
 
       <label className="stack">
         <span>Notes</span>

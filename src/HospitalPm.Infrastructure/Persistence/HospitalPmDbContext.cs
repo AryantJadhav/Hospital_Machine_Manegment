@@ -505,6 +505,10 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
             e.Property(x => x.PurchaseDate).HasColumnName("purchase_date");
             e.Property(x => x.InstallationDate).HasColumnName("installation_date");
             e.Property(x => x.WarrantyExpiryDate).HasColumnName("warranty_expiry_date");
+            e.Property(x => x.IsInsured).HasColumnName("is_insured").HasDefaultValue(false);
+            e.Property(x => x.InsuranceProvider).HasColumnName("insurance_provider").HasMaxLength(200);
+            e.Property(x => x.InsurancePolicyNumber).HasColumnName("insurance_policy_number").HasMaxLength(100);
+            e.Property(x => x.InsuranceExpiryDate).HasColumnName("insurance_expiry_date");
             e.Property(x => x.Notes).HasColumnName("notes");
             e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").HasDefaultValueSql("now()");
             e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").HasDefaultValueSql("now()");
