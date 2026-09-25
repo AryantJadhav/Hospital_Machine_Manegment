@@ -205,7 +205,7 @@ public sealed class EquipmentPmSetupTests(PostgresFixture fixture) : IAsyncLifet
 
     [Theory]
     [InlineData(-1)]
-    [InlineData(366)]
+    [InlineData(91)]
     public async Task Grace_days_have_to_make_sense(int grace)
     {
         var tag = Tag($"G{grace + 1}");

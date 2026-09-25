@@ -28,6 +28,18 @@ public sealed record ScheduleRequest(
 /// everything beneath it — "every defibrillator in the Cardiac Wing" — because
 /// a large hospital commissions a ward at a time rather than a fleet at once.
 /// </summary>
+/// <summary>
+/// Changing a schedule that already exists: how often, the date the next PM falls
+/// due, the grace, and whether it is running. The checklist is not here. A different
+/// checklist is a different schedule.
+/// </summary>
+public sealed record UpdateScheduleRequest(
+    PmFrequency Frequency,
+    int IntervalDays,
+    DateOnly NextDueDate,
+    int GraceDays,
+    bool IsActive);
+
 public sealed record BulkScheduleRequest(
     int ChecklistTemplateId,
     PmFrequency Frequency,
@@ -55,7 +67,12 @@ public sealed record ScheduleResponse(
     DateOnly AnchorDate,
     int GraceDays,
     bool IsActive,
-    DateOnly? NextDueDate);
+    // The earliest PM still open, which may be long overdue.
+    DateOnly? NextDueDate,
+    // The next date the schedule falls on from today, whatever has or has not been done.
+    // This is the one to start from when the pattern is changed: starting from an
+    // overdue date would count new PMs from the past.
+    DateOnly? NextUpcomingDate = null);
 
 public sealed record TaskResponse(
     int Id,
@@ -88,6 +105,7 @@ public static class PmEndpoints
 
         owner.MapPost("/schedules", CreateScheduleAsync);
         owner.MapPost("/schedules/bulk", CreateSchedulesBulkAsync);
+        owner.MapPut("/schedules/{id:int}", UpdateScheduleAsync);
         owner.MapPost("/generate", GenerateAsync);
     }
 
@@ -198,6 +216,7 @@ public static class PmEndpoints
 
     private static async Task<IResult> SchedulesAsync(
         HospitalPmDbContext db,
+        HospitalClock clock,
         [FromQuery] int? equipmentId,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
@@ -214,8 +233,9 @@ public static class PmEndpoints
         }
 
         var total = await query.CountAsync(ct);
+        var today = clock.Today();
 
-        var items = await query
+        var rows = await query
             .OrderBy(s => s.Equipment!.AssetTag)
             .ThenBy(s => s.Id)
             .Skip((page - 1) * pageSize)
@@ -237,6 +257,12 @@ public static class PmEndpoints
                     .Select(t => (DateOnly?)t.DueDate)
                     .FirstOrDefault()))
             .ToListAsync(ct);
+
+        var items = rows.Select(r => r with
+        {
+            // First occurrence on or after today.
+            NextUpcomingDate = PmDueDates.NextAfter(r.AnchorDate, r.Frequency, r.IntervalDays, today.AddDays(-1)),
+        });
 
         return Results.Ok(new { items, total, page, pageSize });
     }
@@ -501,6 +527,86 @@ public static class PmEndpoints
         await generator.RunAsync(ct);
 
         return Results.Created($"/api/pm/schedules/{schedule.Id}", new { schedule.Id });
+    }
+
+    /// <summary>
+    /// Changes how a machine's PM runs.
+    ///
+    /// The date given becomes the new anchor: every date after it is counted from there.
+    /// When the pattern changes (how often, or the anchor) the PMs that were generated
+    /// ahead and not yet due are removed and made again under the new pattern; without
+    /// that a machine moved from quarterly to monthly would carry both sets of dates.
+    ///
+    /// Nothing that has happened is touched. Completed and skipped PMs are records and
+    /// the database will not delete them, and PMs already due or overdue are real work
+    /// somebody still owes, so they stay on the list until they are done or skipped with
+    /// a reason. Stopping a schedule removes only what is ahead.
+    /// </summary>
+    private static async Task<IResult> UpdateScheduleAsync(
+        int id,
+        [FromBody] UpdateScheduleRequest request,
+        HospitalPmDbContext db,
+        PmScheduleGenerator generator,
+        CancellationToken ct)
+    {
+        var schedule = await db.PmSchedules.SingleOrDefaultAsync(s => s.Id == id, ct);
+        if (schedule is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (request.Frequency == PmFrequency.Custom)
+        {
+            if (request.IntervalDays < 1)
+            {
+                return Results.BadRequest(new { error = "A custom frequency needs an interval in days." });
+            }
+        }
+        else if (request.Frequency.Months() is null)
+        {
+            return Results.BadRequest(new { error = "Unknown frequency." });
+        }
+
+        if (request.GraceDays is < 0 or > 90)
+        {
+            return Results.BadRequest(new { error = "Grace days must be between 0 and 90." });
+        }
+
+        if (request.NextDueDate.Year is < 2000 or > 2100)
+        {
+            return Results.BadRequest(new { error = "Give the date the next PM falls due." });
+        }
+
+        var intervalDays = request.Frequency == PmFrequency.Custom ? request.IntervalDays : 0;
+        var patternChanged = schedule.Frequency != request.Frequency
+            || schedule.IntervalDays != intervalDays
+            || schedule.AnchorDate != request.NextDueDate;
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+        if (patternChanged || !request.IsActive)
+        {
+            // Only what is ahead and untouched: Scheduled means not yet due and not done.
+            await db.PmTasks
+                .Where(t => t.PmScheduleId == id && t.Status == PmTaskStatus.Scheduled)
+                .ExecuteDeleteAsync(ct);
+        }
+
+        schedule.Frequency = request.Frequency;
+        schedule.IntervalDays = intervalDays;
+        schedule.AnchorDate = request.NextDueDate;
+        schedule.GraceDays = request.GraceDays;
+        schedule.IsActive = request.IsActive;
+
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+
+        if (schedule.IsActive)
+        {
+            await generator.RunAsync(ct);
+        }
+
+        return Results.NoContent();
     }
 
     /// <summary>

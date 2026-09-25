@@ -99,6 +99,7 @@ public sealed class RoleBoundaryTests(PostgresFixture fixture) : IAsyncLifetime,
         // Committing the department to a schedule.
         { "POST", "/api/pm/schedules" },
         { "POST", "/api/pm/schedules/bulk" },
+        { "PUT", $"/api/pm/schedules/{Missing}" },
         { "POST", "/api/pm/generate" },
 
         // The register itself.

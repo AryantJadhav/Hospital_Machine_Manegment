@@ -2,7 +2,10 @@ import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
-import { formatDate, todayAtHospital } from '../time';
+import { todayAtHospital } from '../time';
+import { PM_FREQUENCIES, scheduleUpdate, toScheduleEdit } from '../pmSchedule';
+import type { ScheduleApi, ScheduleEdit } from '../pmSchedule';
+import { PmDatePreview, PmExistingSchedule } from './PmScheduleFields';
 
 /**
  * Adding or correcting one machine.
@@ -72,16 +75,6 @@ const CRITICALITIES = [
 const CONTRACTS = [
   { value: 10, label: 'AMC — annual maintenance contract' },
   { value: 20, label: 'CMC — comprehensive maintenance contract (parts covered)' },
-];
-
-// How often a PM falls due. Decided by the administrator; the dates follow from the first
-// one. The numbers are the server's PmFrequency values.
-const PM_FREQUENCIES = [
-  { value: 10, label: 'Monthly — 12 times a year' },
-  { value: 15, label: 'Every 2 months — 6 times a year' },
-  { value: 20, label: 'Quarterly — 4 times a year' },
-  { value: 30, label: 'Half-yearly — 2 times a year' },
-  { value: 40, label: 'Yearly — once a year' },
 ];
 
 /** The PM checklist kind, as the server numbers it. */
@@ -158,64 +151,78 @@ export function EquipmentForm({
 
   const hasContract = form.maintenanceContractType !== null;
 
-  // Preventive maintenance, set up in the same step as adding the machine. Adding only:
-  // changing a machine's PM afterwards is done on the PM pages.
+  // Preventive maintenance. Adding a machine sets up its first schedule in the same request.
+  // Editing lists the machine's schedules to change or stop, and can add another.
   const [pmFrequency, setPmFrequency] = useState<number | null>(null);
   const [pmFirstDue, setPmFirstDue] = useState(todayAtHospital);
   const [pmGrace, setPmGrace] = useState('7');
   const [pmChecklists, setPmChecklists] = useState<PmChecklist[] | null>(null);
   const [pmChecklistId, setPmChecklistId] = useState<number | null>(null);
-  const [pmDates, setPmDates] = useState<string[]>([]);
+  // null while they load. Only used when editing.
+  const [schedules, setSchedules] = useState<ScheduleEdit[] | null>(editing ? null : []);
 
   // The checklists that can be used depend on the type, so they are fetched when the type
   // is chosen. Only ones that are switched on and have a published version: a schedule on
   // a checklist nobody can fill in would put work on the list that cannot be done.
   async function loadPmChecklists(typeId: number) {
+    setPmChecklistId(null);
     if (!typeId) {
       setPmChecklists(null);
-      setPmChecklistId(null);
       return;
     }
     try {
       const all = await api.get<PmChecklist[]>(
         `/api/checklists?equipmentTypeId=${typeId}&kind=${PM_CHECKLIST_KIND}`,
       );
-      const usable = all.filter((c) => c.isActive && c.publishedVersionNo !== null);
-      setPmChecklists(usable);
-      setPmChecklistId(usable.length === 1 ? usable[0].id : null);
+      setPmChecklists(all.filter((c) => c.isActive && c.publishedVersionNo !== null));
     } catch {
       setPmChecklists([]);
-      setPmChecklistId(null);
     }
   }
 
-  // The dates the choice means, worked out by the server with the same code that will
-  // generate the real ones, so "quarterly" is shown as four dates and not trusted as a word.
+  // The machine's own schedules, and the checklists of its type, when the form opens on it.
+  const machineId = editing?.id;
+  const machineTypeId = editing?.equipmentTypeId;
   useEffect(() => {
-    if (pmFrequency === null || !pmFirstDue) return;
+    if (!machineId) return;
 
     let current = true;
     void (async () => {
       try {
-        const r = await api.get<{ dates: string[] }>(
-          `/api/pm/preview?frequency=${pmFrequency}&anchorDate=${pmFirstDue}`,
+        const r = await api.get<{ items: ScheduleApi[] }>(
+          `/api/pm/schedules?equipmentId=${machineId}&pageSize=100`,
         );
-        if (current) setPmDates(r.dates);
+        if (current) setSchedules(r.items.map((x) => toScheduleEdit(x, todayAtHospital())));
       } catch {
-        if (current) setPmDates([]);
+        if (current) {
+          setSchedules([]);
+          setError("Could not load this machine's PM schedules.");
+        }
       }
+      if (current && machineTypeId) await loadPmChecklists(machineTypeId);
     })();
 
     return () => {
       current = false;
     };
-  }, [pmFrequency, pmFirstDue]);
+    // loadPmChecklists is recreated every render and only sets state; this runs once per machine.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [machineId, machineTypeId]);
+
+  // What can still be added: a checklist that already has a schedule on this machine is
+  // changed above, not added again. The one on offer is chosen when it is the only one.
+  const offered = (pmChecklists ?? []).filter((c) => !(schedules ?? []).some((x) => x.checklistId === c.id));
+  const pmChecklistChoice =
+    pmChecklistId !== null && offered.some((c) => c.id === pmChecklistId)
+      ? pmChecklistId
+      : offered.length === 1 ? offered[0].id : null;
+  const canAddPm = !editing || (schedules !== null && (schedules.length === 0 || offered.length > 0));
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!editing && pmFrequency !== null) {
-      if (pmChecklistId === null) {
+    if (pmFrequency !== null) {
+      if (pmChecklistChoice === null) {
         setError('Choose the checklist for the PM, or set the PM schedule to None.');
         return;
       }
@@ -259,9 +266,9 @@ export function EquipmentForm({
         // Sent only when adding, and in the same request, so the machine and its PM are
         // added together or not at all.
         pm:
-          !editing && pmFrequency !== null && pmChecklistId !== null
+          !editing && pmFrequency !== null && pmChecklistChoice !== null
             ? {
-                checklistTemplateId: pmChecklistId,
+                checklistTemplateId: pmChecklistChoice,
                 frequency: pmFrequency,
                 firstDueDate: pmFirstDue,
                 graceDays: Number(pmGrace) || 0,
@@ -272,6 +279,33 @@ export function EquipmentForm({
 
       if (editing?.id) {
         await api.put(`/api/equipment/${editing.id}`, body);
+
+        // The machine is saved. Its PM is changed in separate requests, so if one fails
+        // the person is told the machine went through and what did not.
+        try {
+          for (const sched of schedules ?? []) {
+            const update = scheduleUpdate(sched);
+            if (update) await api.put(`/api/pm/schedules/${sched.id}`, update);
+          }
+          if (pmFrequency !== null && pmChecklistChoice !== null) {
+            await api.post('/api/pm/schedules', {
+              equipmentId: editing.id,
+              checklistTemplateId: pmChecklistChoice,
+              frequency: pmFrequency,
+              intervalDays: 0,
+              anchorDate: pmFirstDue,
+              graceDays: Number(pmGrace) || 0,
+            });
+          }
+        } catch (pmErr) {
+          setError(
+            `The machine was saved, but its PM could not be updated: ${
+              pmErr instanceof Error ? pmErr.message : 'try again.'
+            }`,
+          );
+          return;
+        }
+
         await onSaved(editing.id);
       } else {
         const created = await api.post<{ id: number }>('/api/equipment', body);
@@ -325,7 +359,7 @@ export function EquipmentForm({
           value={form.equipmentTypeId || ''}
           onChange={(e) => {
             set('equipmentTypeId', Number(e.target.value));
-            if (!editing) void loadPmChecklists(Number(e.target.value));
+            void loadPmChecklists(Number(e.target.value));
           }}
         >
           <option value="">Choose…</option>
@@ -623,103 +657,104 @@ export function EquipmentForm({
         </div>
       )}
 
-      {!editing && (
-        <fieldset className="stack" style={{ border: 0, padding: 0, margin: 0 }}>
-          <legend>Preventive maintenance (PM)</legend>
+      <fieldset className="stack" style={{ border: 0, padding: 0, margin: 0 }}>
+        <legend>Preventive maintenance (PM)</legend>
 
-          <label className="stack">
-            <span>PM schedule</span>
-            <select
-              className="field"
-              value={pmFrequency ?? ''}
-              onChange={(e) => setPmFrequency(e.target.value ? Number(e.target.value) : null)}
-            >
-              <option value="">None — set it up later</option>
-              {PM_FREQUENCIES.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
-            </select>
-            <span className="muted">
-              How often this machine is serviced. You decide, and the due dates follow from the
-              first one.
-            </span>
-          </label>
+        {editing && schedules === null && <p className="muted">Loading this machine&apos;s PM…</p>}
 
-          {pmFrequency !== null && form.equipmentTypeId === 0 && (
-            <p className="alert alert-info">Choose the equipment type above first, to pick its PM checklist.</p>
-          )}
+        {editing && schedules !== null && schedules.length === 0 && (
+          <p className="muted">This machine has no PM schedule yet.</p>
+        )}
 
-          {pmFrequency !== null && pmChecklists !== null && pmChecklists.length === 0 && (
-            <p className="alert alert-info">
-              This equipment type has no published PM checklist yet, so there is nothing to schedule.
-              Write and publish one on the <Link to="/checklists">Checklists</Link> page, then
-              schedule it from there. This form closes, so come back and add the machine afterwards.
-            </p>
-          )}
+        {editing && (schedules ?? []).map((sched) => (
+          <PmExistingSchedule
+            key={sched.id}
+            value={sched}
+            onChange={(next) => setSchedules((all) => (all ?? []).map((x) => (x.id === next.id ? next : x)))}
+          />
+        ))}
 
-          {pmFrequency !== null && pmChecklists !== null && pmChecklists.length > 0 && (
-            <>
-              <div style={{ display: 'grid', gap: '0.75rem', gridTemplateColumns: 'repeat(auto-fit, minmax(12rem, 1fr))' }}>
-                <label className="stack">
-                  <span>PM checklist</span>
-                  <select
-                    className="field"
-                    required
-                    value={pmChecklistId ?? ''}
-                    onChange={(e) => setPmChecklistId(e.target.value ? Number(e.target.value) : null)}
-                  >
-                    <option value="">Choose…</option>
-                    {pmChecklists.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </label>
-
-                <label className="stack">
-                  <span>First PM due</span>
-                  <input
-                    className="field"
-                    type="date"
-                    required
-                    value={pmFirstDue}
-                    onChange={(e) => setPmFirstDue(e.target.value)}
-                  />
-                </label>
-
-                <label className="stack">
-                  <span>Days of grace</span>
-                  <input
-                    className="field mono"
-                    type="number"
-                    min={0}
-                    max={365}
-                    value={pmGrace}
-                    onChange={(e) => setPmGrace(e.target.value)}
-                  />
-                </label>
-              </div>
-
+        {canAddPm && (
+          <>
+            <label className="stack">
+              <span>{editing ? 'Add a PM schedule' : 'PM schedule'}</span>
+              <select
+                className="field"
+                value={pmFrequency ?? ''}
+                onChange={(e) => setPmFrequency(e.target.value ? Number(e.target.value) : null)}
+              >
+                <option value="">{editing ? 'None' : 'None — set it up later'}</option>
+                {PM_FREQUENCIES.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+              </select>
               <span className="muted">
-                Days of grace are how many days after a due date the PM can still be done before it
-                counts as overdue.
+                How often this machine is serviced. You decide, and the due dates follow from the
+                first one.
               </span>
+            </label>
 
-              {pmDates.length > 0 && (
-                <div className="stack" style={{ gap: '0.25rem' }}>
-                  <span>Due dates in the first year</span>
-                  <ol className="row" style={{ flexWrap: 'wrap', gap: '0.5rem', listStyle: 'none', margin: 0, padding: 0 }}>
-                    {pmDates.map((d) => (
-                      <li key={d}>
-                        <span className="pill tone-neutral">{formatDate(d)}</span>
-                      </li>
-                    ))}
-                  </ol>
-                  <span className="muted">
-                    After that the dates carry on the same way. The PM appears on the work list as
-                    soon as the machine is added.
-                  </span>
+            {pmFrequency !== null && form.equipmentTypeId === 0 && (
+              <p className="alert alert-info">Choose the equipment type above first, to pick its PM checklist.</p>
+            )}
+
+            {pmFrequency !== null && pmChecklists !== null && offered.length === 0 && (
+              <p className="alert alert-info">
+                This equipment type has no published PM checklist to schedule. Write and publish one
+                on the <Link to="/checklists">Checklists</Link> page, then schedule it from there.
+                This form closes, so come back afterwards.
+              </p>
+            )}
+
+            {pmFrequency !== null && offered.length > 0 && (
+              <>
+                <div style={{ display: 'grid', gap: '0.75rem', gridTemplateColumns: 'repeat(auto-fit, minmax(12rem, 1fr))' }}>
+                  <label className="stack">
+                    <span>PM checklist</span>
+                    <select
+                      className="field"
+                      required
+                      value={pmChecklistChoice ?? ''}
+                      onChange={(e) => setPmChecklistId(e.target.value ? Number(e.target.value) : null)}
+                    >
+                      <option value="">Choose…</option>
+                      {offered.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </label>
+
+                  <label className="stack">
+                    <span>First PM due</span>
+                    <input
+                      className="field"
+                      type="date"
+                      required
+                      value={pmFirstDue}
+                      onChange={(e) => setPmFirstDue(e.target.value)}
+                    />
+                  </label>
+
+                  <label className="stack">
+                    <span>Days of grace</span>
+                    <input
+                      className="field mono"
+                      type="number"
+                      min={0}
+                      max={90}
+                      value={pmGrace}
+                      onChange={(e) => setPmGrace(e.target.value)}
+                    />
+                  </label>
                 </div>
-              )}
-            </>
-          )}
-        </fieldset>
-      )}
+
+                <span className="muted">
+                  Days of grace are how many days after a due date the PM can still be done before it
+                  counts as overdue. The first PM appears on the work list as soon as you save.
+                </span>
+
+                <PmDatePreview frequency={pmFrequency} anchor={pmFirstDue} />
+              </>
+            )}
+          </>
+        )}
+      </fieldset>
 
       <label className="stack">
         <span>Notes</span>

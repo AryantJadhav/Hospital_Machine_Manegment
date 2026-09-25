@@ -579,9 +579,9 @@ public static class EquipmentEndpoints
             });
         }
 
-        if (pm.GraceDays is < 0 or > 365)
+        if (pm.GraceDays is < 0 or > 90)
         {
-            return Results.BadRequest(new { error = "Grace days must be between 0 and 365." });
+            return Results.BadRequest(new { error = "Grace days must be between 0 and 90." });
         }
 
         if (pm.FirstDueDate.Year is < 2000 or > 2100)
