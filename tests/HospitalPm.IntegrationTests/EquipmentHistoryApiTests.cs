@@ -197,7 +197,6 @@ public sealed class EquipmentHistoryApiTests(PostgresFixture fixture) : IAsyncLi
             equipmentId = _equipmentId,
             faultDescription = "Alarm sounding with no cause",
             priority = 30,
-            outOfService = true,
         });
         created.EnsureSuccessStatusCode();
     }

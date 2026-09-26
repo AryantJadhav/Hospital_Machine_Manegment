@@ -35,6 +35,7 @@ public static class EquipmentHistoryEndpoints
         int id,
         HospitalPmDbContext db,
         HospitalPm.Infrastructure.Maintenance.HospitalClock clock,
+        TimeProvider time,
         CancellationToken ct)
     {
         var equipment = await db.Equipment.AsNoTracking()
@@ -188,9 +189,25 @@ public static class EquipmentHistoryEndpoints
             })
             .ToListAsync(ct);
 
-        var downtimeMinutes = workOrders
-            .Where(w => w.OutOfServiceAtUtc is not null && w.BackInServiceAtUtc is not null)
-            .Sum(w => (int)(w.BackInServiceAtUtc!.Value - w.OutOfServiceAtUtc!.Value).TotalMinutes);
+        // Down from the report until the machine is back in use, over every report ever made of it (not
+        // just the rows shown), overlaps counted once. A report cancelled as raised in error is no outage.
+        var now = time.GetUtcNow().UtcDateTime;
+        var windows = (await db.WorkOrders.AsNoTracking()
+                .Where(w => w.EquipmentId == id && w.OutOfServiceAtUtc != null && w.Status != WorkOrderStatus.Cancelled)
+                .Select(w => new { w.OutOfServiceAtUtc, w.BackInServiceAtUtc })
+                .ToListAsync(ct))
+            .Select(w => new DowntimeWindow(w.OutOfServiceAtUtc!.Value, w.BackInServiceAtUtc))
+            .ToList();
+
+        var registeredAt = await db.Equipment.AsNoTracking()
+            .Where(e => e.Id == id).Select(e => e.CreatedAtUtc).SingleAsync(ct);
+
+        // Uptime is counted from the last 30 days, or from when the machine was put on the register if that
+        // is more recent: a machine added last week has had a week, not a month, to be up.
+        var since = now.AddDays(-30) > registeredAt ? now.AddDays(-30) : registeredAt;
+        var trackedMinutes = Math.Max(0, (now - since).TotalMinutes);
+        var downLast30 = Math.Min(trackedMinutes, Downtime.Minutes(windows, now, since));
+        var upLast30 = trackedMinutes - downLast30;
 
         return Results.Ok(new
         {
@@ -198,7 +215,24 @@ public static class EquipmentHistoryEndpoints
             breadcrumb = ancestors,
             openPm,
             completedPm,
-            workOrders,
+            workOrders = workOrders.Select(w => new
+            {
+                w.Id,
+                w.Number,
+                w.Status,
+                w.Priority,
+                w.FaultDescription,
+                w.ReportedAtUtc,
+                w.ResolvedAtUtc,
+                w.ResolutionNotes,
+                w.OutOfServiceAtUtc,
+                w.BackInServiceAtUtc,
+                DowntimeHours = w.OutOfServiceAtUtc is { } d && w.Status != WorkOrderStatus.Cancelled
+                    ? Downtime.Hours(Downtime.Minutes([new DowntimeWindow(d, w.BackInServiceAtUtc)], now))
+                    : (double?)null,
+                StillDown = w.OutOfServiceAtUtc != null && w.BackInServiceAtUtc == null
+                    && w.Status != WorkOrderStatus.Cancelled,
+            }),
             summary = new
             {
                 openPmCount = openPm.Count,
@@ -208,11 +242,15 @@ public static class EquipmentHistoryEndpoints
                 openWorkOrderCount = workOrders.Count(w =>
                     w.Status != WorkOrderStatus.Closed && w.Status != WorkOrderStatus.Cancelled),
                 totalWorkOrderCount = await db.WorkOrders.CountAsync(w => w.EquipmentId == id, ct),
-                // Recorded downtime across every closed fault. The number a
-                // hospital is asked for when it reports equipment uptime.
-                totalDowntimeMinutes = downtimeMinutes,
-                currentlyDown = workOrders.Any(w =>
-                    w.OutOfServiceAtUtc is not null && w.BackInServiceAtUtc is null),
+                // Hours down since the machine was put on the register, and the last 30 days split into
+                // down and up. The numbers a hospital is asked for when it reports equipment uptime.
+                totalDowntimeHours = Downtime.Hours(Downtime.Minutes(windows, now)),
+                downtimeHoursLast30Days = Downtime.Hours(downLast30),
+                uptimeHoursLast30Days = Downtime.Hours(upLast30),
+                availabilityPercentLast30Days = trackedMinutes > 0
+                    ? Math.Round(100.0 * upLast30 / trackedMinutes, 1)
+                    : (double?)null,
+                currentlyDown = windows.Any(w => w.ToUtc is null),
             },
         });
     }

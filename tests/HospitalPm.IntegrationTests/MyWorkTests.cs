@@ -82,7 +82,7 @@ public sealed class MyWorkTests(PostgresFixture fixture) : IAsyncLifetime, IDisp
         await MoveAsync(_resolved, WorkOrderStatus.InProgress);
         var resolve = await _alice.PostAsJsonAsync(
             $"/api/work-orders/{_resolved}/resolve",
-            new { resolutionNotes = "Replaced the flow sensor", returnToService = true });
+            new { resolutionNotes = "Replaced the flow sensor" });
         Assert.True(resolve.IsSuccessStatusCode, await resolve.Content.ReadAsStringAsync());
 
         _bobs = await ReportAndAssignAsync(_bobId);

@@ -7,6 +7,7 @@ import { ROLES } from '../auth/context';
 import { EquipmentPicker } from '../EquipmentPicker';
 import { StatusPill } from '../StatusPill';
 import { PRIORITY_LOOK, WORK_ORDER_LOOK } from '../statusTones';
+import { formatHours } from '../hours';
 
 type WorkOrderRow = {
   id: number;
@@ -33,6 +34,9 @@ type WorkOrderDetail = WorkOrderRow & {
   resolvedAtUtc: string | null;
   closedAtUtc: string | null;
   downtimeMinutes: number | null;
+  /** Hours down for this report, up to now while the machine still is. */
+  downtimeHours: number | null;
+  stillDown: boolean;
   allowedTransitions: number[];
   notes: { id: number; body: string; statusAfter: number | null; authorUserId: number; createdAtUtc: string }[];
 };
@@ -310,7 +314,6 @@ function Detail({
     void act(() =>
       api.post(`/api/work-orders/${order.id}/resolve`, {
         resolutionNotes: resolution,
-        returnToService: true,
       }),
     );
   }
@@ -332,8 +335,10 @@ function Detail({
       <div className="row">
         <StatusPill look={WORK_ORDER_LOOK[order.status]}>{STATUS[order.status]}</StatusPill>
         <StatusPill look={PRIORITY_LOOK[order.priority]}>{PRIORITY[order.priority]}</StatusPill>
-        {order.downtimeMinutes !== null && (
-          <span className="pill">Down {formatDuration(order.downtimeMinutes)}</span>
+        {order.downtimeHours !== null && (
+          <span className="pill">
+            {order.stillDown ? `Down for ${formatHours(order.downtimeHours)} so far` : `Was down ${formatHours(order.downtimeHours)}`}
+          </span>
         )}
       </div>
 
@@ -472,7 +477,6 @@ function ReportForm({
   const [equipmentId, setEquipmentId] = useState<number | null>(initial?.id ?? null);
   const [fault, setFault] = useState('');
   const [priority, setPriority] = useState(20);
-  const [outOfService, setOutOfService] = useState(false);
   const [busy, setBusy] = useState(false);
 
   async function submit(e: FormEvent) {
@@ -484,7 +488,6 @@ function ReportForm({
         equipmentId,
         faultDescription: fault,
         priority,
-        outOfService,
       });
       await onDone();
     } catch (err) {
@@ -522,16 +525,11 @@ function ReportForm({
         />
       </label>
 
-      <label className="row" style={{ alignItems: 'center', gap: '0.5rem' }}>
-        <input
-          type="checkbox"
-          checked={outOfService}
-          onChange={(e) => setOutOfService(e.target.checked)}
-        />
-        {/* Downtime is measured from here, not from when an engineer
-            arrives, so this checkbox is what makes uptime reporting honest. */}
-        <span>The machine cannot be used (starts downtime now)</span>
-      </label>
+      {/* Reporting a fault is saying the machine is not working: its downtime is counted from this
+          moment, not from when an engineer arrives, until it is resolved and back in use. */}
+      <p className="muted" style={{ margin: 0 }}>
+        The machine is counted as down from the moment you report it, until it is fixed and back in use.
+      </p>
 
       <div className="row">
         <button className="btn btn-primary" type="submit" disabled={busy || equipmentId === null || !fault.trim()}>
@@ -541,11 +539,4 @@ function ReportForm({
       </div>
     </form>
   );
-}
-
-function formatDuration(minutes: number): string {
-  if (minutes < 60) return `${minutes} min`;
-  const days = Math.floor(minutes / 1440);
-  const hours = Math.floor((minutes % 1440) / 60);
-  return days > 0 ? `${days}d ${hours}h` : `${hours}h ${minutes % 60}m`;
 }

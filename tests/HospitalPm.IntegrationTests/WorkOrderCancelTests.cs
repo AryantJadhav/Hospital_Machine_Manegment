@@ -101,7 +101,6 @@ public sealed class WorkOrderCancelTests(PostgresFixture fixture) : IAsyncLifeti
             equipmentId = _equipmentId,
             faultDescription = "Fails self test on power up",
             priority = (int)WorkOrderPriority.Critical,
-            outOfService = true,
         });
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
         return (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
@@ -183,22 +182,17 @@ public sealed class WorkOrderCancelTests(PostgresFixture fixture) : IAsyncLifeti
     }
 
     [Fact]
-    public async Task Cancelling_an_order_that_never_took_the_machine_out_of_service_leaves_downtime_alone()
+    public async Task A_cancelled_report_is_no_outage_and_shows_no_downtime()
     {
-        var created = await _admin.PostAsJsonAsync("/api/work-orders", new
-        {
-            equipmentId = _equipmentId,
-            faultDescription = "Cosmetic scratch",
-            priority = (int)WorkOrderPriority.Low,
-            outOfService = false,
-        });
-        var id = (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
+        var id = await ReportCriticalMachineDownAsync();
 
         Assert.Equal(HttpStatusCode.NoContent, (await MoveAsync(_admin, id, WorkOrderStatus.Cancelled)).StatusCode);
 
-        // No window was ever opened, so none is invented.
+        // Every report starts the clock, and cancelling stops it; but a report cancelled as raised in
+        // error was never an outage, so it is not counted or shown as one.
         var order = await DetailAsync(_admin, id);
-        Assert.Equal(JsonValueKind.Null, order.GetProperty("outOfServiceAtUtc").ValueKind);
-        Assert.Equal(JsonValueKind.Null, order.GetProperty("backInServiceAtUtc").ValueKind);
+        Assert.NotEqual(JsonValueKind.Null, order.GetProperty("backInServiceAtUtc").ValueKind);
+        Assert.Equal(JsonValueKind.Null, order.GetProperty("downtimeHours").ValueKind);
+        Assert.False(order.GetProperty("stillDown").GetBoolean());
     }
 }

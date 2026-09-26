@@ -10,12 +10,11 @@ namespace HospitalPm.Api.WorkOrders;
 public sealed record ReportRequest(
     int EquipmentId,
     string FaultDescription,
-    WorkOrderPriority Priority,
-    bool OutOfService);
+    WorkOrderPriority Priority);
 
 public sealed record AssignRequest(int? AssignedToUserId, string? Note);
 
-public sealed record ResolveRequest(string ResolutionNotes, bool ReturnToService);
+public sealed record ResolveRequest(string ResolutionNotes);
 
 public sealed record StatusRequest(WorkOrderStatus Status, string? Note);
 
@@ -141,7 +140,7 @@ public static class WorkOrderEndpoints
     }
 
     private static async Task<IResult> GetAsync(
-        int id, HospitalPmDbContext db, ClaimsPrincipal principal, CancellationToken ct)
+        int id, HospitalPmDbContext db, ClaimsPrincipal principal, TimeProvider clock, CancellationToken ct)
     {
         var order = await db.WorkOrders.AsNoTracking()
             .Include(w => w.Equipment)!.ThenInclude(e => e!.EquipmentType)
@@ -184,6 +183,14 @@ public static class WorkOrderEndpoints
             order.OutOfServiceAtUtc,
             order.BackInServiceAtUtc,
             order.DowntimeMinutes,
+            // Hours the machine has been down for this report, up to now while it still is. A report
+            // that was cancelled was not an outage, so it counts for nothing.
+            downtimeHours = order.OutOfServiceAtUtc is { } down && order.Status != WorkOrderStatus.Cancelled
+                ? Downtime.Hours(Downtime.Minutes(
+                    [new DowntimeWindow(down, order.BackInServiceAtUtc)], clock.GetUtcNow().UtcDateTime))
+                : (double?)null,
+            stillDown = order.OutOfServiceAtUtc != null && order.BackInServiceAtUtc == null
+                && order.Status != WorkOrderStatus.Cancelled,
             // Told to the client so a UI offers only what will actually work -
             // for this caller. Cancelling is left out for anyone but an
             // administrator, so the button is not offered only to be refused.
@@ -238,10 +245,10 @@ public static class WorkOrderEndpoints
             Status = WorkOrderStatus.Reported,
             ReportedByUserId = UserId(principal),
             ReportedAtUtc = now,
-            // Recorded at report time when the ward says the machine is
-            // unusable. Downtime that starts when an engineer gets round to
-            // it would understate every uptime figure the hospital reports.
-            OutOfServiceAtUtc = request.OutOfService ? now : null,
+            // Somebody reporting a machine is somebody saying it is not working, so the machine is
+            // down from this moment. Downtime that started when an engineer got round to it would
+            // understate every uptime figure the hospital reports.
+            OutOfServiceAtUtc = now,
         };
 
         db.WorkOrders.Add(order);
@@ -369,6 +376,13 @@ public static class WorkOrderEndpoints
             order.BackInServiceAtUtc = now;
         }
 
+        // "We thought it was fixed" and it was not: the machine is down again, and it has been down
+        // since the report, so the hours are counted as one outage rather than two.
+        if (order.Status == WorkOrderStatus.Resolved && request.Status == WorkOrderStatus.InProgress)
+        {
+            order.BackInServiceAtUtc = null;
+        }
+
         order.Status = request.Status;
         AddNote(db, order, request.Note, principal, clock);
         await db.SaveChangesAsync(ct);
@@ -412,7 +426,8 @@ public static class WorkOrderEndpoints
         order.ResolvedByUserId = UserId(principal);
         order.ResolvedAtUtc = now;
 
-        if (request.ReturnToService && order.OutOfServiceAtUtc is not null && order.BackInServiceAtUtc is null)
+        // Fixed means back in use: the downtime stops here and the uptime starts again.
+        if (order.OutOfServiceAtUtc is not null && order.BackInServiceAtUtc is null)
         {
             order.BackInServiceAtUtc = now;
         }
@@ -420,7 +435,7 @@ public static class WorkOrderEndpoints
         AddNote(db, order, request.ResolutionNotes, principal, clock);
         await db.SaveChangesAsync(ct);
 
-        return Results.Ok(new { order.Status, order.DowntimeMinutes });
+        return Results.Ok(new { order.Status, order.DowntimeMinutes, DowntimeHours = Downtime.Hours(order.DowntimeMinutes ?? 0) });
     }
 
     private static async Task<IResult> AddNoteAsync(

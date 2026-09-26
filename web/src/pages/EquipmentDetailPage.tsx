@@ -13,6 +13,7 @@ import { HandoffNotice } from '../HandoffNotice';
 import { StatusPill } from '../StatusPill';
 import { Tile } from '../Tile';
 import { CONTRACT_LABEL, CRITICALITY_LABEL, CRITICALITY_LOOK, EQUIPMENT_LOOK, PM_LOOK, PRIORITY_LOOK, WORK_ORDER_LOOK } from '../statusTones';
+import { formatHours } from '../hours';
 
 type History = {
   equipment: {
@@ -73,6 +74,8 @@ type History = {
     reportedAtUtc: string;
     resolvedAtUtc: string | null;
     resolutionNotes: string | null;
+    downtimeHours: number | null;
+    stillDown: boolean;
   }[];
   summary: {
     openPmCount: number;
@@ -80,7 +83,10 @@ type History = {
     completedPmCount: number;
     openWorkOrderCount: number;
     totalWorkOrderCount: number;
-    totalDowntimeMinutes: number;
+    totalDowntimeHours: number;
+    downtimeHoursLast30Days: number;
+    uptimeHoursLast30Days: number;
+    availabilityPercentLast30Days: number | null;
     currentlyDown: boolean;
   };
 };
@@ -396,8 +402,15 @@ export function EquipmentDetailPage() {
             />
             <Tile label="Faults logged" value={data.summary.totalWorkOrderCount} />
             <Tile
-              label="Recorded downtime"
-              value={formatDuration(data.summary.totalDowntimeMinutes)}
+              label={data.summary.currentlyDown ? 'Down now · total downtime' : 'Total downtime'}
+              value={formatHours(data.summary.totalDowntimeHours)}
+              tone={data.summary.currentlyDown ? 'danger' : undefined}
+            />
+            <Tile label="Uptime, last 30 days" value={formatHours(data.summary.uptimeHoursLast30Days)} />
+            <Tile label="Downtime, last 30 days" value={formatHours(data.summary.downtimeHoursLast30Days)} />
+            <Tile
+              label="Availability, last 30 days"
+              value={data.summary.availabilityPercentLast30Days === null ? '—' : `${data.summary.availabilityPercentLast30Days}%`}
             />
           </div>
         </div>
@@ -510,6 +523,11 @@ export function EquipmentDetailPage() {
                 Reported {formatDateTime(w.reportedAtUtc)}
                 {w.resolvedAtUtc && ` · resolved ${formatDateTime(w.resolvedAtUtc)}`}
               </div>
+              {w.downtimeHours !== null && (
+                <div className="muted hist-meta">
+                  {w.stillDown ? `Down for ${formatHours(w.downtimeHours)} so far` : `Was down ${formatHours(w.downtimeHours)}`}
+                </div>
+              )}
             </div>
 
             <div className="stack" style={{ gap: '0.35rem', alignItems: 'flex-end' }}>
@@ -570,13 +588,4 @@ function Row({
       </dd>
     </>
   );
-}
-
-/** Hours and days: "4380 minutes" means nothing to a reader. */
-function formatDuration(minutes: number): string {
-  if (minutes === 0) return '—';
-  if (minutes < 60) return `${minutes} min`;
-  const days = Math.floor(minutes / 1440);
-  const hours = Math.floor((minutes % 1440) / 60);
-  return days > 0 ? `${days}d ${hours}h` : `${hours}h`;
 }

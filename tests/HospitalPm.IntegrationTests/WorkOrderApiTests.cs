@@ -77,7 +77,6 @@ public sealed class WorkOrderApiTests(PostgresFixture fixture) : IAsyncLifetime,
             equipmentId = _equipmentId,
             faultDescription = "Display intermittently blank",
             priority = 30,
-            outOfService = true,
         });
         created.EnsureSuccessStatusCode();
 
@@ -155,7 +154,7 @@ public sealed class WorkOrderApiTests(PostgresFixture fixture) : IAsyncLifetime,
     {
         var res = await _client.PostAsJsonAsync(
             $"/api/work-orders/{_workOrderId}/resolve",
-            new { resolutionNotes = "   ", returnToService = true });
+            new { resolutionNotes = "   " });
 
         Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
     }
