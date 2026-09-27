@@ -282,9 +282,8 @@ public static class EquipmentEndpoints
     }
 
     /// <summary>
-    /// Resolves a scanned QR tag. Case-insensitive: a technician who types
-    /// the tag by hand when a label is too scratched to scan should still
-    /// find the machine.
+    /// Looks a machine up by its asset tag. Case-insensitive: a technician who types
+    /// the tag by hand, reading it off a scratched label, should still find the machine.
     /// </summary>
     private static async Task<IResult> GetByTagAsync(string assetTag, HospitalPmDbContext db, CancellationToken ct)
     {

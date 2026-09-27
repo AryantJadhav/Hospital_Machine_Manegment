@@ -36,7 +36,7 @@ const CHOICES = [
     does: [
       'The PM round, and signing off what was done',
       'Reporting a fault and seeing it through',
-      'Reading the register, scanning a machine',
+      'Reading the register',
     ],
   },
 ] as const;

@@ -16,7 +16,6 @@ import { BackupsPage } from './pages/BackupsPage';
 import { DiagnosticsPage } from './pages/DiagnosticsPage';
 import { LicencePage } from './pages/LicencePage';
 import { UpdatesPage } from './pages/UpdatesPage';
-import { ScanPage } from './pages/ScanPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { PmTasksPage } from './pages/PmTasksPage';
 import { PmDoPage } from './pages/PmDoPage';
@@ -83,12 +82,6 @@ function Shell() {
             Equipment
           </NavLink>
 
-          {/* Hidden rather than shown-and-rejected. The server enforces the
-              same rule, so this is presentation, not the access control. */}
-          <NavLink to="/scan" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-            Scan
-          </NavLink>
-
           <NavLink to="/locations" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
             Locations
           </NavLink>
@@ -151,7 +144,6 @@ function Shell() {
           <Route path="/equipment/:id" element={<EquipmentDetailPage />} />
           <Route path="/locations" element={<LocationsPage />} />
           <Route path="/checklists" element={<ChecklistsPage />} />
-          <Route path="/scan" element={<ScanPage />} />
           <Route
             path="/compliance"
             element={isAdmin ? <CompliancePage /> : <Elsewhere notice={ADMIN_ONLY} />}
