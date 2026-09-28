@@ -1,6 +1,7 @@
 using HospitalPm.Domain.Assets;
 using HospitalPm.Domain.Checklists;
 using HospitalPm.Domain.Equipment;
+using HospitalPm.Domain.Inventory;
 using HospitalPm.Domain.Maintenance;
 using HospitalPm.Domain.WorkOrders;
 using HospitalPm.Domain.Operations;
@@ -28,6 +29,8 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
     public DbSet<EquipmentType> EquipmentTypes => Set<EquipmentType>();
 
     public DbSet<EquipmentTypeCategory> EquipmentTypeCategories => Set<EquipmentTypeCategory>();
+
+    public DbSet<SparePart> SpareParts => Set<SparePart>();
 
     public DbSet<Location> Locations => Set<Location>();
 
@@ -118,6 +121,40 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
                 .OnDelete(DeleteBehavior.Restrict);
 
             e.HasIndex(x => x.CategoryId).HasDatabaseName("ix_equipment_type_category_category");
+        });
+
+        builder.Entity<SparePart>(e =>
+        {
+            e.ToTable("spare_part");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.PartNumber).HasColumnName("part_number").HasMaxLength(64).IsRequired();
+            e.Property(x => x.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
+            e.Property(x => x.Description).HasColumnName("description");
+            e.Property(x => x.EquipmentTypeId).HasColumnName("equipment_type_id");
+            e.Property(x => x.Unit).HasColumnName("unit").HasMaxLength(20).HasDefaultValue("pcs");
+            e.Property(x => x.QuantityOnHand).HasColumnName("quantity_on_hand").HasDefaultValue(0);
+            e.Property(x => x.ReorderLevel).HasColumnName("reorder_level").HasDefaultValue(0);
+            e.Property(x => x.UnitCost).HasColumnName("unit_cost").HasColumnType("numeric(12,2)");
+            e.Property(x => x.Supplier).HasColumnName("supplier").HasMaxLength(200);
+            e.Property(x => x.StorageLocation).HasColumnName("storage_location").HasMaxLength(200);
+            e.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(true);
+            e.Property(x => x.Notes).HasColumnName("notes");
+            e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").HasDefaultValueSql("now()");
+            e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").HasDefaultValueSql("now()");
+
+            e.HasOne(x => x.EquipmentType)
+                .WithMany()
+                .HasForeignKey(x => x.EquipmentTypeId)
+                // Restrict: a type still stocked for cannot be removed out from under its parts.
+                .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasIndex(x => new { x.TenantId, x.PartNumber }).IsUnique().HasDatabaseName("ux_spare_part_tenant_number");
+            e.HasIndex(x => x.EquipmentTypeId).HasDatabaseName("ix_spare_part_equipment_type");
+            // The low-stock list on the register page: active parts at or below
+            // their reorder level, which is exactly this ordering.
+            e.HasIndex(x => new { x.IsActive, x.QuantityOnHand }).HasDatabaseName("ix_spare_part_active_quantity");
         });
 
         builder.Entity<PmTaskAttachment>(e =>

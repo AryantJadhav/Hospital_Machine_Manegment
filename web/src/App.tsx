@@ -9,6 +9,7 @@ import { LoginPage } from './pages/LoginPage';
 import { EquipmentListPage } from './pages/EquipmentListPage';
 import { EquipmentDetailPage } from './pages/EquipmentDetailPage';
 import { EquipmentTypesPage } from './pages/EquipmentTypesPage';
+import { SparePartsPage } from './pages/SparePartsPage';
 import { ImportPage } from './pages/ImportPage';
 import { SetupPage } from './pages/SetupPage';
 import { LocationsPage } from './pages/LocationsPage';
@@ -82,6 +83,13 @@ function Shell() {
             Equipment
           </NavLink>
 
+          {/* Visible to everyone, editable only by an Admin, the same split as
+              Checklists: an engineer checking the shelf before promising a
+              repair date is the reason this page exists. */}
+          <NavLink to="/spare-parts" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+            Spare parts
+          </NavLink>
+
           <NavLink to="/locations" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
             Locations
           </NavLink>
@@ -144,6 +152,7 @@ function Shell() {
           <Route path="/equipment/:id" element={<EquipmentDetailPage />} />
           <Route path="/locations" element={<LocationsPage />} />
           <Route path="/checklists" element={<ChecklistsPage />} />
+          <Route path="/spare-parts" element={<SparePartsPage />} />
           <Route
             path="/compliance"
             element={isAdmin ? <CompliancePage /> : <Elsewhere notice={ADMIN_ONLY} />}
