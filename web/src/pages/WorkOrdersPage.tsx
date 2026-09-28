@@ -39,7 +39,19 @@ type WorkOrderDetail = WorkOrderRow & {
   stillDown: boolean;
   allowedTransitions: number[];
   notes: { id: number; body: string; statusAfter: number | null; authorUserId: number; createdAtUtc: string }[];
+  partsUsed: {
+    id: number;
+    sparePartId: number;
+    partNumber: string;
+    name: string;
+    quantityUsed: number;
+    unitCostAtUse: number | null;
+    usedByUserId: number;
+    usedAtUtc: string;
+  }[];
 };
+
+type SparePartOption = { id: number; partNumber: string; name: string; quantityOnHand: number; unit: string };
 
 const STATUS: Record<number, string> = {
   10: 'Reported',
@@ -52,6 +64,8 @@ const STATUS: Record<number, string> = {
 };
 
 const PRIORITY: Record<number, string> = { 10: 'Low', 20: 'Medium', 30: 'High', 40: 'Critical' };
+
+const rupees = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
 
 export function WorkOrdersPage() {
   const { can } = useAuth();
@@ -284,6 +298,10 @@ function Detail({
   const [resolveProblem, setResolveProblem] = useState<string | null>(null);
   const resolutionBox = useRef<HTMLTextAreaElement>(null);
   const [staff, setStaff] = useState<{ id: number; fullName: string }[]>([]);
+  const [spareParts, setSpareParts] = useState<SparePartOption[]>([]);
+  const [partId, setPartId] = useState('');
+  const [partQty, setPartQty] = useState('1');
+  const [partError, setPartError] = useState<string | null>(null);
 
   // Only the people who can actually be sent to a machine. Loaded here rather
   // than with the list because it is only needed once a work order is open,
@@ -299,6 +317,40 @@ function Detail({
       }
     })();
   }, [canAssign]);
+
+  const isTerminal = order.allowedTransitions.length === 0;
+
+  // The shelf to pick from, loaded once a ticket is open rather than with
+  // every row in the list - most work orders are looked at without anyone
+  // drawing a part against them.
+  useEffect(() => {
+    if (isTerminal) return;
+    void (async () => {
+      try {
+        const data = await api.get<{ items: SparePartOption[] }>('/api/spare-parts?pageSize=200');
+        setSpareParts(data.items);
+      } catch {
+        // The rest of the ticket still works without the picker.
+      }
+    })();
+  }, [isTerminal]);
+
+  // Local, the same as resolveProblem below: what is missing before the
+  // request is even sent. A server-side refusal (not enough stock, a
+  // retired part) surfaces through the page's own error banner, like every
+  // other action on this ticket.
+  function usePart() {
+    const id = Number(partId);
+    const qty = Number(partQty);
+    if (!id || !Number.isInteger(qty) || qty < 1) {
+      setPartError('Choose a part and a quantity of at least 1.');
+      return;
+    }
+    setPartError(null);
+    void act(() => api.post(`/api/work-orders/${order.id}/parts`, { sparePartId: id, quantityUsed: qty }));
+    setPartId('');
+    setPartQty('1');
+  }
 
   // The button stays clickable when the box is empty and says what is missing.
   // A greyed-out button explained only by a placeholder reads as broken: the
@@ -351,6 +403,63 @@ function Detail({
         <div>
           <div className="muted" style={{ fontSize: '0.8rem' }}>Work carried out</div>
           <p style={{ margin: '0.2rem 0 0' }}>{order.resolutionNotes}</p>
+        </div>
+      )}
+
+      {(order.partsUsed.length > 0 || !isTerminal) && (
+        <div>
+          <div className="muted" style={{ fontSize: '0.8rem', marginBottom: '0.35rem' }}>Parts used</div>
+          {order.partsUsed.length > 0 && (
+            <ul className="timeline">
+              {order.partsUsed.map((p) => (
+                <li key={p.id}>
+                  <span className="mono">{p.quantityUsed}× {p.partNumber}</span> — {p.name}
+                  {p.unitCostAtUse !== null && (
+                    <span className="muted"> ({rupees.format(p.unitCostAtUse * p.quantityUsed)})</span>
+                  )}
+                  {!isTerminal && (
+                    <button
+                      className="btn btn-quiet"
+                      style={{ marginLeft: '0.5rem' }}
+                      onClick={() => void act(() => api.del(`/api/work-orders/${order.id}/parts/${p.id}`))}
+                    >
+                      Undo
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {!isTerminal && (
+            <div className="row" style={{ marginTop: order.partsUsed.length > 0 ? '0.5rem' : 0 }}>
+              <select
+                aria-label="Part to record"
+                className="field"
+                style={{ maxWidth: '16rem' }}
+                value={partId}
+                onChange={(e) => setPartId(e.target.value)}
+              >
+                <option value="">Choose a part…</option>
+                {spareParts.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.partNumber} — {p.name} ({p.quantityOnHand} {p.unit} left)
+                  </option>
+                ))}
+              </select>
+              <input
+                aria-label="Quantity used"
+                type="number"
+                min={1}
+                className="field"
+                style={{ maxWidth: '5rem' }}
+                value={partQty}
+                onChange={(e) => setPartQty(e.target.value)}
+              />
+              <button className="btn" onClick={usePart}>Record</button>
+            </div>
+          )}
+          {partError && <p className="alert alert-error" role="alert">{partError}</p>}
         </div>
       )}
 

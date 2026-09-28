@@ -56,6 +56,8 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
 
     public DbSet<WorkOrderNote> WorkOrderNotes => Set<WorkOrderNote>();
 
+    public DbSet<WorkOrderPart> WorkOrderParts => Set<WorkOrderPart>();
+
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     public DbSet<BackupRun> BackupRuns => Set<BackupRun>();
@@ -457,6 +459,35 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
 
             e.HasIndex(x => new { x.WorkOrderId, x.CreatedAtUtc })
                 .HasDatabaseName("ix_work_order_note_timeline");
+        });
+
+        builder.Entity<WorkOrderPart>(e =>
+        {
+            e.ToTable("work_order_part");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.WorkOrderId).HasColumnName("work_order_id");
+            e.Property(x => x.SparePartId).HasColumnName("spare_part_id");
+            e.Property(x => x.QuantityUsed).HasColumnName("quantity_used");
+            e.Property(x => x.UnitCostAtUse).HasColumnName("unit_cost_at_use").HasColumnType("numeric(12,2)");
+            e.Property(x => x.UsedByUserId).HasColumnName("used_by_user_id");
+            e.Property(x => x.UsedAtUtc).HasColumnName("used_at_utc").HasDefaultValueSql("now()");
+
+            e.HasOne(x => x.WorkOrder)
+                .WithMany(x => x!.PartsUsed)
+                .HasForeignKey(x => x.WorkOrderId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(x => x.SparePart)
+                .WithMany()
+                .HasForeignKey(x => x.SparePartId)
+                // Restrict: a part with repair history behind it cannot be
+                // removed out from under that record.
+                .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasIndex(x => x.WorkOrderId).HasDatabaseName("ix_work_order_part_order");
+            e.HasIndex(x => x.SparePartId).HasDatabaseName("ix_work_order_part_spare_part");
         });
 
         builder.Entity<BackupRun>(e =>

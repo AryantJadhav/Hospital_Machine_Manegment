@@ -7,6 +7,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace HospitalPm.Api.WorkOrders;
 
+public sealed record UsePartRequest(int SparePartId, int QuantityUsed);
+
 public sealed record ReportRequest(
     int EquipmentId,
     string FaultDescription,
@@ -39,6 +41,12 @@ public static class WorkOrderEndpoints
         group.MapPost("/{id:int}/notes", AddNoteAsync);
         group.MapPost("/{id:int}/status", ChangeStatusAsync);
         group.MapPost("/{id:int}/resolve", ResolveAsync);
+
+        // Drawing a part off the shelf is part of doing the repair, the same
+        // authority as adding a note or changing status - not a supervisory
+        // decision like assignment.
+        group.MapPost("/{id:int}/parts", UsePartAsync);
+        group.MapDelete("/{id:int}/parts/{partUsageId:int}", RemovePartAsync);
 
         // Assignment is a supervisory decision about who does the work.
         group.MapPost("/{id:int}/assign", AssignAsync)
@@ -158,6 +166,22 @@ public static class WorkOrderEndpoints
             .Select(n => new { n.Id, n.Body, n.StatusAfter, n.AuthorUserId, n.CreatedAtUtc })
             .ToListAsync(ct);
 
+        var partsUsed = await db.WorkOrderParts.AsNoTracking()
+            .Where(p => p.WorkOrderId == id)
+            .OrderBy(p => p.UsedAtUtc)
+            .Select(p => new
+            {
+                p.Id,
+                p.SparePartId,
+                p.SparePart!.PartNumber,
+                p.SparePart.Name,
+                p.QuantityUsed,
+                p.UnitCostAtUse,
+                p.UsedByUserId,
+                p.UsedAtUtc,
+            })
+            .ToListAsync(ct);
+
         return Results.Ok(new
         {
             order.Id,
@@ -198,6 +222,7 @@ public static class WorkOrderEndpoints
                 .Where(s => s != WorkOrderStatus.Cancelled || CanCancel(principal))
                 .ToList(),
             notes,
+            partsUsed,
         });
     }
 
@@ -436,6 +461,105 @@ public static class WorkOrderEndpoints
         await db.SaveChangesAsync(ct);
 
         return Results.Ok(new { order.Status, order.DowntimeMinutes, DowntimeHours = Downtime.Hours(order.DowntimeMinutes ?? 0) });
+    }
+
+    private static async Task<IResult> UsePartAsync(
+        int id,
+        [FromBody] UsePartRequest request,
+        HospitalPmDbContext db,
+        ClaimsPrincipal principal,
+        TimeProvider clock,
+        CancellationToken ct)
+    {
+        if (request.QuantityUsed <= 0)
+        {
+            return Results.BadRequest(new { error = "Quantity used must be at least 1." });
+        }
+
+        var order = await db.WorkOrders.SingleOrDefaultAsync(w => w.Id == id, ct);
+        if (order is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (WorkOrderTransitions.IsTerminal(order.Status))
+        {
+            return Results.Conflict(new
+            {
+                error = "This work order is closed. Reopen it, or raise a new one, before recording parts against it.",
+            });
+        }
+
+        var part = await db.SpareParts.SingleOrDefaultAsync(p => p.Id == request.SparePartId, ct);
+        if (part is null)
+        {
+            return Results.BadRequest(new { error = "Unknown spare part." });
+        }
+
+        if (!part.IsActive)
+        {
+            return Results.BadRequest(new { error = "This part has been retired and can no longer be recorded as used." });
+        }
+
+        if (part.QuantityOnHand < request.QuantityUsed)
+        {
+            return Results.BadRequest(new
+            {
+                error = $"Only {part.QuantityOnHand} {part.Unit} of {part.Name} left on the shelf.",
+            });
+        }
+
+        part.QuantityOnHand -= request.QuantityUsed;
+
+        db.WorkOrderParts.Add(new WorkOrderPart
+        {
+            WorkOrderId = order.Id,
+            SparePartId = part.Id,
+            QuantityUsed = request.QuantityUsed,
+            UnitCostAtUse = part.UnitCost,
+            UsedByUserId = UserId(principal),
+            UsedAtUtc = clock.GetUtcNow().UtcDateTime,
+        });
+
+        await db.SaveChangesAsync(ct);
+
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> RemovePartAsync(
+        int id, int partUsageId, HospitalPmDbContext db, CancellationToken ct)
+    {
+        var order = await db.WorkOrders.SingleOrDefaultAsync(w => w.Id == id, ct);
+        if (order is null)
+        {
+            return Results.NotFound();
+        }
+
+        var usage = await db.WorkOrderParts.SingleOrDefaultAsync(p => p.Id == partUsageId && p.WorkOrderId == id, ct);
+        if (usage is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (WorkOrderTransitions.IsTerminal(order.Status))
+        {
+            return Results.Conflict(new
+            {
+                error = "This work order is closed. Reopen it before correcting parts recorded against it.",
+            });
+        }
+
+        // Undo means the shelf gets the quantity back - the part was never really consumed.
+        var part = await db.SpareParts.SingleOrDefaultAsync(p => p.Id == usage.SparePartId, ct);
+        if (part is not null)
+        {
+            part.QuantityOnHand += usage.QuantityUsed;
+        }
+
+        db.WorkOrderParts.Remove(usage);
+        await db.SaveChangesAsync(ct);
+
+        return Results.NoContent();
     }
 
     private static async Task<IResult> AddNoteAsync(

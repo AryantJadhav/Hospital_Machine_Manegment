@@ -1,3 +1,4 @@
+using HospitalPm.Domain.Inventory;
 using EquipmentAsset = HospitalPm.Domain.Assets.Equipment;
 
 namespace HospitalPm.Domain.WorkOrders;
@@ -112,6 +113,8 @@ public sealed class WorkOrder
 
     public ICollection<WorkOrderNote> Notes { get; set; } = [];
 
+    public ICollection<WorkOrderPart> PartsUsed { get; set; } = [];
+
     /// <summary>Minutes the machine was unavailable, when both ends are known.</summary>
     public int? DowntimeMinutes =>
         OutOfServiceAtUtc is { } from && BackInServiceAtUtc is { } to && to > from
@@ -144,4 +147,38 @@ public sealed class WorkOrderNote
     public DateTime CreatedAtUtc { get; set; }
 
     public WorkOrder? WorkOrder { get; set; }
+}
+
+/// <summary>
+/// A spare drawn from the shelf against this ticket: what was used, how many,
+/// and what it cost the department at the time. Recording it moves the same
+/// count off <see cref="SparePart.QuantityOnHand"/>, so the register and the
+/// repair history never disagree about what is left on the shelf.
+/// </summary>
+public sealed class WorkOrderPart
+{
+    public int Id { get; set; }
+
+    public int TenantId { get; set; } = 1;
+
+    public int WorkOrderId { get; set; }
+
+    public int SparePartId { get; set; }
+
+    public int QuantityUsed { get; set; }
+
+    /// <summary>
+    /// The part's unit cost at the moment it was drawn, copied rather than
+    /// looked up live, so a later price change on the shelf does not rewrite
+    /// what a past repair is reported to have cost.
+    /// </summary>
+    public decimal? UnitCostAtUse { get; set; }
+
+    public int UsedByUserId { get; set; }
+
+    public DateTime UsedAtUtc { get; set; }
+
+    public WorkOrder? WorkOrder { get; set; }
+
+    public SparePart? SparePart { get; set; }
 }
