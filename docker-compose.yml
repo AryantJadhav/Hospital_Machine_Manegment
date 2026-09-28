@@ -38,8 +38,12 @@ services:
       # compose file cannot, so a default is provided. Set a real one in
       # an .env file or with POSTGRES_PASSWORD=... on the command line.
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hospitalpm_change_me}
+    # The volume mounts the parent directory, not .../data directly: the
+    # official image changed this in PostgreSQL 18, which now lays out data
+    # the way pg_ctlcluster does (a version-numbered subdirectory of its own)
+    # and refuses to start rather than guess at a mount aimed the old way.
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U hospitalpm"]
       interval: 10s
