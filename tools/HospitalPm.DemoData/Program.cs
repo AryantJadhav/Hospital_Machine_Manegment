@@ -172,6 +172,19 @@ string[] manufacturers =
     "Nihon Kohden", "Skanray", "BPL Medical", "Schiller", "Fresenius",
 ];
 
+string[] insurers = ["New India Assurance", "ICICI Lombard", "HDFC Ergo", "Bajaj Allianz", "Star Health"];
+string[] amcVendors = ["MedEquip Services", "BioCare Solutions", "Skanray Support", "Philips AMC Services", "Local Biomedical Vendor"];
+
+// What the machine is, not chance, decides how much a patient depends on it
+// working - the same examples the enum's own doc comments use.
+int CriticalityFor(string code) => code switch
+{
+    "icu-ventilator" or "defibrillator" or "hemodialysis-machine" or "infant-radiant-warmer" => 30,
+    "ecg-machine" or "multipara-monitor" or "infusion-pump" or "syringe-pump"
+        or "pulse-oximeter" or "phototherapy-unit" or "mobile-xray" or "ultrasound-scanner" => 20,
+    _ => 10,
+};
+
 // The types the demo's checklists cover get most of the fleet, so the PM
 // programme has something to bite on. The rest is spread thinly to make the
 // register look like a real hospital rather than ten of everything.
@@ -189,6 +202,9 @@ string[] manufacturers =
 
 var tag = 1;
 var created_ = 0;
+var insuredCount = 0;
+var contractCount = 0;
+var criticalCount = 0;
 
 foreach (var (code, count) in fleet)
 {
@@ -208,6 +224,17 @@ foreach (var (code, count) in fleet)
             _ => 40,      // Condemned
         };
 
+        var criticality = CriticalityFor(code);
+        if (criticality == 30) criticalCount++;
+
+        // Insurance and a maintenance contract are independent facts about a
+        // machine, not tied to its criticality - a wheelchair can be insured
+        // and a ventilator can be run without a contract.
+        var isInsured = random.Next(100) < 55;
+        if (isInsured) insuredCount++;
+        var hasContract = random.Next(100) < 45;
+        if (hasContract) contractCount++;
+
         var response = await http.PostAsJsonAsync("/api/equipment", new
         {
             assetTag = $"BME-{tag:00000}",
@@ -217,10 +244,24 @@ foreach (var (code, count) in fleet)
             manufacturer = manufacturers[random.Next(manufacturers.Length)],
             model = $"{(char)('A' + random.Next(26))}{random.Next(100, 999)}",
             status,
+            criticality,
             purchaseDate = purchased.ToString("yyyy-MM-dd"),
             installationDate = purchased.AddDays(random.Next(5, 90)).ToString("yyyy-MM-dd"),
             warrantyExpiryDate = purchased.AddYears(random.Next(1, 6)).ToString("yyyy-MM-dd"),
-            notes = i % 9 == 0 ? "Under AMC with the local vendor." : null,
+            purchaseCost = Math.Round(2000m + (decimal)random.NextDouble() * 498000m, 2),
+            isInsured,
+            insuranceProvider = isInsured ? insurers[random.Next(insurers.Length)] : null,
+            insurancePolicyNumber = isInsured ? $"POL{random.Next(1000000, 9999999)}" : null,
+            insuranceExpiryDate = isInsured ? DateTime.Today.AddDays(random.Next(30, 700)).ToString("yyyy-MM-dd") : null,
+            insuranceCost = isInsured ? Math.Round(500m + (decimal)random.NextDouble() * 14500m, 2) : (decimal?)null,
+            hasMaintenanceContract = hasContract,
+            maintenanceContractType = hasContract ? random.Next(2) * 10 + 10 : (int?)null,
+            maintenanceVendor = hasContract ? amcVendors[random.Next(amcVendors.Length)] : null,
+            maintenanceContractNumber = hasContract ? $"AMC{random.Next(10000, 99999)}" : null,
+            maintenanceStartDate = hasContract ? purchased.AddYears(1).ToString("yyyy-MM-dd") : null,
+            maintenanceEndDate = hasContract ? purchased.AddYears(2).ToString("yyyy-MM-dd") : null,
+            maintenanceCost = hasContract ? Math.Round(3000m + (decimal)random.NextDouble() * 77000m, 2) : (decimal?)null,
+            notes = i % 11 == 0 ? "Refurbished unit, functioning well." : null,
         });
 
         tag++;
@@ -228,7 +269,7 @@ foreach (var (code, count) in fleet)
     }
 }
 
-Console.WriteLine($"    {created_} machines");
+Console.WriteLine($"    {created_} machines ({criticalCount} critical, {insuredCount} insured, {contractCount} under AMC/CMC)");
 
 // --- Checklists ------------------------------------------------------------
 Console.WriteLine("==> Checklists");
