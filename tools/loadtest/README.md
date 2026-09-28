@@ -6,7 +6,7 @@ Builds a register the size the build plan sets for Phase 4 (15,000 assets,
 about 50,000 work orders, a year of PM history: roughly 110,000 PM tasks) and
 times every list, search and report endpoint against it.
 
-1. An empty throwaway Postgres 17 and the app pointed at it. Never a live install.
+1. An empty throwaway Postgres 18 and the app pointed at it. Never a live install.
 2. Create the first admin, then fill a base hospital:
    `dotnet run --project tools/HospitalPm.DemoData -- --url <url> --password 'Hospital@2026'`
 3. Scale it up (audit triggers are switched off for the bulk load only):

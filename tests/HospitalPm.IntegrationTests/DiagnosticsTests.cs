@@ -60,7 +60,7 @@ public sealed class DiagnosticsTests(PostgresFixture fixture)
         var database = Find(result, "Database");
         Assert.True(database.State == CheckState.Ok,
             $"database check was {database.State}: {database.Detail}");
-        Assert.Contains("PostgreSQL 17", database.Detail, StringComparison.Ordinal);
+        Assert.Contains("PostgreSQL 18", database.Detail, StringComparison.Ordinal);
 
         // Migrations run on start; a pending one means the service is serving
         // an older schema than the code expects.

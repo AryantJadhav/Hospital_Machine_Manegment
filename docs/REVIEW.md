@@ -286,7 +286,7 @@ space, clock) plus licence, and reports the worst.
 
 ## 9. The installer, and a limitation you should know about
 
-Inno Setup, `PrivilegesRequired=admin`, bundled PostgreSQL 17.11 on port 5433
+Inno Setup, `PrivilegesRequired=admin`, bundled PostgreSQL 18.6 on port 5433
 listening on loopback only. The hospital is asked one question — which port —
 and finishes with a working login.
 
@@ -695,7 +695,7 @@ record:
 dotnet test
 ```
 
-Needs Docker — the tests run against a real PostgreSQL 17 in Testcontainers,
+Needs Docker — the tests run against a real PostgreSQL 18 in Testcontainers,
 not an in-memory provider. 253 tests, currently all passing.
 
 ```powershell
@@ -717,7 +717,7 @@ throwaway CI runner; it refuses to run at all if Hospital PM is already
 installed, rather than eating a real installation.
 
 Verified toolchain on the author's machine: .NET SDK 10.0.400, PostgreSQL
-17.11, Node 24.18.0, Docker 29.7.2, Inno Setup 6.7.3.
+18.6, Node 24.18.0, Docker 29.7.2, Inno Setup 6.7.3.
 
 Credentials are never committed. Local connection strings live in
 `appsettings.Development.json`, which is gitignored. The licence signing

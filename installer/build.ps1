@@ -264,8 +264,8 @@ finally {
 # Only bin, lib and share are kept. The archive also carries pgAdmin (683 MB),
 # StackBuilder, docs and headers - none of which a hospital PC needs, and all
 # of which would triple the installer.
-$pgVersion = "17.11-1"
-$pgSha256 = "6EABDF00D2893713B75DB4336A23C3FDF505F056E217EC6E2E95D901750CFEA3"
+$pgVersion = "18.6-1"
+$pgSha256 = "FBE23DA234EE31547BF8A36D29DFD81E82B849DF2D2B78D2EECB43D360252F8C"
 $pgUrl = "https://get.enterprisedb.com/postgresql/postgresql-$pgVersion-windows-x64-binaries.zip"
 
 $cacheDir = Join-Path $repoRoot "artifacts\cache"

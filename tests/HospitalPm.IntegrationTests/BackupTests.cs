@@ -77,7 +77,7 @@ public sealed class BackupTests(PostgresFixture fixture) : IDisposable
     private static bool ToolsUsable(BackupOptions options)
     {
         var locator = new PgToolLocator(Options.Create(options));
-        var tool = locator.FindPgDump(new Version(17, 0));
+        var tool = locator.FindPgDump(new Version(18, 0));
 
         if (!tool.IsUsable &&
             Environment.GetEnvironmentVariable("HOSPITALPM_REQUIRE_PGDUMP") == "1")
@@ -265,11 +265,12 @@ public sealed class BackupTests(PostgresFixture fixture) : IDisposable
         var options = new BackupOptions();
         if (!ToolsUsable(options)) return;
 
-        // The bug this guards. CI runs on a machine with PostgreSQL 16 and 17
-        // clients both installed, where /usr/bin/pg_dump resolves to 16. The
-        // locator stopped at the first binary it found and reported "too old",
-        // never reaching the working 17 in a version-numbered directory. A
-        // hospital that upgraded 16 to 17 would have silently stopped backing up.
+        // The bug this guards. CI runs on a machine with an older PostgreSQL
+        // client and the pinned 18 both installed, where /usr/bin/pg_dump
+        // resolves to the older one. The locator stopped at the first binary it
+        // found and reported "too old", never reaching the working 18 in a
+        // version-numbered directory. A hospital that upgraded its PostgreSQL
+        // major version would have silently stopped backing up.
         var junkDir = NewDirectory();
         Directory.CreateDirectory(junkDir);
 
@@ -282,7 +283,7 @@ public sealed class BackupTests(PostgresFixture fixture) : IDisposable
             Environment.SetEnvironmentVariable(
                 "PATH", junkDir + Path.PathSeparator + originalPath);
 
-            var tool = new PgToolLocator(Options.Create(options)).FindPgDump(new Version(17, 0));
+            var tool = new PgToolLocator(Options.Create(options)).FindPgDump(new Version(18, 0));
 
             Assert.True(tool.IsUsable,
                 $"the junk pg_dump masked the real one: {tool.Problem}");

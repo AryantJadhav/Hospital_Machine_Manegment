@@ -5,13 +5,13 @@ using Testcontainers.PostgreSql;
 namespace HospitalPm.IntegrationTests;
 
 /// <summary>
-/// A real PostgreSQL 17 in a container, matching what a hospital runs.
+/// A real PostgreSQL 18 in a container, matching what a hospital runs.
 /// Not an in-memory provider: triggers, partial indexes and jsonb are the
 /// things under test here, and none of them exist in an in-memory fake.
 /// </summary>
 public sealed class PostgresFixture : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:17-alpine")
+    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:18-alpine")
         .Build();
 
     public string ConnectionString => _container.GetConnectionString();

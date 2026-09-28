@@ -24,7 +24,7 @@
 
 services:
   postgres:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     # Port 5433 on the host, not 5432 — identical to the Windows installer,
     # which uses a non-standard port so an existing PostgreSQL keeps working.

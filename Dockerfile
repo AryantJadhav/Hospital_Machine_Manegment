@@ -64,9 +64,9 @@ WORKDIR /app
 #    serving perfectly well.
 #  - pg_dump, because nightly backups shell out to it. Without it a Linux
 #    install has no backups at all. It must be at least as new as the server
-#    (compose runs PostgreSQL 17), and Ubuntu's own client is 16, so this
+#    (compose runs PostgreSQL 18), and Ubuntu's own client is older, so this
 #    comes from the PostgreSQL project's apt repository.
-RUN apt-get update     && apt-get install -y --no-install-recommends ca-certificates curl gnupg     && install -d /usr/share/keyrings     && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc         | gpg --dearmor -o /usr/share/keyrings/pgdg.gpg     && . /etc/os-release     && echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main"         > /etc/apt/sources.list.d/pgdg.list     && apt-get update     && apt-get install -y --no-install-recommends postgresql-client-17     && apt-get purge -y --auto-remove gnupg     && rm -rf /var/lib/apt/lists/*
+RUN apt-get update     && apt-get install -y --no-install-recommends ca-certificates curl gnupg     && install -d /usr/share/keyrings     && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc         | gpg --dearmor -o /usr/share/keyrings/pgdg.gpg     && . /etc/os-release     && echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main"         > /etc/apt/sources.list.d/pgdg.list     && apt-get update     && apt-get install -y --no-install-recommends postgresql-client-18     && apt-get purge -y --auto-remove gnupg     && rm -rf /var/lib/apt/lists/*
 
 # The data directory for keys, licence, backups — mounted as a volume.
 ENV HOSPITALPM_DATA=/var/lib/hospitalpm

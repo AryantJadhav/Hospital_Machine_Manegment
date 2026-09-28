@@ -59,7 +59,7 @@ and still be subtly broken. If a task drifts toward general sync, stop and say s
 | Layer | Choice |
 |---|---|
 | API / Domain / Infrastructure | .NET 10 (LTS), C# |
-| Database | PostgreSQL 17 |
+| Database | PostgreSQL 18 |
 | Background jobs | Hangfire (in-process, same binary) |
 | PDF | QuestPDF |
 | Web | React + TypeScript |
@@ -84,7 +84,7 @@ and still be subtly broken. If a task drifts toward general sync, stop and say s
 Verified on this machine:
 
 - .NET SDK **10.0.400** (`dotnet --version`)
-- PostgreSQL **17.11**, service `postgresql-x64-17`, port **5432**
+- PostgreSQL **18.6**, service `postgresql-x64-18`, port **5434**
 - Node **24.18.0**, npm 11.16.0, pnpm 10.20.0
 - Docker **29.7.2** — required for Testcontainers integration tests
 

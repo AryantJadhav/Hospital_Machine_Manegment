@@ -255,7 +255,10 @@ public sealed class LocationAndEquipmentTests(PostgresFixture fixture)
         var ex = await Assert.ThrowsAsync<PostgresException>(() =>
             db.Database.ExecuteSqlRawAsync("DELETE FROM location WHERE id = {0}", room.Id));
 
-        Assert.Equal("23503", ex.SqlState); // foreign_key_violation
+        // PostgreSQL 18 correctly reports a RESTRICT violation as 23001, its own
+        // SQLSTATE, rather than folding it into 23503 (which earlier versions used
+        // for every kind of foreign-key violation, RESTRICT included).
+        Assert.Equal("23001", ex.SqlState); // restrict_violation
     }
 
     [Fact]

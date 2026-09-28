@@ -429,7 +429,7 @@ Assert-That (-not (Test-Path $InstallDir))   "nothing installed"
 Write-Scenario "Refuses an orphaned cluster whose db.json is missing"
 
 New-Item -ItemType Directory -Force -Path (Join-Path $DataDir "pgdata") | Out-Null
-Set-Content -Path (Join-Path $DataDir "pgdata\PG_VERSION") -Value "17" -Encoding ascii
+Set-Content -Path (Join-Path $DataDir "pgdata\PG_VERSION") -Value "18" -Encoding ascii
 
 $code = Invoke-Setup -LogName "03-orphaned-cluster"
 
