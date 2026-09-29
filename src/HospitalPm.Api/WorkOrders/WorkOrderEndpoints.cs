@@ -86,6 +86,7 @@ public static class WorkOrderEndpoints
         HospitalPmDbContext db,
         ClaimsPrincipal principal,
         [FromQuery] WorkOrderStatus? status,
+        [FromQuery] WorkOrderPriority? priority,
         [FromQuery] int? equipmentId,
         [FromQuery] int? assignedToUserId,
         [FromQuery] string? assignee,
@@ -119,6 +120,11 @@ public static class WorkOrderEndpoints
         {
             query = query.Where(w => w.Status != WorkOrderStatus.Closed
                                   && w.Status != WorkOrderStatus.Cancelled);
+        }
+
+        if (priority is not null)
+        {
+            query = query.Where(w => w.Priority == priority);
         }
 
         if (equipmentId is not null)

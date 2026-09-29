@@ -196,4 +196,26 @@ public sealed class WorkOrderApiTests(PostgresFixture fixture) : IAsyncLifetime,
         // should be told why, not shown an error page.
         Assert.Equal(HttpStatusCode.NotFound, res.StatusCode);
     }
+
+    [Fact]
+    public async Task The_list_can_be_narrowed_to_one_priority()
+    {
+        // The fixture already reported a High fault; add a Critical one against
+        // the same machine so the filter has two priorities to tell apart.
+        var critical = await _client.PostAsJsonAsync("/api/work-orders", new
+        {
+            equipmentId = _equipmentId,
+            faultDescription = "Ventilator alarm will not silence",
+            priority = (int)WorkOrderPriority.Critical,
+        });
+        critical.EnsureSuccessStatusCode();
+        var criticalId = (await critical.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
+
+        var filtered = await _client.GetFromJsonAsync<JsonElement>("/api/work-orders?priority=40");
+        var items = filtered.GetProperty("items").EnumerateArray().ToList();
+
+        Assert.Contains(items, i => i.GetProperty("id").GetInt32() == criticalId);
+        Assert.DoesNotContain(items, i => i.GetProperty("id").GetInt32() == _workOrderId);
+        Assert.All(items, i => Assert.Equal((int)WorkOrderPriority.Critical, i.GetProperty("priority").GetInt32()));
+    }
 }

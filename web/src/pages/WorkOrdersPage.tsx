@@ -93,6 +93,7 @@ export function WorkOrdersPage() {
 
   const [params, setParams] = useSearchParams();
   const status = params.get('status') ?? '';
+  const priority = params.get('priority') ?? '';
   // "me" is worked out by the server from who is signed in.
   const mine = params.get('assignee') === 'me';
 
@@ -116,6 +117,7 @@ export function WorkOrdersPage() {
     try {
       const q = new URLSearchParams({ pageSize: '100' });
       if (status) q.set('status', status);
+      if (priority) q.set('priority', priority);
       if (mine) q.set('assignee', 'me');
       const data = await api.get<{ items: WorkOrderRow[] }>(`/api/work-orders?${q}`);
       setRows(data.items);
@@ -124,7 +126,7 @@ export function WorkOrdersPage() {
     } finally {
       setLoading(false);
     }
-  }, [status, mine]);
+  }, [status, priority, mine]);
 
   useEffect(() => {
     void load();
@@ -244,6 +246,21 @@ export function WorkOrdersPage() {
         >
           <option value="">{mine ? 'Still to do' : 'Open only'}</option>
           {Object.entries(STATUS).map(([v, label]) => (
+            <option key={v} value={v}>{label}</option>
+          ))}
+        </select>
+        <select
+          aria-label="Filter by priority"
+          value={priority}
+          onChange={(e) => {
+            const next = new URLSearchParams(params);
+            if (e.target.value) next.set('priority', e.target.value);
+            else next.delete('priority');
+            setParams(next, { replace: true });
+          }}
+        >
+          <option value="">Any priority</option>
+          {Object.entries(PRIORITY).map(([v, label]) => (
             <option key={v} value={v}>{label}</option>
           ))}
         </select>
