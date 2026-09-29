@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Linq;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
@@ -100,9 +101,19 @@ public sealed class ServiceReportDocument(
             col.Item().Element(FaultBlock);
             col.Item().Element(DowntimeBlock);
 
+            if (data.PartsUsed.Count > 0)
+            {
+                col.Item().Element(PartsUsedBlock);
+            }
+
             if (data.Timeline.Count > 0)
             {
                 col.Item().Element(TimelineBlock);
+            }
+
+            if (data.Photos.Count > 0)
+            {
+                col.Item().Element(PhotosBlock);
             }
 
             col.Item().Element(SignOffBlock);
@@ -162,6 +173,125 @@ public sealed class ServiceReportDocument(
             }
         });
     }
+
+    private void PartsUsedBlock(IContainer container)
+    {
+        container.Column(col =>
+        {
+            col.Item().Text("Parts used").FontSize(11).Bold();
+
+            col.Item().PaddingTop(3).Table(table =>
+            {
+                table.ColumnsDefinition(c =>
+                {
+                    c.RelativeColumn(2.2f);   // part number
+                    c.RelativeColumn(3.5f);   // name
+                    c.RelativeColumn(1);      // qty
+                    c.RelativeColumn(1.6f);   // unit cost
+                    c.RelativeColumn(1.6f);   // line total
+                });
+
+                table.Header(h =>
+                {
+                    ReportHeaderCell(h.Cell(), "Part");
+                    ReportHeaderCell(h.Cell(), "Name");
+                    ReportHeaderCell(h.Cell().AlignRight(), "Qty");
+                    ReportHeaderCell(h.Cell().AlignRight(), "Unit cost");
+                    ReportHeaderCell(h.Cell().AlignRight(), "Total");
+                });
+
+                foreach (var p in data.PartsUsed)
+                {
+                    table.Cell().Element(ReportCell).Text(p.PartNumber);
+                    table.Cell().Element(ReportCell).Text(p.Name);
+                    table.Cell().Element(ReportCell).AlignRight()
+                        .Text(p.QuantityUsed.ToString(CultureInfo.InvariantCulture));
+                    table.Cell().Element(ReportCell).AlignRight().Text(Rupees(p.UnitCostAtUse));
+                    table.Cell().Element(ReportCell).AlignRight().Text(Rupees(p.LineTotal));
+                }
+            });
+
+            if (data.PartsTotal is { } total)
+            {
+                col.Item().PaddingTop(3).AlignRight()
+                    .Text($"Parts total: {Rupees(total)}").FontSize(9).Bold();
+            }
+        });
+    }
+
+    private void PhotosBlock(IContainer container)
+    {
+        container.Column(col =>
+        {
+            col.Item().PaddingBottom(4).Text("Photos").FontSize(11).Bold();
+
+            // Three to a row. Ten is the most a ticket can carry, so this
+            // never runs past a handful of rows.
+            foreach (var chunk in data.Photos.Chunk(3))
+            {
+                col.Item().PaddingBottom(4).Row(row =>
+                {
+                    foreach (var photo in chunk)
+                    {
+                        row.RelativeItem().Column(c =>
+                        {
+                            c.Item().Height(45, Unit.Millimetre)
+                                .Border(1).BorderColor(Colors.Grey.Lighten1).Padding(2)
+                                .Element(e => PhotoImage(e, photo));
+
+                            c.Item().PaddingTop(2).Text(photo.FileName)
+                                .FontSize(7).FontColor(Colors.Grey.Darken1);
+                        });
+                    }
+
+                    // Keeps a short last row from stretching its images across
+                    // the full page width to match a full row of three.
+                    for (var i = chunk.Length; i < 3; i++)
+                    {
+                        row.RelativeItem();
+                    }
+                });
+            }
+        });
+    }
+
+    private static void PhotoImage(IContainer container, ServiceReportPhoto photo)
+    {
+        // Decoded before the container is touched at all. QuestPDF containers
+        // accept exactly one child; a failed .Image() call still claims that
+        // slot before it throws, so recovering by writing fallback text into
+        // the same container throws a second, unrelated "single-child"
+        // exception. Decoding stand-alone keeps the container untouched until
+        // the outcome - success or a corrupt photo - is already known.
+        QuestPDF.Infrastructure.Image? image;
+        try
+        {
+            image = QuestPDF.Infrastructure.Image.FromBinaryData(photo.Data);
+        }
+        catch (QuestPDF.Drawing.Exceptions.DocumentComposeException)
+        {
+            image = null;
+        }
+
+        if (image is null)
+        {
+            container.AlignMiddle().AlignCenter()
+                .Text("Photo unavailable").FontSize(7).FontColor(Colors.Grey.Medium);
+            return;
+        }
+
+        container.AlignMiddle().AlignCenter().Image(image).FitArea();
+    }
+
+    private static string Rupees(decimal? amount)
+        => amount is null ? "—" : $"₹{amount.Value:N0}";
+
+    private static void ReportHeaderCell(IContainer container, string text) =>
+        container.Background(Colors.Grey.Lighten3).PaddingVertical(3).PaddingHorizontal(4)
+            .Text(text).FontSize(8.5f).Bold();
+
+    private static IContainer ReportCell(IContainer container) =>
+        container.BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).PaddingVertical(3).PaddingHorizontal(4);
 
     private void SignOffBlock(IContainer container)
     {

@@ -70,7 +70,17 @@ public sealed class ReportTests
         [
             (new DateTime(2026, 8, 28, 8, 30, 0, DateTimeKind.Utc), "R. Kulkarni", "On site"),
             (new DateTime(2026, 8, 28, 9, 0, 0, DateTimeKind.Utc), "R. Kulkarni", "Flow sensor ordered"),
-        ]);
+        ],
+        [],
+        []);
+
+    // A genuinely decodable 1x1 pixel JPEG - QuestPDF renders images through
+    // SkiaSharp, which needs real image bytes and not just a valid signature.
+    private static readonly byte[] JpegBytes = Convert.FromBase64String(
+        "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQ" +
+        "CgwSExIQEw8QEBD/2wBDAQMDAwQDBAgEBAgQCwkLEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ" +
+        "EBD/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAj/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAA" +
+        "AAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k=");
 
     private static string Fonts(byte[] pdf)
         => string.Join(
@@ -196,6 +206,78 @@ public sealed class ReportTests
         // A fresh install has not been through the setup wizard yet.
         var pdf = new ServiceReportDocument(ServiceReport(), new ReportOptions()).GeneratePdf();
 
+        Assert.NotEmpty(pdf);
+    }
+
+    [Fact]
+    public void A_report_with_parts_used_prints_a_total()
+    {
+        var withParts = ServiceReport() with
+        {
+            PartsUsed =
+            [
+                new ServiceReportPart("FLOW-SENS-04", "Flow sensor", 1, 4200m),
+                new ServiceReportPart("O-RING-12", "O-ring seal", 3, 15m),
+            ],
+        };
+
+        Assert.Equal(4245m, withParts.PartsTotal);
+
+        var pdf = new ServiceReportDocument(withParts, Options).GeneratePdf();
+        Assert.NotEmpty(pdf);
+    }
+
+    [Fact]
+    public void A_part_with_no_recorded_cost_leaves_the_total_unknown_rather_than_wrong()
+    {
+        // Silently treating a missing cost as zero would understate what the
+        // repair actually cost the department, which is worse than not
+        // printing a total at all.
+        var data = ServiceReport() with
+        {
+            PartsUsed =
+            [
+                new ServiceReportPart("FLOW-SENS-04", "Flow sensor", 1, 4200m),
+                new ServiceReportPart("LEGACY-01", "Undocumented spare", 1, null),
+            ],
+        };
+
+        Assert.Null(data.PartsTotal);
+
+        var pdf = new ServiceReportDocument(data, Options).GeneratePdf();
+        Assert.NotEmpty(pdf);
+    }
+
+    [Fact]
+    public void A_report_with_photos_renders()
+    {
+        var withPhotos = ServiceReport() with
+        {
+            Photos =
+            [
+                new ServiceReportPhoto("crack.jpg", JpegBytes),
+                new ServiceReportPhoto("after-repair.jpg", JpegBytes),
+                new ServiceReportPhoto("third.jpg", JpegBytes),
+                new ServiceReportPhoto("fourth.jpg", JpegBytes),
+            ],
+        };
+
+        // Four photos: exercises the row-wrap past the first group of three.
+        var pdf = new ServiceReportDocument(withPhotos, Options).GeneratePdf();
+        Assert.NotEmpty(pdf);
+    }
+
+    [Fact]
+    public void A_report_still_prints_when_a_photo_is_corrupt()
+    {
+        var data = ServiceReport() with
+        {
+            Photos = [new ServiceReportPhoto("bad.jpg", [0x00, 0x01, 0x02])],
+        };
+
+        // Rare, but the same defensive posture as a malformed PM signature:
+        // one bad row of bytes must not stop the whole document from printing.
+        var pdf = new ServiceReportDocument(data, Options).GeneratePdf();
         Assert.NotEmpty(pdf);
     }
 }

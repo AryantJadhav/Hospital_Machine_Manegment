@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using HospitalPm.Domain.Inventory;
 using HospitalPm.Domain.Locations;
 using HospitalPm.Domain.WorkOrders;
 using Microsoft.EntityFrameworkCore;
@@ -195,6 +196,52 @@ public sealed class WorkOrderApiTests(PostgresFixture fixture) : IAsyncLifetime,
         // Not a 500. A biomedical head clicking Certificate on an open PM
         // should be told why, not shown an error page.
         Assert.Equal(HttpStatusCode.NotFound, res.StatusCode);
+    }
+
+    // A genuinely decodable 1x1 pixel JPEG - the report embeds it via QuestPDF's
+    // Image element, which needs real image bytes and not just a valid signature.
+    private static readonly byte[] JpegBytes = Convert.FromBase64String(
+        "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQ" +
+        "CgwSExIQEw8QEBD/2wBDAQMDAwQDBAgEBAgQCwkLEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ" +
+        "EBD/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAj/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAA" +
+        "AAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k=");
+
+    [Fact]
+    public async Task The_service_report_prints_parts_used_and_photos()
+    {
+        int partId;
+        await using (var db = fixture.CreateContext())
+        {
+            var part = new SparePart
+            {
+                PartNumber = $"WOA-PART-{Guid.NewGuid():N}"[..20],
+                Name = "Flow sensor",
+                QuantityOnHand = 5,
+                ReorderLevel = 1,
+                UnitCost = 4200m,
+            };
+            db.SpareParts.Add(part);
+            await db.SaveChangesAsync();
+            partId = part.Id;
+        }
+
+        (await _client.PostAsJsonAsync($"/api/work-orders/{_workOrderId}/parts",
+            new { sparePartId = partId, quantityUsed = 1 })).EnsureSuccessStatusCode();
+
+        var form = new MultipartFormDataContent();
+        var photoPart = new ByteArrayContent(JpegBytes);
+        photoPart.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+        form.Add(photoPart, "files", "fault.jpg");
+        (await _client.PostAsync($"/api/work-orders/{_workOrderId}/photos", form)).EnsureSuccessStatusCode();
+
+        var res = await _client.GetAsync($"/api/reports/work-orders/{_workOrderId}/report.pdf");
+
+        // Renders through the real database join and the real photo bytes,
+        // not just the in-memory document tests - this is where a bad
+        // navigation property or a lazily-thrown QuestPDF error would show up.
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        var bytes = await res.Content.ReadAsByteArrayAsync();
+        Assert.Equal("%PDF"u8.ToArray(), bytes.Take(4).ToArray());
     }
 
     [Fact]

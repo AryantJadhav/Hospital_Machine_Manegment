@@ -147,6 +147,19 @@ public static class ReportEndpoints
             .Select(n => new { n.CreatedAtUtc, n.AuthorUserId, n.Body })
             .ToListAsync(ct);
 
+        var partsUsed = await db.WorkOrderParts.AsNoTracking()
+            .Where(p => p.WorkOrderId == id)
+            .OrderBy(p => p.UsedAtUtc)
+            .Select(p => new ServiceReportPart(
+                p.SparePart!.PartNumber, p.SparePart.Name, p.QuantityUsed, p.UnitCostAtUse))
+            .ToListAsync(ct);
+
+        var photos = await db.WorkOrderAttachments.AsNoTracking()
+            .Where(a => a.WorkOrderId == id)
+            .OrderBy(a => a.UploadedAtUtc)
+            .Select(a => new ServiceReportPhoto(a.FileName, a.Data!.Data))
+            .ToListAsync(ct);
+
         var data = new ServiceReportData(
             order.Number,
             order.Equipment?.AssetTag ?? "—",
@@ -167,7 +180,9 @@ public static class ReportEndpoints
             order.OutOfServiceAtUtc,
             order.BackInServiceAtUtc,
             order.DowntimeMinutes,
-            notes.Select(n => (n.CreatedAtUtc, Name(names, n.AuthorUserId), n.Body)).ToList());
+            notes.Select(n => (n.CreatedAtUtc, Name(names, n.AuthorUserId), n.Body)).ToList(),
+            partsUsed,
+            photos);
 
         var pdf = new ServiceReportDocument(data, options.Value, clock.Offset).GeneratePdf();
 

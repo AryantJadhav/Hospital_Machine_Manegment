@@ -91,6 +91,19 @@ public sealed record PmCertificateData(
     }
 }
 
+/// <summary>A spare drawn against the repair, as the service report itemises it.</summary>
+public sealed record ServiceReportPart(
+    string PartNumber,
+    string Name,
+    int QuantityUsed,
+    decimal? UnitCostAtUse)
+{
+    public decimal? LineTotal => UnitCostAtUse is { } cost ? cost * QuantityUsed : null;
+}
+
+/// <summary>A photo of the fault or the repair, printed alongside the record it belongs to.</summary>
+public sealed record ServiceReportPhoto(string FileName, byte[] Data);
+
 public sealed record ServiceReportData(
     string Number,
     string AssetTag,
@@ -111,4 +124,11 @@ public sealed record ServiceReportData(
     DateTime? OutOfServiceAtUtc,
     DateTime? BackInServiceAtUtc,
     int? DowntimeMinutes,
-    IReadOnlyList<(DateTime At, string Author, string Body)> Timeline);
+    IReadOnlyList<(DateTime At, string Author, string Body)> Timeline,
+    IReadOnlyList<ServiceReportPart> PartsUsed,
+    IReadOnlyList<ServiceReportPhoto> Photos)
+{
+    public decimal? PartsTotal => PartsUsed.Count == 0
+        ? null
+        : PartsUsed.Aggregate((decimal?)0m, (sum, p) => sum is null || p.LineTotal is null ? null : sum + p.LineTotal);
+}
