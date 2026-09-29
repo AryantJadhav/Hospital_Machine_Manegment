@@ -58,6 +58,10 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
 
     public DbSet<WorkOrderPart> WorkOrderParts => Set<WorkOrderPart>();
 
+    public DbSet<WorkOrderAttachment> WorkOrderAttachments => Set<WorkOrderAttachment>();
+
+    public DbSet<WorkOrderAttachmentData> WorkOrderAttachmentData => Set<WorkOrderAttachmentData>();
+
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     public DbSet<BackupRun> BackupRuns => Set<BackupRun>();
@@ -488,6 +492,42 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
 
             e.HasIndex(x => x.WorkOrderId).HasDatabaseName("ix_work_order_part_order");
             e.HasIndex(x => x.SparePartId).HasDatabaseName("ix_work_order_part_spare_part");
+        });
+
+        builder.Entity<WorkOrderAttachment>(e =>
+        {
+            e.ToTable("work_order_attachment");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.WorkOrderId).HasColumnName("work_order_id");
+            e.Property(x => x.FileName).HasColumnName("file_name").HasMaxLength(255).IsRequired();
+            e.Property(x => x.ContentType).HasColumnName("content_type").HasMaxLength(100).IsRequired();
+            e.Property(x => x.SizeBytes).HasColumnName("size_bytes");
+            e.Property(x => x.UploadedByUserId).HasColumnName("uploaded_by_user_id");
+            e.Property(x => x.UploadedAtUtc).HasColumnName("uploaded_at_utc").HasDefaultValueSql("now()");
+
+            // Restrict: a ticket's photos are its evidence and cannot be pulled out from under it.
+            e.HasOne(x => x.WorkOrder)
+                .WithMany(x => x!.Attachments)
+                .HasForeignKey(x => x.WorkOrderId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasIndex(x => x.WorkOrderId).HasDatabaseName("ix_work_order_attachment_order");
+        });
+
+        builder.Entity<WorkOrderAttachmentData>(e =>
+        {
+            e.ToTable("work_order_attachment_data");
+            e.HasKey(x => x.AttachmentId);
+            e.Property(x => x.AttachmentId).HasColumnName("attachment_id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.Data).HasColumnName("data").IsRequired();
+
+            e.HasOne(x => x.Attachment)
+                .WithOne(x => x.Data)
+                .HasForeignKey<WorkOrderAttachmentData>(x => x.AttachmentId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         builder.Entity<BackupRun>(e =>

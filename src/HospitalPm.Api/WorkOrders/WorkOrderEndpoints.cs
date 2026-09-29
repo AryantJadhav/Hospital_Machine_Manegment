@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using HospitalPm.Api.Maintenance;
 using HospitalPm.Domain.Identity;
 using HospitalPm.Domain.WorkOrders;
 using HospitalPm.Infrastructure.Persistence;
@@ -8,6 +9,14 @@ using Microsoft.EntityFrameworkCore;
 namespace HospitalPm.Api.WorkOrders;
 
 public sealed record UsePartRequest(int SparePartId, int QuantityUsed);
+
+public sealed record WorkOrderPhotoResponse(
+    int Id,
+    string FileName,
+    string ContentType,
+    int SizeBytes,
+    string? UploadedBy,
+    DateTime UploadedAtUtc);
 
 public sealed record ReportRequest(
     int EquipmentId,
@@ -47,6 +56,15 @@ public static class WorkOrderEndpoints
         // decision like assignment.
         group.MapPost("/{id:int}/parts", UsePartAsync);
         group.MapDelete("/{id:int}/parts/{partUsageId:int}", RemovePartAsync);
+
+        // A photo of the fault or the repair is part of the ticket, the same
+        // authority as a note. Removing one is an Administrator's, the same
+        // as a PM's report file: it is evidence, not for whoever holds the
+        // list, but a photo that should never have been taken has to go.
+        group.MapPost("/{id:int}/photos", AddPhotosAsync).DisableAntiforgery();
+        group.MapGet("/photos/{attachmentId:int}", DownloadPhotoAsync);
+        group.MapDelete("/photos/{attachmentId:int}", DeletePhotoAsync)
+            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
 
         // Assignment is a supervisory decision about who does the work.
         group.MapPost("/{id:int}/assign", AssignAsync)
@@ -182,6 +200,18 @@ public static class WorkOrderEndpoints
             })
             .ToListAsync(ct);
 
+        var photos = await db.WorkOrderAttachments.AsNoTracking()
+            .Where(a => a.WorkOrderId == id)
+            .OrderBy(a => a.UploadedAtUtc).ThenBy(a => a.Id)
+            .Select(a => new WorkOrderPhotoResponse(
+                a.Id,
+                a.FileName,
+                a.ContentType,
+                a.SizeBytes,
+                db.Users.Where(u => u.Id == a.UploadedByUserId).Select(u => u.FullName).FirstOrDefault(),
+                a.UploadedAtUtc))
+            .ToListAsync(ct);
+
         return Results.Ok(new
         {
             order.Id,
@@ -223,6 +253,7 @@ public static class WorkOrderEndpoints
                 .ToList(),
             notes,
             partsUsed,
+            photos,
         });
     }
 
@@ -557,6 +588,154 @@ public static class WorkOrderEndpoints
         }
 
         db.WorkOrderParts.Remove(usage);
+        await db.SaveChangesAsync(ct);
+
+        return Results.NoContent();
+    }
+
+    /// <summary>Ten photos of ten megabytes each in one request is a mistake, not a real upload.</summary>
+    private const long MaxPhotoRequestBytes = 40L * 1024 * 1024;
+
+    /// <summary>Most tickets carry one or two photos. Ten is a generous ceiling, not a target.</summary>
+    private const int MaxPhotosPerWorkOrder = 10;
+
+    private static async Task<IResult> AddPhotosAsync(
+        int id,
+        HttpRequest request,
+        HospitalPmDbContext db,
+        ClaimsPrincipal principal,
+        TimeProvider clock,
+        CancellationToken ct)
+    {
+        if (!request.HasFormContentType || request.ContentLength > MaxPhotoRequestBytes)
+        {
+            return Results.BadRequest(new { error = "Send the photos as a form." });
+        }
+
+        var order = await db.WorkOrders.AsNoTracking().SingleOrDefaultAsync(w => w.Id == id, ct);
+        if (order is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (WorkOrderTransitions.IsTerminal(order.Status))
+        {
+            return Results.Conflict(new
+            {
+                error = "This work order is closed. Reopen it, or raise a new one, before adding photos.",
+            });
+        }
+
+        IFormCollection form;
+        try
+        {
+            form = await request.ReadFormAsync(ct);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or BadHttpRequestException)
+        {
+            return Results.BadRequest(new { error = "The upload could not be read. Choose the photos again." });
+        }
+
+        if (form.Files.Count == 0)
+        {
+            return Results.BadRequest(new { error = "Choose a photo to save." });
+        }
+
+        var stored = await db.WorkOrderAttachments.CountAsync(a => a.WorkOrderId == id, ct);
+        if (stored + form.Files.Count > MaxPhotosPerWorkOrder)
+        {
+            return Results.BadRequest(new
+            {
+                error = $"A work order can have at most {MaxPhotosPerWorkOrder} photos.",
+            });
+        }
+
+        var accepted = new List<(string Name, string Type, byte[] Bytes)>();
+        foreach (var file in form.Files)
+        {
+            if (file.Length == 0)
+            {
+                return Results.BadRequest(new { error = $"'{Path.GetFileName(file.FileName)}' is empty." });
+            }
+
+            if (file.Length > ReportFile.MaxBytes)
+            {
+                return Results.BadRequest(new
+                {
+                    error = $"'{Path.GetFileName(file.FileName)}' is larger than {ReportFile.MaxBytes / (1024 * 1024)} MB.",
+                });
+            }
+
+            using var buffer = new MemoryStream((int)file.Length);
+            await file.CopyToAsync(buffer, ct);
+            var bytes = buffer.ToArray();
+
+            // A photo only - a work order's attachment is what someone saw, not a document. A PDF
+            // belongs on the PM report instead.
+            var type = ReportFile.Sniff(bytes);
+            if (type is null || type == ReportFile.Pdf)
+            {
+                return Results.BadRequest(new
+                {
+                    error = $"'{Path.GetFileName(file.FileName)}' is not a photo (JPEG, PNG or WebP).",
+                });
+            }
+
+            accepted.Add((ReportFile.CleanName(file.FileName, type), type, bytes));
+        }
+
+        var userId = UserId(principal);
+        var now = clock.GetUtcNow().UtcDateTime;
+
+        foreach (var (name, type, bytes) in accepted)
+        {
+            db.WorkOrderAttachments.Add(new WorkOrderAttachment
+            {
+                WorkOrderId = id,
+                FileName = name,
+                ContentType = type,
+                SizeBytes = bytes.Length,
+                UploadedByUserId = userId,
+                UploadedAtUtc = now,
+                Data = new WorkOrderAttachmentData { Data = bytes },
+            });
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        return Results.Ok(new { photosSaved = accepted.Count });
+    }
+
+    private static async Task<IResult> DownloadPhotoAsync(int attachmentId, HttpContext http, HospitalPmDbContext db, CancellationToken ct)
+    {
+        var file = await db.WorkOrderAttachments.AsNoTracking()
+            .Where(a => a.Id == attachmentId)
+            .Select(a => new { a.FileName, a.ContentType, a.Data!.Data })
+            .SingleOrDefaultAsync(ct);
+
+        if (file is null)
+        {
+            return Results.NotFound();
+        }
+
+        // Shown in the browser, but only ever as the type the bytes were found to be.
+        http.Response.Headers["X-Content-Type-Options"] = "nosniff";
+        http.Response.Headers["Content-Disposition"] =
+            $"inline; filename=\"photo\"; filename*=UTF-8''{Uri.EscapeDataString(file.FileName)}";
+
+        return Results.Bytes(file.Data, file.ContentType);
+    }
+
+    private static async Task<IResult> DeletePhotoAsync(int attachmentId, HospitalPmDbContext db, CancellationToken ct)
+    {
+        var attachment = await db.WorkOrderAttachments.SingleOrDefaultAsync(a => a.Id == attachmentId, ct);
+        if (attachment is null)
+        {
+            return Results.NotFound();
+        }
+
+        // The bytes go with it; the audit log keeps a note that it was there and who removed it.
+        db.WorkOrderAttachments.Remove(attachment);
         await db.SaveChangesAsync(ct);
 
         return Results.NoContent();

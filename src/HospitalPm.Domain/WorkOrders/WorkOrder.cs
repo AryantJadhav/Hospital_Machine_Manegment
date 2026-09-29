@@ -115,6 +115,8 @@ public sealed class WorkOrder
 
     public ICollection<WorkOrderPart> PartsUsed { get; set; } = [];
 
+    public ICollection<WorkOrderAttachment> Attachments { get; set; } = [];
+
     /// <summary>Minutes the machine was unavailable, when both ends are known.</summary>
     public int? DowntimeMinutes =>
         OutOfServiceAtUtc is { } from && BackInServiceAtUtc is { } to && to > from
@@ -181,4 +183,55 @@ public sealed class WorkOrderPart
     public WorkOrder? WorkOrder { get; set; }
 
     public SparePart? SparePart { get; set; }
+}
+
+/// <summary>
+/// A photo of the fault or the repair, attached to the ticket - what a ward
+/// or engineer shows for a jammed latch or a scorched connector rather than
+/// describing it in words.
+///
+/// This is only the description of the file. The bytes are in
+/// <see cref="WorkOrderAttachmentData"/>, a separate table, so the audit
+/// trigger that copies every changed row into the audit log copies a few
+/// lines of text here and not a whole photo a second time.
+///
+/// Never edited, only added and removed - the same rule as a PM's report
+/// file. NO PATIENT DATA: a photo of the machine is fine; one that shows a
+/// patient is not. See CLAUDE.md.
+/// </summary>
+public sealed class WorkOrderAttachment
+{
+    public int Id { get; set; }
+
+    public int TenantId { get; set; } = 1;
+
+    public int WorkOrderId { get; set; }
+
+    /// <summary>The name it had when uploaded, cleaned of any folder and control characters.</summary>
+    public required string FileName { get; set; }
+
+    /// <summary>jpeg, png or webp, decided from the bytes themselves and not from what the uploader said.</summary>
+    public required string ContentType { get; set; }
+
+    public int SizeBytes { get; set; }
+
+    public int UploadedByUserId { get; set; }
+
+    public DateTime UploadedAtUtc { get; set; }
+
+    public WorkOrder? WorkOrder { get; set; }
+
+    public WorkOrderAttachmentData? Data { get; set; }
+}
+
+/// <summary>The bytes of an attachment. Stored in the database so backup and restore carry them.</summary>
+public sealed class WorkOrderAttachmentData
+{
+    public int AttachmentId { get; set; }
+
+    public int TenantId { get; set; } = 1;
+
+    public required byte[] Data { get; set; }
+
+    public WorkOrderAttachment? Attachment { get; set; }
 }

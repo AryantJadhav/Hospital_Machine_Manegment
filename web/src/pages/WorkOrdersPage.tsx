@@ -49,9 +49,29 @@ type WorkOrderDetail = WorkOrderRow & {
     usedByUserId: number;
     usedAtUtc: string;
   }[];
+  photos: WorkOrderPhoto[];
+};
+
+type WorkOrderPhoto = {
+  id: number;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  uploadedBy: string | null;
+  uploadedAtUtc: string;
 };
 
 type SparePartOption = { id: number; partNumber: string; name: string; quantityOnHand: number; unit: string };
+
+const MAX_PHOTOS = 10;
+const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
+const PHOTO_ACCEPT = 'image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp';
+
+function photoSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 const STATUS: Record<number, string> = {
   10: 'Reported',
@@ -302,6 +322,10 @@ function Detail({
   const [partId, setPartId] = useState('');
   const [partQty, setPartQty] = useState('1');
   const [partError, setPartError] = useState<string | null>(null);
+  const [photoFiles, setPhotoFiles] = useState<File[]>([]);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const [uploadingPhotos, setUploadingPhotos] = useState(false);
+  const photoInput = useRef<HTMLInputElement>(null);
 
   // Only the people who can actually be sent to a machine. Loaded here rather
   // than with the list because it is only needed once a work order is open,
@@ -350,6 +374,54 @@ function Detail({
     void act(() => api.post(`/api/work-orders/${order.id}/parts`, { sparePartId: id, quantityUsed: qty }));
     setPartId('');
     setPartQty('1');
+  }
+
+  function addPhotoFiles(list: FileList | null) {
+    if (!list || list.length === 0) return;
+    const room = MAX_PHOTOS - order.photos.length - photoFiles.length;
+    const next = [...photoFiles];
+
+    for (const f of Array.from(list)) {
+      if (f.size === 0) {
+        setPhotoError(`"${f.name}" is empty.`);
+        continue;
+      }
+      if (f.size > MAX_PHOTO_BYTES) {
+        setPhotoError(`"${f.name}" is larger than 10 MB.`);
+        continue;
+      }
+      if (next.length - photoFiles.length >= room) {
+        setPhotoError(`A work order can have at most ${MAX_PHOTOS} photos.`);
+        break;
+      }
+      setPhotoError(null);
+      next.push(f);
+    }
+
+    setPhotoFiles(next);
+    if (photoInput.current) photoInput.current.value = '';
+  }
+
+  async function uploadPhotos() {
+    if (photoFiles.length === 0) return;
+    setUploadingPhotos(true);
+    setPhotoError(null);
+    await act(async () => {
+      const form = new FormData();
+      photoFiles.forEach((f) => form.append('files', f, f.name));
+      await api.postForm(`/api/work-orders/${order.id}/photos`, form);
+      // Only cleared once the upload actually succeeded - a refusal (too many
+      // photos, wrong type) leaves the picked files so nothing is silently lost.
+      setPhotoFiles([]);
+    });
+    setUploadingPhotos(false);
+  }
+
+  async function removePhoto(photo: WorkOrderPhoto) {
+    if (!window.confirm(`Remove "${photo.fileName}"? It is deleted from the system. The removal is recorded in the audit log.`)) {
+      return;
+    }
+    void act(() => api.del(`/api/work-orders/photos/${photo.id}`));
   }
 
   // The button stays clickable when the box is empty and says what is missing.
@@ -460,6 +532,85 @@ function Detail({
             </div>
           )}
           {partError && <p className="alert alert-error" role="alert">{partError}</p>}
+        </div>
+      )}
+
+      {(order.photos.length > 0 || !isTerminal) && (
+        <div>
+          <div className="muted" style={{ fontSize: '0.8rem', marginBottom: '0.35rem' }}>Photos</div>
+
+          {order.photos.length > 0 && (
+            <ul className="stack" style={{ listStyle: 'none', margin: 0, padding: 0, gap: '0.35rem' }}>
+              {order.photos.map((p) => (
+                <li key={p.id} className="row" style={{ justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <span>
+                    {p.fileName}
+                    <span className="muted"> · {photoSize(p.sizeBytes)} · {p.uploadedBy ?? 'unknown'}</span>
+                  </span>
+                  <span className="row" style={{ gap: '0.4rem' }}>
+                    <button
+                      className="btn btn-quiet"
+                      onClick={() =>
+                        void api.view(`/api/work-orders/photos/${p.id}`)
+                          .catch((err: unknown) => setPhotoError(err instanceof Error ? err.message : 'Could not open the photo.'))
+                      }
+                    >
+                      View
+                    </button>
+                    {canAssign && (
+                      <button className="btn btn-quiet" aria-label={`Remove ${p.fileName}`} onClick={() => void removePhoto(p)}>
+                        Remove
+                      </button>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {!isTerminal && order.photos.length + photoFiles.length < MAX_PHOTOS && (
+            <div className="stack" style={{ marginTop: order.photos.length > 0 ? '0.5rem' : 0 }}>
+              <input
+                ref={photoInput}
+                type="file"
+                className="field"
+                style={{ minWidth: 0, width: '100%' }}
+                multiple
+                accept={PHOTO_ACCEPT}
+                aria-label="Choose photos"
+                onChange={(e) => addPhotoFiles(e.target.files)}
+              />
+              {photoFiles.length > 0 && (
+                <ul className="stack" style={{ listStyle: 'none', margin: 0, padding: 0, gap: '0.25rem' }}>
+                  {photoFiles.map((f, i) => (
+                    <li key={`${f.name}-${i}`} className="row" style={{ justifyContent: 'space-between', gap: '0.5rem' }}>
+                      <span>{f.name} <span className="muted">· {photoSize(f.size)}</span></span>
+                      <button
+                        type="button"
+                        className="btn btn-quiet"
+                        aria-label={`Remove ${f.name}`}
+                        onClick={() => setPhotoFiles(photoFiles.filter((_, j) => j !== i))}
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="muted" style={{ margin: 0 }}>
+                JPEG, PNG or WebP, up to 10 MB each. This system holds no patient information, so do
+                not upload anything that shows a patient or a patient&apos;s details.
+              </p>
+              {photoFiles.length > 0 && (
+                <div>
+                  <button className="btn" disabled={uploadingPhotos} onClick={() => void uploadPhotos()}>
+                    {uploadingPhotos ? 'Saving…' : 'Save photos'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+          {photoError && <p className="alert alert-error" role="alert">{photoError}</p>}
         </div>
       )}
 
