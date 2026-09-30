@@ -22,6 +22,7 @@ import { PmTasksPage } from './pages/PmTasksPage';
 import { PmDoPage } from './pages/PmDoPage';
 import { StaffPage } from './pages/StaffPage';
 import { CompliancePage } from './pages/CompliancePage';
+import { ReportsPage } from './pages/ReportsPage';
 import { ExportPage } from './pages/ExportPage';
 import { ChecklistsPage } from './pages/ChecklistsPage';
 import { WorkOrdersPage } from './pages/WorkOrdersPage';
@@ -153,6 +154,10 @@ function Shell() {
           <Route path="/locations" element={<LocationsPage />} />
           <Route path="/checklists" element={<ChecklistsPage />} />
           <Route path="/spare-parts" element={<SparePartsPage />} />
+          <Route
+            path="/reports"
+            element={isAdmin ? <ReportsPage /> : <Elsewhere notice={ADMIN_ONLY} />}
+          />
           <Route
             path="/compliance"
             element={isAdmin ? <CompliancePage /> : <Elsewhere notice={ADMIN_ONLY} />}

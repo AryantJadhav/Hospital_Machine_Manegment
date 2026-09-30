@@ -4,6 +4,7 @@ import type { Features } from './features';
 
 // A feature here can be switched off for everyone in the settings file. It is offered only while it is on.
 const ITEMS: { to: string; label: string; feature?: keyof Features }[] = [
+  { to: '/reports', label: 'Reports' },
   { to: '/compliance', label: 'Compliance report' },
   { to: '/import', label: 'Import', feature: 'import' },
   { to: '/export', label: 'Export data', feature: 'export' },

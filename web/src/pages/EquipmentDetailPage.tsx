@@ -6,6 +6,7 @@ import { ROLES } from '../auth/context';
 import { EquipmentForm } from './EquipmentForm';
 import { AddPmDatesForm } from './AddPmDatesForm';
 import { MoveMachineForm } from './MoveMachineForm';
+import { RenewInsuranceForm } from './RenewInsuranceForm';
 import { formatDate, formatDateTime, todayAtHospital } from '../time';
 import { formatRupees } from '../money';
 import { useHandoff } from '../handoff';
@@ -115,6 +116,20 @@ const WO_STATUS: Record<number, string> = {
 
 const PRIORITY: Record<number, string> = { 10: 'Low', 20: 'Medium', 30: 'High', 40: 'Critical' };
 
+/** What the machine has cost over its whole life, as the Cost report works it out. */
+type Spend = {
+  spend: {
+    purchaseCost: number | null;
+    insuranceCost: number | null;
+    contractCost: number | null;
+    partsCost: number;
+    total: number;
+    policies: { provider: string; policyNumber: string | null; expiryDate: string; cost: number | null; isCurrent: boolean }[];
+    parts: { partNumber: string; name: string; quantity: number; cost: number; costMissing: boolean }[];
+  };
+  partsWithoutCost: number;
+};
+
 export function EquipmentDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -131,6 +146,8 @@ export function EquipmentDetailPage() {
   const [moving, setMoving] = useState(false);
   const [addingDates, setAddingDates] = useState(false);
   const [moves, setMoves] = useState<Move[]>([]);
+  const [spend, setSpend] = useState<Spend | null>(null);
+  const [renewing, setRenewing] = useState(false);
   const [movedNote, setMovedNote] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   // What the PM or fault form we sent them to just did, said here, where the
@@ -143,6 +160,13 @@ export function EquipmentDetailPage() {
     try {
       setData(await api.get<History>(`/api/equipment/${id}/history`));
       setMoves(await api.get<Move[]>(`/api/equipment/${id}/moves`));
+
+      // Its own try: the rest of the page is still worth showing if the costs cannot be worked out.
+      try {
+        setSpend(await api.get<Spend>(`/api/equipment/${id}/spend`));
+      } catch {
+        setSpend(null);
+      }
     } catch (e) {
       setError(
         e instanceof ApiError && e.status === 404
@@ -223,6 +247,11 @@ export function EquipmentDetailPage() {
           {canEdit && !editing && (
             <button className="btn" onClick={() => setEditing(true)}>Edit</button>
           )}
+          {/* A renewal is a second policy that was paid for, so the old one is kept; Edit is for
+              correcting a mistake and overwrites. */}
+          {canEdit && e.isInsured && !renewing && (
+            <button className="btn" onClick={() => { setRenewing(true); setMovedNote(null); }}>Renew insurance</button>
+          )}
           {e.status !== 40 && e.status !== 50 && !moving && (
             <button className="btn" onClick={() => { setMoving(true); setMovedNote(null); }}>Move</button>
           )}
@@ -270,6 +299,20 @@ export function EquipmentDetailPage() {
           onCancel={() => setAddingDates(false)}
           onSaved={async (message) => {
             setAddingDates(false);
+            setMovedNote(message);
+            await load();
+          }}
+        />
+      )}
+
+      {renewing && (
+        <RenewInsuranceForm
+          equipmentId={e.id}
+          currentProvider={e.insuranceProvider}
+          currentExpiry={e.insuranceExpiryDate}
+          onCancel={() => setRenewing(false)}
+          onRenewed={async (message) => {
+            setRenewing(false);
             setMovedNote(message);
             await load();
           }}
@@ -415,6 +458,72 @@ export function EquipmentDetailPage() {
           </div>
         </div>
       </div>
+
+      {spend && (
+        <div className="card stack">
+          <h2 className="section-h" style={{ margin: 0 }}>What it has cost</h2>
+
+          {spend.spend.total <= 0 && spend.spend.policies.length === 0 && spend.spend.parts.length === 0 ? (
+            <p className="muted" style={{ margin: 0 }}>
+              No cost is recorded for this machine yet. Add its cost, insurance or maintenance contract with
+              Edit, or record a spare part on one of its work orders.
+            </p>
+          ) : (
+            <>
+              <div className="tiles tiles-plain">
+                <Tile label="Total" value={formatRupees(spend.spend.total)} />
+                <Tile label="Purchase" value={formatRupees(spend.spend.purchaseCost)} />
+                <Tile
+                  label="Insurance"
+                  value={formatRupees(spend.spend.insuranceCost)}
+                  hint={spend.spend.policies.length > 1 ? `${spend.spend.policies.length} policies` : undefined}
+                />
+                <Tile label="Maintenance contract" value={formatRupees(spend.spend.contractCost)} />
+                <Tile label="Spare parts used" value={formatRupees(spend.spend.partsCost)} />
+              </div>
+
+              {spend.spend.policies.length > 0 && (
+                <div>
+                  <div className="muted" style={{ fontSize: '0.8rem', marginBottom: '0.35rem' }}>Insurance policies</div>
+                  {spend.spend.policies.map((p) => (
+                    <div key={`${p.provider}-${p.expiryDate}`} className="hist-row">
+                      <div className="grow">
+                        <div>
+                          {p.provider}
+                          {p.isCurrent && <StatusPill tone="success" className="hist-flag">Current</StatusPill>}
+                        </div>
+                        <div className="muted hist-meta">
+                          {p.policyNumber ? `${p.policyNumber} · ` : ''}covered until {formatDate(p.expiryDate)}
+                        </div>
+                      </div>
+                      <strong>{formatRupees(p.cost)}</strong>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {spend.spend.parts.length > 0 && (
+                <div>
+                  <div className="muted" style={{ fontSize: '0.8rem', marginBottom: '0.35rem' }}>Spare parts used</div>
+                  {spend.spend.parts.map((p) => (
+                    <div key={p.partNumber} className="hist-row">
+                      <div className="grow">
+                        <div>
+                          <span className="mono">{p.quantity}× {p.partNumber}</span> — {p.name}
+                          {p.costMissing && (
+                            <StatusPill tone="warning" className="hist-flag">Some cost not recorded</StatusPill>
+                          )}
+                        </div>
+                      </div>
+                      <strong>{formatRupees(p.cost)}</strong>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       <Section title="Maintenance due" empty="Nothing due on this machine.">
         {data.openPm.map((t) => (

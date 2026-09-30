@@ -298,6 +298,8 @@ app.MapEquipmentTypeEndpoints();
 app.MapEquipmentHistoryEndpoints();
 app.MapSparePartEndpoints();
 app.MapEquipmentMoveEndpoints();
+app.MapEquipmentInsuranceEndpoints();
+app.MapEquipmentSpendEndpoints();
 app.MapLocationEndpoints();
 app.MapLabelEndpoints();
 app.MapChecklistEndpoints();
@@ -313,6 +315,8 @@ app.MapLicenceEndpoints();
 app.MapUpdateEndpoints();
 app.MapPilotMetricsEndpoints();
 app.MapPmComplianceEndpoints();
+app.MapDowntimeReportEndpoints();
+app.MapCostReportEndpoints();
 app.MapExportEndpoints();
 
 app.UseDefaultFiles();

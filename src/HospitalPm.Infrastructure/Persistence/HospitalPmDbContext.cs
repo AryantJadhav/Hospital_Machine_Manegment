@@ -38,6 +38,8 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
 
     public DbSet<EquipmentMove> EquipmentMoves => Set<EquipmentMove>();
 
+    public DbSet<PastInsurancePolicy> PastInsurancePolicies => Set<PastInsurancePolicy>();
+
     public DbSet<ChecklistTemplate> ChecklistTemplates => Set<ChecklistTemplate>();
 
     public DbSet<ChecklistTemplateVersion> ChecklistTemplateVersions => Set<ChecklistTemplateVersion>();
@@ -599,6 +601,29 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
 
             // "Where has this machine been", newest first.
             e.HasIndex(x => new { x.EquipmentId, x.MovedAtUtc }).HasDatabaseName("ix_equipment_move_equipment");
+        });
+
+        builder.Entity<PastInsurancePolicy>(e =>
+        {
+            e.ToTable("equipment_insurance_history");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.EquipmentId).HasColumnName("equipment_id");
+            e.Property(x => x.Provider).HasColumnName("provider").HasMaxLength(200).IsRequired();
+            e.Property(x => x.PolicyNumber).HasColumnName("policy_number").HasMaxLength(100);
+            e.Property(x => x.ExpiryDate).HasColumnName("expiry_date");
+            e.Property(x => x.Cost).HasColumnName("cost").HasPrecision(14, 2);
+            e.Property(x => x.RenewedAtUtc).HasColumnName("renewed_at_utc").HasDefaultValueSql("now()");
+            e.Property(x => x.RenewedByUserId).HasColumnName("renewed_by_user_id");
+
+            // Restrict: a machine is condemned, never deleted, and its insurance history is part of its record.
+            e.HasOne(x => x.Equipment)
+                .WithMany()
+                .HasForeignKey(x => x.EquipmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasIndex(x => x.EquipmentId).HasDatabaseName("ix_equipment_insurance_history_equipment");
         });
 
         builder.Entity<Equipment>(e =>
