@@ -147,6 +147,10 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
             e.Property(x => x.UnitCost).HasColumnName("unit_cost").HasColumnType("numeric(12,2)");
             e.Property(x => x.Supplier).HasColumnName("supplier").HasMaxLength(200);
             e.Property(x => x.StorageLocation).HasColumnName("storage_location").HasMaxLength(200);
+            e.Property(x => x.PurchaseDate).HasColumnName("purchase_date");
+            e.Property(x => x.WarrantyMonths).HasColumnName("warranty_months");
+            // Worked out from the two above, never stored.
+            e.Ignore(x => x.WarrantyExpiryDate);
             e.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(true);
             e.Property(x => x.Notes).HasColumnName("notes");
             e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").HasDefaultValueSql("now()");

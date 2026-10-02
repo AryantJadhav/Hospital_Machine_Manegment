@@ -17,10 +17,11 @@ public sealed record SparePartRequest(
     int? EquipmentTypeId,
     string? Unit,
     int QuantityOnHand,
-    int ReorderLevel,
     decimal? UnitCost,
     string? Supplier,
     string? StorageLocation,
+    DateOnly? PurchaseDate,
+    int? WarrantyMonths,
     string? Notes,
     // Left out on a new part, which is active; on an edit, left out keeps the
     // state it has - the same convention as an equipment type.
@@ -35,12 +36,15 @@ public sealed record SparePartResponse(
     string? EquipmentTypeName,
     string Unit,
     int QuantityOnHand,
-    int ReorderLevel,
     decimal? UnitCost,
     string? Supplier,
     string? StorageLocation,
+    DateOnly? PurchaseDate,
+    int? WarrantyMonths,
+    DateOnly? WarrantyExpiryDate,
     string? Notes,
     bool IsActive,
+    string StockStatus,
     bool IsLow);
 
 public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Total, int Page, int PageSize);
@@ -61,6 +65,9 @@ public static class SparePartEndpoints
     private const int MaxPartNumberLength = 64;
     private const int MaxNameLength = 200;
 
+    /// <summary>Fifty years: longer than any warranty on a part has ever run, so a bigger number is a typo.</summary>
+    private const int MaxWarrantyMonths = 600;
+
     public static void MapSparePartEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/spare-parts").WithTags("Spare parts").RequireAuthorization();
@@ -75,7 +82,9 @@ public static class SparePartEndpoints
     private static async Task<IResult> SearchAsync(
         HospitalPmDbContext db,
         [FromQuery] string? q,
-        [FromQuery] bool? lowStockOnly,
+        // "out": none left. "low": one to five left (see StockRule). Apart on purpose, so the one list is
+        // what to order today and the other is what to order soon.
+        [FromQuery] string? stock,
         [FromQuery] bool includeInactive = false,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
@@ -100,9 +109,19 @@ public static class SparePartEndpoints
                 (p.Supplier != null && p.Supplier.ToLower().Contains(term)));
         }
 
-        if (lowStockOnly == true)
+        if (!string.IsNullOrWhiteSpace(stock))
         {
-            query = query.Where(p => p.QuantityOnHand <= p.ReorderLevel);
+            switch (stock.Trim().ToLowerInvariant())
+            {
+                case "out":
+                    query = query.Where(p => p.QuantityOnHand <= 0);
+                    break;
+                case "low":
+                    query = query.Where(p => p.QuantityOnHand > 0 && p.QuantityOnHand <= StockRule.LowStockMax);
+                    break;
+                default:
+                    return Results.BadRequest(new { error = "Stock can be 'out' or 'low'." });
+            }
         }
 
         var total = await query.CountAsync(ct);
@@ -145,10 +164,11 @@ public static class SparePartEndpoints
             EquipmentTypeId = request.EquipmentTypeId,
             Unit = string.IsNullOrWhiteSpace(request.Unit) ? "pcs" : request.Unit.Trim(),
             QuantityOnHand = request.QuantityOnHand,
-            ReorderLevel = request.ReorderLevel,
             UnitCost = request.UnitCost,
             Supplier = Blank(request.Supplier),
             StorageLocation = Blank(request.StorageLocation),
+            PurchaseDate = request.PurchaseDate,
+            WarrantyMonths = request.WarrantyMonths,
             Notes = Blank(request.Notes),
             IsActive = request.IsActive ?? true,
         };
@@ -182,10 +202,11 @@ public static class SparePartEndpoints
         part.EquipmentTypeId = request.EquipmentTypeId;
         part.Unit = string.IsNullOrWhiteSpace(request.Unit) ? "pcs" : request.Unit.Trim();
         part.QuantityOnHand = request.QuantityOnHand;
-        part.ReorderLevel = request.ReorderLevel;
         part.UnitCost = request.UnitCost;
         part.Supplier = Blank(request.Supplier);
         part.StorageLocation = Blank(request.StorageLocation);
+        part.PurchaseDate = request.PurchaseDate;
+        part.WarrantyMonths = request.WarrantyMonths;
         part.Notes = Blank(request.Notes);
         part.IsActive = request.IsActive ?? part.IsActive;
 
@@ -230,11 +251,6 @@ public static class SparePartEndpoints
             return Results.BadRequest(new { error = "Quantity on hand cannot be negative." });
         }
 
-        if (request.ReorderLevel < 0)
-        {
-            return Results.BadRequest(new { error = "The reorder level cannot be negative." });
-        }
-
         if (request.UnitCost is < 0)
         {
             return Results.BadRequest(new { error = "Unit cost cannot be negative." });
@@ -243,6 +259,20 @@ public static class SparePartEndpoints
         if (request.EquipmentTypeId is { } typeId && !await db.EquipmentTypes.AnyAsync(t => t.Id == typeId, ct))
         {
             return Results.BadRequest(new { error = "Unknown equipment type." });
+        }
+
+        if (request.WarrantyMonths is { } months)
+        {
+            if (months is < 1 or > MaxWarrantyMonths)
+            {
+                return Results.BadRequest(new { error = $"The warranty must be between 1 and {MaxWarrantyMonths} months." });
+            }
+
+            // The warranty runs from the day it was bought, so it cannot be worked out without it.
+            if (request.PurchaseDate is null)
+            {
+                return Results.BadRequest(new { error = "Give the date of purchase for the warranty to run from." });
+            }
         }
 
         return null;
@@ -257,13 +287,16 @@ public static class SparePartEndpoints
         p.EquipmentType == null ? null : p.EquipmentType.Name,
         p.Unit,
         p.QuantityOnHand,
-        p.ReorderLevel,
         p.UnitCost,
         p.Supplier,
         p.StorageLocation,
+        p.PurchaseDate,
+        p.WarrantyMonths,
+        p.WarrantyExpiryDate,
         p.Notes,
         p.IsActive,
-        p.QuantityOnHand <= p.ReorderLevel);
+        StockRule.For(p.QuantityOnHand).ToString().ToLowerInvariant(),
+        StockRule.For(p.QuantityOnHand) != StockLevel.Ok);
 
     private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

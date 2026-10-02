@@ -124,33 +124,32 @@ public sealed class SparePartTests(PostgresFixture fixture) : IAsyncLifetime, ID
         Assert.Equal(HttpStatusCode.Conflict, again.StatusCode);
     }
 
-    [Fact]
-    public async Task Quantity_at_or_below_the_reorder_level_is_flagged_low()
+    [Theory]
+    [InlineData(0, "out", true)]
+    [InlineData(1, "low", true)]
+    [InlineData(5, "low", true)]
+    [InlineData(6, "ok", false)]
+    [InlineData(50, "ok", false)]
+    public async Task Nothing_left_is_out_of_stock_one_to_five_is_low_and_more_is_fine(int qty, string status, bool isLow)
     {
-        var atLevel = await _admin.PostAsJsonAsync("/api/spare-parts", Body("LOW-1", qty: 5, reorder: 5));
-        var id = (await atLevel.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
-        var seen = await _admin.GetFromJsonAsync<JsonElement>($"/api/spare-parts/{id}");
-        Assert.True(seen.GetProperty("isLow").GetBoolean());
+        var created = await _admin.PostAsJsonAsync("/api/spare-parts", Body($"LEVEL-{qty}", qty: qty));
+        var id = (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
 
-        var plenty = await _admin.PostAsJsonAsync("/api/spare-parts", Body("LOW-2", qty: 50, reorder: 5));
-        var id2 = (await plenty.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
-        var seen2 = await _admin.GetFromJsonAsync<JsonElement>($"/api/spare-parts/{id2}");
-        Assert.False(seen2.GetProperty("isLow").GetBoolean());
+        var seen = await _admin.GetFromJsonAsync<JsonElement>($"/api/spare-parts/{id}");
+
+        Assert.Equal(status, seen.GetProperty("stockStatus").GetString());
+        Assert.Equal(isLow, seen.GetProperty("isLow").GetBoolean());
     }
 
     [Fact]
-    public async Task Negative_quantity_or_reorder_level_or_cost_is_refused()
+    public async Task Negative_quantity_or_cost_is_refused()
     {
         var neg1 = await _admin.PostAsJsonAsync("/api/spare-parts",
-            new { partNumber = $"NEG-1-{_suffix}", name = "Bad", quantityOnHand = -1, reorderLevel = 0 });
+            new { partNumber = $"NEG-1-{_suffix}", name = "Bad", quantityOnHand = -1 });
         Assert.Equal(HttpStatusCode.BadRequest, neg1.StatusCode);
 
-        var neg2 = await _admin.PostAsJsonAsync("/api/spare-parts",
-            new { partNumber = $"NEG-2-{_suffix}", name = "Bad", quantityOnHand = 0, reorderLevel = -1 });
-        Assert.Equal(HttpStatusCode.BadRequest, neg2.StatusCode);
-
         var neg3 = await _admin.PostAsJsonAsync("/api/spare-parts",
-            new { partNumber = $"NEG-3-{_suffix}", name = "Bad", quantityOnHand = 0, reorderLevel = 0, unitCost = -5 });
+            new { partNumber = $"NEG-3-{_suffix}", name = "Bad", quantityOnHand = 0, unitCost = -5 });
         Assert.Equal(HttpStatusCode.BadRequest, neg3.StatusCode);
     }
 
@@ -214,7 +213,7 @@ public sealed class SparePartTests(PostgresFixture fixture) : IAsyncLifetime, ID
         var search = await _admin.GetFromJsonAsync<JsonElement>($"/api/spare-parts?q=widget-{_suffix}");
         Assert.Equal(1, search.GetProperty("total").GetInt32());
 
-        var low = await _admin.GetFromJsonAsync<JsonElement>($"/api/spare-parts?q={_suffix}&lowStockOnly=true");
+        var low = await _admin.GetFromJsonAsync<JsonElement>($"/api/spare-parts?q={_suffix}&stock=low");
         var items = low.GetProperty("items").EnumerateArray().ToList();
         Assert.All(items, i => Assert.True(i.GetProperty("isLow").GetBoolean()));
         Assert.Contains(items, i => i.GetProperty("partNumber").GetString()!.Contains("widget"));
@@ -240,5 +239,184 @@ public sealed class SparePartTests(PostgresFixture fixture) : IAsyncLifetime, ID
 
         var count = Convert.ToInt32(await cmd.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture);
         Assert.True(count > 0);
+    }
+
+    private object WarrantyBody(string number, string? purchaseDate, int? months) => new
+    {
+        partNumber = $"{number}-{_suffix}",
+        name = $"Part {number}",
+        quantityOnHand = 10,
+        reorderLevel = 5,
+        purchaseDate,
+        warrantyMonths = months,
+    };
+
+    [Fact]
+    public async Task A_part_keeps_its_date_of_purchase_and_warranty_and_says_when_it_ends()
+    {
+        var created = await _admin.PostAsJsonAsync("/api/spare-parts", WarrantyBody("WAR-1", "2026-03-15", 12));
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var id = (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
+
+        var seen = await _employee.GetFromJsonAsync<JsonElement>($"/api/spare-parts/{id}");
+
+        Assert.Equal("2026-03-15", seen.GetProperty("purchaseDate").GetString());
+        Assert.Equal(12, seen.GetProperty("warrantyMonths").GetInt32());
+        Assert.Equal("2027-03-15", seen.GetProperty("warrantyExpiryDate").GetString());
+    }
+
+    [Fact]
+    public async Task A_warranty_that_starts_on_the_31st_ends_on_the_last_day_of_a_shorter_month()
+    {
+        var created = await _admin.PostAsJsonAsync("/api/spare-parts", WarrantyBody("WAR-2", "2026-08-31", 6));
+        var id = (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
+
+        var seen = await _admin.GetFromJsonAsync<JsonElement>($"/api/spare-parts/{id}");
+
+        // Six months on from 31 August is February, which has no 31st.
+        Assert.Equal("2027-02-28", seen.GetProperty("warrantyExpiryDate").GetString());
+    }
+
+    [Fact]
+    public async Task A_part_with_no_purchase_or_warranty_has_no_end_date()
+    {
+        var created = await _admin.PostAsJsonAsync("/api/spare-parts", Body("WAR-3"));
+        var id = (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
+
+        var seen = await _admin.GetFromJsonAsync<JsonElement>($"/api/spare-parts/{id}");
+
+        Assert.Equal(JsonValueKind.Null, seen.GetProperty("purchaseDate").ValueKind);
+        Assert.Equal(JsonValueKind.Null, seen.GetProperty("warrantyMonths").ValueKind);
+        Assert.Equal(JsonValueKind.Null, seen.GetProperty("warrantyExpiryDate").ValueKind);
+    }
+
+    [Fact]
+    public async Task A_purchase_date_can_stand_alone_without_a_warranty()
+    {
+        var created = await _admin.PostAsJsonAsync("/api/spare-parts", WarrantyBody("WAR-4", "2026-05-01", null));
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var id = (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
+
+        var seen = await _admin.GetFromJsonAsync<JsonElement>($"/api/spare-parts/{id}");
+
+        Assert.Equal("2026-05-01", seen.GetProperty("purchaseDate").GetString());
+        Assert.Equal(JsonValueKind.Null, seen.GetProperty("warrantyExpiryDate").ValueKind);
+    }
+
+    [Fact]
+    public async Task A_warranty_needs_a_purchase_date_to_run_from()
+    {
+        var res = await _admin.PostAsJsonAsync("/api/spare-parts", WarrantyBody("WAR-5", null, 12));
+
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        Assert.Contains("purchase", (await res.Content.ReadAsStringAsync()), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-6)]
+    [InlineData(601)]
+    public async Task A_warranty_of_no_months_or_an_absurd_length_is_refused(int months)
+    {
+        var res = await _admin.PostAsJsonAsync("/api/spare-parts", WarrantyBody($"WAR-6-{months}", "2026-03-15", months));
+
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+    }
+
+    [Fact]
+    public async Task Editing_a_part_changes_and_clears_its_warranty()
+    {
+        var created = await _admin.PostAsJsonAsync("/api/spare-parts", WarrantyBody("WAR-7", "2026-03-15", 12));
+        var id = (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
+
+        (await _admin.PutAsJsonAsync($"/api/spare-parts/{id}", WarrantyBody("WAR-7", "2026-04-10", 24)))
+            .EnsureSuccessStatusCode();
+        var changed = await _admin.GetFromJsonAsync<JsonElement>($"/api/spare-parts/{id}");
+        Assert.Equal("2028-04-10", changed.GetProperty("warrantyExpiryDate").GetString());
+
+        (await _admin.PutAsJsonAsync($"/api/spare-parts/{id}", WarrantyBody("WAR-7", null, null)))
+            .EnsureSuccessStatusCode();
+        var cleared = await _admin.GetFromJsonAsync<JsonElement>($"/api/spare-parts/{id}");
+        Assert.Equal(JsonValueKind.Null, cleared.GetProperty("purchaseDate").ValueKind);
+        Assert.Equal(JsonValueKind.Null, cleared.GetProperty("warrantyExpiryDate").ValueKind);
+    }
+
+    private async Task<int> AddAsync(string number, int qty, int reorder)
+    {
+        var created = await _admin.PostAsJsonAsync("/api/spare-parts", Body(number, qty, reorder));
+        created.EnsureSuccessStatusCode();
+        return (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
+    }
+
+    private async Task<HashSet<int>> IdsAsync(string stock)
+    {
+        var list = await _employee.GetFromJsonAsync<JsonElement>($"/api/spare-parts?stock={stock}&pageSize=200&q={_suffix}");
+        return list.GetProperty("items").EnumerateArray().Select(i => i.GetProperty("id").GetInt32()).ToHashSet();
+    }
+
+    [Fact]
+    public async Task The_out_of_stock_filter_lists_only_parts_with_none_left()
+    {
+        var none = await AddAsync("OUT-NONE", qty: 0, reorder: 5);
+        var low = await AddAsync("OUT-LOW", qty: 3, reorder: 5);
+        var fine = await AddAsync("OUT-FINE", qty: 20, reorder: 5);
+
+        var ids = await IdsAsync("out");
+
+        Assert.Contains(none, ids);
+        Assert.DoesNotContain(low, ids);
+        Assert.DoesNotContain(fine, ids);
+    }
+
+    [Fact]
+    public async Task The_low_stock_filter_lists_parts_running_short_but_not_those_already_out()
+    {
+        var none = await AddAsync("LOW-NONE", qty: 0, reorder: 5);
+        var atLevel = await AddAsync("LOW-AT", qty: 5, reorder: 5);
+        var below = await AddAsync("LOW-BELOW", qty: 2, reorder: 5);
+        var fine = await AddAsync("LOW-FINE", qty: 6, reorder: 5);
+
+        var ids = await IdsAsync("low");
+
+        Assert.Contains(atLevel, ids);
+        Assert.Contains(below, ids);
+        // Out is its own list: nothing left is not "low".
+        Assert.DoesNotContain(none, ids);
+        Assert.DoesNotContain(fine, ids);
+    }
+
+    [Fact]
+    public async Task One_to_five_is_low_and_six_is_not_whatever_reorder_level_an_old_client_sends()
+    {
+        var one = await AddAsync("EDGE-ONE", qty: 1, reorder: 0);
+        var five = await AddAsync("EDGE-FIVE", qty: 5, reorder: 0);
+        var six = await AddAsync("EDGE-SIX", qty: 6, reorder: 100);
+
+        var low = await IdsAsync("low");
+
+        Assert.Contains(one, low);
+        Assert.Contains(five, low);
+        Assert.DoesNotContain(six, low);
+        Assert.DoesNotContain(six, await IdsAsync("out"));
+    }
+
+    [Fact]
+    public async Task An_unknown_stock_filter_is_refused()
+    {
+        var res = await _employee.GetAsync("/api/spare-parts?stock=plenty");
+
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+    }
+
+    [Fact]
+    public async Task The_database_itself_refuses_a_warranty_with_no_purchase_date()
+    {
+        await using var db = fixture.CreateContext();
+
+        var ex = await Assert.ThrowsAsync<PostgresException>(() => db.Database.ExecuteSqlRawAsync(
+            "INSERT INTO spare_part (tenant_id, part_number, name, warranty_months) VALUES (1, {0}, 'Bad warranty', 12)",
+            $"BAD-{_suffix}"));
+
+        Assert.Equal("ck_spare_part_warranty", ex.ConstraintName);
     }
 }

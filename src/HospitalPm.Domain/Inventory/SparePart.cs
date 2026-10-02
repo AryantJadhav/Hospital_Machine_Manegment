@@ -52,6 +52,23 @@ public sealed class SparePart
 
     public string? Supplier { get; set; }
 
+    /// <summary>
+    /// The day the stock on the shelf was bought. The parts are counted, not tracked one by one, so
+    /// this is the date of the purchase the department last recorded, not of every item. Null when
+    /// nobody has written it down.
+    /// </summary>
+    public DateOnly? PurchaseDate { get; set; }
+
+    /// <summary>
+    /// How long the supplier's warranty runs from the purchase date, in months. Null when there is none
+    /// or it is not known. It only means something with a <see cref="PurchaseDate"/> to run from.
+    /// </summary>
+    public int? WarrantyMonths { get; set; }
+
+    /// <summary>The last day the warranty covers, when there is a purchase date and a warranty to work it from.</summary>
+    public DateOnly? WarrantyExpiryDate =>
+        PurchaseDate is { } bought && WarrantyMonths is { } months ? bought.AddMonths(months) : null;
+
     /// <summary>Where it physically sits - "Store Room A, Rack 3". Free text; there is no shelf register to key against.</summary>
     public string? StorageLocation { get; set; }
 

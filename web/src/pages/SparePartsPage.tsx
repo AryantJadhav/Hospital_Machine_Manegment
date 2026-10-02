@@ -5,6 +5,7 @@ import { useAuth } from '../auth/useAuth';
 import { ROLES } from '../auth/context';
 import { StatusPill } from '../StatusPill';
 import { formatRupees } from '../money';
+import { formatDate, todayAtHospital } from '../time';
 
 /**
  * The biomedical department's own shelf of spares - fuses, tubing sets, sensor
@@ -26,13 +27,17 @@ type Part = {
   equipmentTypeName: string | null;
   unit: string;
   quantityOnHand: number;
-  reorderLevel: number;
   unitCost: number | null;
   supplier: string | null;
   storageLocation: string | null;
+  purchaseDate: string | null;
+  warrantyMonths: number | null;
+  /** Worked out by the server: the purchase date plus the warranty. */
+  warrantyExpiryDate: string | null;
   notes: string | null;
   isActive: boolean;
-  isLow: boolean;
+  /** 0 is out, 1 to 5 is low: decided by the server, so every screen agrees. */
+  stockStatus: 'ok' | 'low' | 'out';
 };
 
 type Paged = { items: Part[]; total: number; page: number; pageSize: number };
@@ -50,7 +55,8 @@ export function SparePartsPage() {
   const [saved, setSaved] = useState<string | null>(null);
   const [editing, setEditing] = useState<Part | 'new' | null>(null);
   const [query, setQuery] = useState('');
-  const [lowOnly, setLowOnly] = useState(false);
+  // "" for all stock, "out" for none left, "low" for one to five left.
+  const [stock, setStock] = useState<'' | 'out' | 'low'>('');
   const [showInactive, setShowInactive] = useState(false);
 
   const load = useCallback(async () => {
@@ -59,7 +65,7 @@ export function SparePartsPage() {
     try {
       const qs = new URLSearchParams();
       if (query.trim()) qs.set('q', query.trim());
-      if (lowOnly) qs.set('lowStockOnly', 'true');
+      if (stock) qs.set('stock', stock);
       if (showInactive) qs.set('includeInactive', 'true');
       qs.set('pageSize', '200');
 
@@ -77,13 +83,14 @@ export function SparePartsPage() {
     }
     // types is intentionally left out: it is fetched once and reused, not refetched on every search.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, lowOnly, showInactive]);
+  }, [query, stock, showInactive]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const lowCount = useMemo(() => parts.filter((p) => p.isLow && p.isActive).length, [parts]);
+  const outCount = useMemo(() => parts.filter((p) => p.stockStatus === 'out' && p.isActive).length, [parts]);
+  const lowCount = useMemo(() => parts.filter((p) => p.stockStatus === 'low' && p.isActive).length, [parts]);
 
   return (
     <div className="page">
@@ -92,7 +99,8 @@ export function SparePartsPage() {
           <h1>Spare parts</h1>
           <p className="muted">
             {total.toLocaleString('en-IN')} part{total === 1 ? '' : 's'}
-            {lowCount > 0 && `, ${lowCount} at or below their reorder level`}
+            {outCount > 0 && `, ${outCount} out of stock`}
+            {lowCount > 0 && `, ${lowCount} low`}
           </p>
         </div>
         {canAuthor && editing === null && (
@@ -135,10 +143,16 @@ export function SparePartsPage() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-        <label className="row" style={{ gap: '0.5rem', alignItems: 'center' }}>
-          <input type="checkbox" checked={lowOnly} onChange={(e) => setLowOnly(e.target.checked)} />
-          <span>At or below reorder level</span>
-        </label>
+        <select
+          className="field"
+          aria-label="Filter by stock"
+          value={stock}
+          onChange={(e) => setStock(e.target.value as '' | 'out' | 'low')}
+        >
+          <option value="">All stock</option>
+          <option value="out">Out of stock</option>
+          <option value="low">Low stock</option>
+        </select>
         <label className="row" style={{ gap: '0.5rem', alignItems: 'center' }}>
           <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
           <span>Show retired parts</span>
@@ -153,16 +167,17 @@ export function SparePartsPage() {
               <th>Used in</th>
               <th className="num">Stock</th>
               <th>Supplier</th>
+              <th>Bought and warranty</th>
               <th>Status</th>
               <th aria-label="Actions" />
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={6} className="empty">Loading…</td></tr>}
+            {loading && <tr><td colSpan={7} className="empty">Loading…</td></tr>}
             {!loading && parts.length === 0 && (
               <tr>
-                <td colSpan={6} className="empty">
-                  {total === 0 && !query && !lowOnly
+                <td colSpan={7} className="empty">
+                  {total === 0 && !query && !stock
                     ? 'There are no spare parts on the register yet.'
                     : 'No part matches that.'}
                 </td>
@@ -178,18 +193,33 @@ export function SparePartsPage() {
                 <td>{p.equipmentTypeName ?? <span className="muted">Not specific to one type</span>}</td>
                 <td className="num">
                   {p.quantityOnHand} {p.unit}
-                  <div className="muted">reorder at {p.reorderLevel}</div>
                 </td>
                 <td>
                   {p.supplier ?? <span className="muted">—</span>}
                   {p.unitCost != null && <div className="muted">{formatRupees(p.unitCost)} / {p.unit}</div>}
                 </td>
                 <td>
+                  {p.purchaseDate ? (
+                    <div>Bought {formatDate(p.purchaseDate)}</div>
+                  ) : (
+                    <span className="muted">—</span>
+                  )}
+                  {p.warrantyExpiryDate && p.warrantyMonths !== null && (
+                    <div>
+                      <StatusPill tone={p.warrantyExpiryDate >= todayAtHospital() ? 'success' : 'neutral'}>
+                        {p.warrantyExpiryDate >= todayAtHospital() ? 'In warranty until' : 'Warranty ended'}{' '}
+                        {formatDate(p.warrantyExpiryDate)}
+                      </StatusPill>
+                      <div className="muted">{p.warrantyMonths} {p.warrantyMonths === 1 ? 'month' : 'months'} from purchase</div>
+                    </div>
+                  )}
+                </td>
+                <td>
                   {!p.isActive ? (
                     <StatusPill tone="neutral">Retired</StatusPill>
-                  ) : p.quantityOnHand === 0 ? (
+                  ) : p.stockStatus === 'out' ? (
                     <StatusPill tone="danger">Out of stock</StatusPill>
-                  ) : p.isLow ? (
+                  ) : p.stockStatus === 'low' ? (
                     <StatusPill tone="warning">Low stock</StatusPill>
                   ) : (
                     <StatusPill tone="success">OK</StatusPill>
@@ -228,10 +258,11 @@ function PartForm({
   const [equipmentTypeId, setEquipmentTypeId] = useState(editing?.equipmentTypeId?.toString() ?? '');
   const [unit, setUnit] = useState(editing?.unit ?? 'pcs');
   const [quantityOnHand, setQuantityOnHand] = useState(editing?.quantityOnHand.toString() ?? '0');
-  const [reorderLevel, setReorderLevel] = useState(editing?.reorderLevel.toString() ?? '0');
   const [unitCost, setUnitCost] = useState(editing?.unitCost?.toString() ?? '');
   const [supplier, setSupplier] = useState(editing?.supplier ?? '');
   const [storageLocation, setStorageLocation] = useState(editing?.storageLocation ?? '');
+  const [purchaseDate, setPurchaseDate] = useState(editing?.purchaseDate ?? '');
+  const [warrantyMonths, setWarrantyMonths] = useState(editing?.warrantyMonths?.toString() ?? '');
   const [notes, setNotes] = useState(editing?.notes ?? '');
   const [isActive, setIsActive] = useState(editing?.isActive ?? true);
   const [busy, setBusy] = useState(false);
@@ -240,6 +271,13 @@ function PartForm({
   async function submit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+
+    // Said here, before the request, so it is the field that is pointed at and not a banner.
+    if (warrantyMonths.trim() && !purchaseDate) {
+      setError('Give the date of purchase for the warranty to run from.');
+      return;
+    }
+
     setBusy(true);
     try {
       const body = {
@@ -249,10 +287,11 @@ function PartForm({
         equipmentTypeId: equipmentTypeId ? Number(equipmentTypeId) : null,
         unit: unit.trim() || 'pcs',
         quantityOnHand: Number(quantityOnHand),
-        reorderLevel: Number(reorderLevel),
         unitCost: unitCost.trim() ? Number(unitCost) : null,
         supplier: supplier.trim() || null,
         storageLocation: storageLocation.trim() || null,
+        purchaseDate: purchaseDate || null,
+        warrantyMonths: warrantyMonths.trim() ? Number(warrantyMonths) : null,
         notes: notes.trim() || null,
         isActive,
       };
@@ -336,18 +375,7 @@ function PartForm({
             onChange={(e) => setQuantityOnHand(e.target.value)}
             required
           />
-        </label>
-
-        <label className="field">
-          <span>Reorder at</span>
-          <input
-            type="number"
-            min={0}
-            value={reorderLevel}
-            onChange={(e) => setReorderLevel(e.target.value)}
-            required
-          />
-          <span className="muted">A pill shows "Low stock" at or below this.</span>
+          <span className="muted">0 shows as Out of stock, 1 to 5 as Low stock.</span>
         </label>
 
         <label className="field">
@@ -370,6 +398,33 @@ function PartForm({
             placeholder="e.g. Store Room A, Rack 3"
             maxLength={200}
           />
+        </label>
+      </div>
+
+      <div className="filters">
+        <label className="field">
+          <span>Date of purchase (optional)</span>
+          <input
+            type="date"
+            value={purchaseDate}
+            max={todayAtHospital()}
+            onChange={(e) => setPurchaseDate(e.target.value)}
+          />
+          <span className="muted">When this stock was bought.</span>
+        </label>
+
+        <label className="field">
+          <span>Warranty, months (optional)</span>
+          <input
+            type="number"
+            min={1}
+            max={600}
+            step={1}
+            value={warrantyMonths}
+            onChange={(e) => setWarrantyMonths(e.target.value)}
+            placeholder="e.g. 12"
+          />
+          <span className="muted">How long the supplier covers it, from the date of purchase.</span>
         </label>
       </div>
 
