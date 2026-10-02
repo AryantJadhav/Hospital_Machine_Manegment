@@ -1,3 +1,4 @@
+using HospitalPm.Api.Auth;
 using System.Security.Claims;
 using HospitalPm.Domain.Assets;
 using HospitalPm.Domain.Identity;
@@ -31,7 +32,7 @@ public static class EquipmentInsuranceEndpoints
         // The register is an Administrator's, and so is what its insurance is.
         app.MapPost("/api/equipment/{id:int}/insurance/renew", RenewAsync)
             .WithTags("Equipment")
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
+            .RequirePermission(Permissions.EquipmentEdit);
     }
 
     private static async Task<IResult> RenewAsync(

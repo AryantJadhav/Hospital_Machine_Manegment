@@ -1,3 +1,4 @@
+using HospitalPm.Api.Auth;
 using HospitalPm.Domain.Identity;
 using HospitalPm.Domain.Updates;
 using HospitalPm.Infrastructure.Updates;
@@ -20,7 +21,7 @@ public static partial class UpdateEndpoints
     {
         var group = app.MapGroup("/api/admin/update")
             .WithTags("Update")
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
+            .RequirePermission(Permissions.SystemUpdates);
 
         group.MapGet("/", Status);
         group.MapPost("/check", CheckOnlineAsync);

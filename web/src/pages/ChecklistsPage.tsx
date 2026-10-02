@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/useAuth';
-import { ROLES } from '../auth/context';
+import { PERMISSIONS } from '../auth/context';
 import { formatDate, todayAtHospital } from '../time';
 import { StatusPill } from '../StatusPill';
 
@@ -141,8 +141,8 @@ const ITEM_TYPES: { value: ItemType; label: string; hint: string }[] = [
 const STATUS: Record<number, string> = { 10: 'Draft', 20: 'Published', 30: 'Archived' };
 
 export function ChecklistsPage() {
-  const { can } = useAuth();
-  const canAuthor = can(ROLES.admin);
+  const { may } = useAuth();
+  const canAuthor = may(PERMISSIONS.checklistsEdit);
 
   const [templates, setTemplates] = useState<Template[]>([]);
   const [types, setTypes] = useState<Lookup[]>([]);
@@ -663,8 +663,8 @@ function DraftEditor({
   template: Template;
   onClose: () => void | Promise<void>;
 }) {
-  const { can } = useAuth();
-  const canAuthor = can(ROLES.admin);
+  const { may } = useAuth();
+  const canAuthor = may(PERMISSIONS.checklistsEdit);
 
   const [versions, setVersions] = useState<Version[]>([]);
   const [definition, setDefinition] = useState<Definition>({ sections: [] });

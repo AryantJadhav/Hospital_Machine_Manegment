@@ -1,3 +1,4 @@
+using HospitalPm.Api.Auth;
 using System.Diagnostics;
 using HospitalPm.Api.Hosting;
 using HospitalPm.Domain.Identity;
@@ -28,7 +29,7 @@ public static class RestoreEndpoints
     {
         app.MapPost("/api/admin/backups/{id:int}/restore", RestoreAsync)
             .WithTags("Backups")
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
+            .RequirePermission(Permissions.SystemRestore);
     }
 
     private static async Task<IResult> RestoreAsync(

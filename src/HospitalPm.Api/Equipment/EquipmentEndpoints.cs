@@ -1,3 +1,4 @@
+using HospitalPm.Api.Auth;
 using HospitalPm.Api.Maintenance;
 using HospitalPm.Domain.Assets;
 using HospitalPm.Domain.Checklists;
@@ -135,14 +136,14 @@ public static class EquipmentEndpoints
         // Writes are restricted. A technician records work against equipment;
         // they do not add or retire assets on the register.
         group.MapPost("/", CreateAsync)
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
+            .RequirePermission(Permissions.EquipmentEdit);
 
         group.MapPut("/{id:int}", UpdateAsync)
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
+            .RequirePermission(Permissions.EquipmentEdit);
 
         // Retiring an asset is a register-owner decision, not an engineer's.
         group.MapPost("/{id:int}/condemn", CondemnAsync)
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
+            .RequirePermission(Permissions.EquipmentEdit);
     }
 
     private static async Task<IResult> SearchAsync(

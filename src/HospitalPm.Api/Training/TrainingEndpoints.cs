@@ -1,3 +1,4 @@
+using HospitalPm.Api.Auth;
 using System.Security.Claims;
 using HospitalPm.Api.Equipment;
 using HospitalPm.Domain.Identity;
@@ -61,9 +62,9 @@ public static class TrainingEndpoints
         group.MapGet("/{id:int}", GetAsync);
         group.MapGet("/{id:int}/report.pdf", ReportAsync);
 
-        group.MapPost("/", CreateAsync).RequireAuthorization(p => p.RequireRole(Roles.Admin));
-        group.MapPut("/{id:int}", UpdateAsync).RequireAuthorization(p => p.RequireRole(Roles.Admin));
-        group.MapDelete("/{id:int}", DeleteAsync).RequireAuthorization(p => p.RequireRole(Roles.Admin));
+        group.MapPost("/", CreateAsync).RequirePermission(Permissions.TrainingEdit);
+        group.MapPut("/{id:int}", UpdateAsync).RequirePermission(Permissions.TrainingEdit);
+        group.MapDelete("/{id:int}", DeleteAsync).RequirePermission(Permissions.TrainingEdit);
     }
 
     private static async Task<IResult> ListAsync(

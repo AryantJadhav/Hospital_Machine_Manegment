@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../auth/useAuth';
-import { ROLES } from '../auth/context';
+import { PERMISSIONS } from '../auth/context';
 import { PmChecklistForm } from './PmChecklistForm';
 import { PmDonePage } from './PmDonePage';
 import type { RecordPm } from './PmDonePage';
@@ -25,7 +25,7 @@ export function PmDoPage() {
   const { taskId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { can } = useAuth();
+  const { may } = useAuth();
 
   const from = (location.state as { from?: string } | null)?.from ?? '/pm';
   const id = Number(taskId);
@@ -71,7 +71,8 @@ export function PmDoPage() {
       <PmDonePage
         key={id}
         data={record}
-        canAdminister={can(ROLES.admin)}
+        canAdminister={may(PERMISSIONS.pmManage)}
+        canRemoveFiles={may(PERMISSIONS.attachmentsDelete)}
         backLabel={from.startsWith('/equipment') ? 'the machine' : 'the PM list'}
         onClose={back}
         onDone={done}
@@ -89,7 +90,7 @@ export function PmDoPage() {
       taskId={id}
       // Deciding a PM will not happen is a supervisory call, not a technician's.
       // The server enforces the same rule; this only keeps the button out of the way.
-      canSkip={can(ROLES.admin)}
+      canSkip={may(PERMISSIONS.pmManage)}
       backLabel={from.startsWith('/equipment') ? 'the machine' : 'the PM list'}
       onClose={back}
       onDone={done}

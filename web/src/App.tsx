@@ -4,7 +4,7 @@ import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation } from 're
 import { api } from './api/client';
 import { AuthProvider } from './auth/AuthContext';
 import { useAuth } from './auth/useAuth';
-import { ROLES } from './auth/context';
+import { PERMISSIONS, ROLES } from './auth/context';
 import { LoginPage } from './pages/LoginPage';
 import { EquipmentListPage } from './pages/EquipmentListPage';
 import { EquipmentDetailPage } from './pages/EquipmentDetailPage';
@@ -53,15 +53,14 @@ function Elsewhere({ notice }: { notice: string }) {
 }
 
 function Shell() {
-  const { user, logout, can, signInNotice, dismissNotice } = useAuth();
-  // One flag, because there is one line: an Employee records what they did,
-  // an Admin decides what gets done. Everything hidden below is a decision
-  // about the department rather than a record of a job.
+  const { user, logout, can, may, signInNotice, dismissNotice } = useAuth();
+  // Only for the name shown beside the account. What a page or a button offers is decided by
+  // what the person may do (`may`), never by which role they hold.
   const isAdmin = can(ROLES.admin);
   // Import, export, backups and updates can be switched off for everyone. Null until they are known.
   const features = useFeatures();
-  const gated = (on: boolean | undefined, page: ReactNode) =>
-    !isAdmin ? <Elsewhere notice={ADMIN_ONLY} />
+  const gated = (permission: string, on: boolean | undefined, page: ReactNode) =>
+    !may(permission) ? <Elsewhere notice={ADMIN_ONLY} />
       : features === null ? <div className="page"><p className="muted">Loading…</p></div>
         : on ? page : <Elsewhere notice={SWITCHED_OFF} />;
   const { pathname } = useLocation();
@@ -116,7 +115,7 @@ function Shell() {
           </NavLink>
         </div>
 
-        {isAdmin && <AdminMenu features={features} />}
+        <AdminMenu features={features} />
 
         <div className="nav-right">
           {/* The role is shown next to the name. An Employee who cannot find
@@ -174,33 +173,33 @@ function Shell() {
           <Route path="/spare-parts" element={<SparePartsPage />} />
           <Route
             path="/reports"
-            element={isAdmin ? <ReportsPage /> : <Elsewhere notice={ADMIN_ONLY} />}
+            element={may(PERMISSIONS.reportsView) ? <ReportsPage /> : <Elsewhere notice={ADMIN_ONLY} />}
           />
           <Route
             path="/compliance"
-            element={isAdmin ? <CompliancePage /> : <Elsewhere notice={ADMIN_ONLY} />}
+            element={may(PERMISSIONS.reportsView) ? <CompliancePage /> : <Elsewhere notice={ADMIN_ONLY} />}
           />
-          <Route path="/export" element={gated(features?.export, <ExportPage />)} />
+          <Route path="/export" element={gated(PERMISSIONS.dataExport, features?.export, <ExportPage />)} />
           <Route
             path="/equipment-types"
-            element={isAdmin ? <EquipmentTypesPage /> : <Elsewhere notice={ADMIN_ONLY} />}
+            element={may(PERMISSIONS.equipmentTypesEdit) ? <EquipmentTypesPage /> : <Elsewhere notice={ADMIN_ONLY} />}
           />
-          <Route path="/import" element={gated(features?.import, <ImportPage />)} />
+          <Route path="/import" element={gated(PERMISSIONS.dataImport, features?.import, <ImportPage />)} />
           <Route
             path="/staff"
-            element={isAdmin ? <StaffPage /> : <Elsewhere notice={ADMIN_ONLY} />}
+            element={may(PERMISSIONS.staffManage) ? <StaffPage /> : <Elsewhere notice={ADMIN_ONLY} />}
           />
 
-          <Route path="/backups" element={gated(features?.backups, <BackupsPage />)} />
+          <Route path="/backups" element={gated(PERMISSIONS.systemBackups, features?.backups, <BackupsPage />)} />
           <Route
             path="/diagnostics"
-            element={isAdmin ? <DiagnosticsPage /> : <Elsewhere notice={ADMIN_ONLY} />}
+            element={may(PERMISSIONS.systemDiagnostics) ? <DiagnosticsPage /> : <Elsewhere notice={ADMIN_ONLY} />}
           />
           <Route
             path="/licence"
-            element={isAdmin ? <LicencePage /> : <Elsewhere notice={ADMIN_ONLY} />}
+            element={may(PERMISSIONS.systemLicence) ? <LicencePage /> : <Elsewhere notice={ADMIN_ONLY} />}
           />
-          <Route path="/updates" element={gated(features?.updates, <UpdatesPage />)} />
+          <Route path="/updates" element={gated(PERMISSIONS.systemUpdates, features?.updates, <UpdatesPage />)} />
           <Route path="*" element={<Elsewhere notice={NO_SUCH_PAGE} />} />
         </Routes>
       </main>

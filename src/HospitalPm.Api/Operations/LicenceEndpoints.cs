@@ -1,3 +1,4 @@
+using HospitalPm.Api.Auth;
 using HospitalPm.Domain.Identity;
 using HospitalPm.Domain.Licensing;
 using HospitalPm.Infrastructure.Licensing;
@@ -20,7 +21,7 @@ public static class LicenceEndpoints
     {
         var group = app.MapGroup("/api/admin/licence")
             .WithTags("Licence")
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
+            .RequirePermission(Permissions.SystemLicence);
 
         group.MapGet("/", Current);
         group.MapPost("/", Install);
@@ -50,7 +51,7 @@ public static class LicenceEndpoints
         {
             LicenceState.ReadOnly or LicenceState.Expired => true,
             LicenceState.Valid => daysLeft is <= WarnAdministratorsDays
-                                  && user.IsInRole(HospitalPm.Domain.Identity.Roles.Admin),
+                                  && user.Can(HospitalPm.Domain.Identity.Permissions.SystemLicence),
             _ => false,
         };
 

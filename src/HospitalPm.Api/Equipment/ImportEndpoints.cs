@@ -1,3 +1,4 @@
+using HospitalPm.Api.Auth;
 using HospitalPm.Domain.Identity;
 using HospitalPm.Infrastructure.Import;
 
@@ -21,7 +22,7 @@ public static class ImportEndpoints
             .WithTags("Equipment import")
             // Bulk-loading the register is a register-owner action, not a
             // technician's.
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
+            .RequirePermission(Permissions.DataImport);
 
         group.MapGet("/template", GetTemplate);
         group.MapGet("/locations/template", GetLocationTemplate);

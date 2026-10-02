@@ -71,9 +71,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [user],
   );
 
+  const may = useCallback(
+    (...permissions: string[]) => (user ? permissions.some((p) => user.permissions.includes(p)) : false),
+    [user],
+  );
+
   const value = useMemo(
-    () => ({ user, loading, login, logout, can, signInNotice, dismissNotice }),
-    [user, loading, login, logout, can, signInNotice, dismissNotice],
+    () => ({ user, loading, login, logout, can, may, signInNotice, dismissNotice }),
+    [user, loading, login, logout, can, may, signInNotice, dismissNotice],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

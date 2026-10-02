@@ -1,3 +1,4 @@
+using HospitalPm.Api.Auth;
 using System.Security.Claims;
 using HospitalPm.Api.Maintenance;
 using HospitalPm.Domain.Identity;
@@ -64,12 +65,11 @@ public static class WorkOrderEndpoints
         group.MapPost("/{id:int}/photos", AddPhotosAsync).DisableAntiforgery();
         group.MapGet("/photos/{attachmentId:int}", DownloadPhotoAsync);
         group.MapDelete("/photos/{attachmentId:int}", DeletePhotoAsync)
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
+            .RequirePermission(Permissions.AttachmentsDelete);
 
         // Assignment is a supervisory decision about who does the work.
         group.MapPost("/{id:int}/assign", AssignAsync)
-            .RequireAuthorization(p => p.RequireRole(
-                Roles.Admin));
+            .RequirePermission(Permissions.WorkOrdersAssign);
     }
 
     /// <summary>
@@ -415,7 +415,7 @@ public static class WorkOrderEndpoints
         return Results.NoContent();
     }
 
-    private static bool CanCancel(ClaimsPrincipal principal) => principal.IsInRole(Roles.Admin);
+    private static bool CanCancel(ClaimsPrincipal principal) => principal.Can(Permissions.WorkOrdersCancel);
 
     private static async Task<IResult> ChangeStatusAsync(
         int id,

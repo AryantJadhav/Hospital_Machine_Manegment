@@ -1,3 +1,4 @@
+using HospitalPm.Api.Auth;
 using System.Security.Claims;
 using HospitalPm.Domain.Identity;
 using HospitalPm.Domain.Maintenance;
@@ -242,7 +243,7 @@ public static class ReportEndpoints
 
         // Admin only, like the Backups page it points at. An employee cannot act
         // on it, and a red tile they cannot fix is just noise on their morning.
-        var backup = user.IsInRole(Roles.Admin) ? await BackupStatusAsync(db, clock, ct) : null;
+        var backup = user.Can(Permissions.SystemBackups) ? await BackupStatusAsync(db, clock, ct) : null;
 
         return Results.Ok(new
         {

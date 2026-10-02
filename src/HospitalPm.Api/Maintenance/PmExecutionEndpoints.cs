@@ -1,4 +1,5 @@
 ﻿using System.Security.Claims;
+using HospitalPm.Api.Auth;
 using HospitalPm.Domain.Checklists;
 using HospitalPm.Domain.Identity;
 using HospitalPm.Domain.Maintenance;
@@ -46,7 +47,7 @@ public static class PmExecutionEndpoints
         // unmaintained this quarter is a call about the department, not a
         // call for whoever is holding the work list that morning.
         group.MapPost("/{id:int}/skip", SkipAsync)
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
+            .RequirePermission(Permissions.PmManage);
     }
 
     /// <summary>

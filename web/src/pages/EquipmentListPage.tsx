@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../auth/useAuth';
-import { ROLES } from '../auth/context';
+import { PERMISSIONS } from '../auth/context';
 import { EquipmentForm } from './EquipmentForm';
 import { StatusPill } from '../StatusPill';
 import { CRITICALITY_LABEL, CRITICALITY_LOOK, EQUIPMENT_LABEL, EQUIPMENT_LOOK } from '../statusTones';
@@ -32,9 +32,9 @@ const PAGE_SIZE = 25;
 
 export function EquipmentListPage() {
   const features = useFeatures();
-  const { can } = useAuth();
-  const canPrint = can(ROLES.admin);
-  const canEdit = can(ROLES.admin);
+  const { may } = useAuth();
+  const canPrint = may(PERMISSIONS.labelsPrint);
+  const canEdit = may(PERMISSIONS.equipmentEdit);
   const [adding, setAdding] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [printing, setPrinting] = useState(false);

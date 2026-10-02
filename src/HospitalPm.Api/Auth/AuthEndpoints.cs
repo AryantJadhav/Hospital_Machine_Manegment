@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using HospitalPm.Domain.Identity;
 using HospitalPm.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -86,5 +87,10 @@ public static class AuthEndpoints
         fullName = principal.FindFirstValue("full_name"),
         tenantId = principal.FindFirstValue("tenant_id"),
         roles = principal.FindAll(ClaimTypes.Role).Select(c => c.Value).ToArray(),
+        // What the person may do, so the screen shows what the server will allow and no more.
+        permissions = RolePermissions
+            .For(principal.FindAll(ClaimTypes.Role).Select(c => c.Value))
+            .Order(StringComparer.Ordinal)
+            .ToArray(),
     });
 }

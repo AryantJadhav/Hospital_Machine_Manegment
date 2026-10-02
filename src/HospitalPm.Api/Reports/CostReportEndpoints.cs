@@ -1,3 +1,4 @@
+using HospitalPm.Api.Auth;
 using System.Text;
 using HospitalPm.Domain.Identity;
 using HospitalPm.Infrastructure.Maintenance;
@@ -19,7 +20,7 @@ public static class CostReportEndpoints
     {
         var group = app.MapGroup("/api/reports/cost")
             .WithTags("Reports")
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
+            .RequirePermission(Permissions.ReportsView);
 
         group.MapGet("/", SummaryAsync);
         group.MapGet("/report.csv", CsvAsync);

@@ -20,6 +20,9 @@ namespace HospitalPm.Domain.Identity;
 ///   - Assigning work is an Admin act, because it is a decision about someone
 ///     else's day.
 ///
+/// What each role may do is not decided at the endpoints: they ask for a
+/// <see cref="Permissions"/> name, and <see cref="RolePermissions"/> says which role holds it.
+///
 /// Constants rather than an enum because Identity stores role names as strings
 /// and every authorization check needs the literal — a typo'd string in
 /// RequireRole fails open-ended and silently, which is the failure mode this

@@ -145,14 +145,17 @@ function FilePicker({
 export function PmDonePage({
   data,
   canAdminister,
+  canRemoveFiles,
   backLabel,
   onClose,
   onDone,
   onChanged,
 }: {
   data: RecordPm;
-  /** An Administrator can remove a file, and decide that a PM will not happen. */
+  /** May record that this PM will not happen. */
   canAdminister: boolean;
+  /** May remove an uploaded report file. */
+  canRemoveFiles: boolean;
   backLabel: string;
   onClose: () => void;
   onDone: (message: string, completed: boolean, task: { id: number; assetTag: string; dueDate: string }) => void;
@@ -385,7 +388,7 @@ export function PmDonePage({
                     >
                       Download
                     </button>
-                    {canAdminister && (
+                    {canRemoveFiles && (
                       <button className="btn btn-quiet" aria-label={`Remove ${f.fileName}`} onClick={() => void removeFile(f)}>
                         Remove
                       </button>

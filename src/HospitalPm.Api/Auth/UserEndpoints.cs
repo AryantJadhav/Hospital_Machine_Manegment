@@ -58,7 +58,7 @@ public static class UserEndpoints
         // can see asks for it.
         var group = app.MapGroup("/api/users")
             .WithTags("Staff")
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
+            .RequirePermission(Permissions.StaffManage);
 
         group.MapGet("/", ListAsync);
 

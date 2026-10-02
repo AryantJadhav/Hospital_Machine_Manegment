@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/useAuth';
-import { ROLES } from '../auth/context';
+import { PERMISSIONS } from '../auth/context';
 import { StatusPill } from '../StatusPill';
 import { formatRupees } from '../money';
 import { formatDate, todayAtHospital } from '../time';
@@ -44,8 +44,8 @@ type Paged = { items: Part[]; total: number; page: number; pageSize: number };
 type Lookup = { id: number; code: string; name: string };
 
 export function SparePartsPage() {
-  const { can } = useAuth();
-  const canAuthor = can(ROLES.admin);
+  const { may } = useAuth();
+  const canAuthor = may(PERMISSIONS.sparePartsEdit);
 
   const [parts, setParts] = useState<Part[]>([]);
   const [total, setTotal] = useState(0);

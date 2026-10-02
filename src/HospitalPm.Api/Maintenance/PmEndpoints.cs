@@ -1,3 +1,4 @@
+using HospitalPm.Api.Auth;
 using HospitalPm.Domain.Assets;
 using HospitalPm.Domain.Checklists;
 using HospitalPm.Domain.Identity;
@@ -147,7 +148,7 @@ public static class PmEndpoints
         group.MapGet("/reminders", RemindersAsync);
 
         var owner = group.MapGroup(string.Empty)
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
+            .RequirePermission(Permissions.PmManage);
 
         owner.MapPost("/schedules", CreateScheduleAsync);
         owner.MapPost("/schedules/bulk", CreateSchedulesBulkAsync);

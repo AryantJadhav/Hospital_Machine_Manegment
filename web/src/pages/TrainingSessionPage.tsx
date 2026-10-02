@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../auth/useAuth';
-import { ROLES } from '../auth/context';
+import { PERMISSIONS } from '../auth/context';
 import { HandoffNotice } from '../HandoffNotice';
 import { useHandoff } from '../handoff';
 import { StatusPill } from '../StatusPill';
@@ -21,8 +21,8 @@ export function TrainingSessionPage() {
   const id = Number(idParam);
   const valid = Number.isInteger(id) && id > 0;
 
-  const { can } = useAuth();
-  const canEdit = can(ROLES.admin);
+  const { may } = useAuth();
+  const canEdit = may(PERMISSIONS.trainingEdit);
   const navigate = useNavigate();
   const [handoff, setHandoff] = useHandoff();
 

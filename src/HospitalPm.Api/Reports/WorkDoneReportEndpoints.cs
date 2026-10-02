@@ -1,3 +1,4 @@
+using HospitalPm.Api.Auth;
 using System.Text;
 using HospitalPm.Domain.Identity;
 using HospitalPm.Domain.WorkOrders;
@@ -22,7 +23,7 @@ public static class WorkDoneReportEndpoints
     {
         var group = app.MapGroup("/api/reports/work-done")
             .WithTags("Reports")
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
+            .RequirePermission(Permissions.ReportsView);
 
         group.MapGet("/", SummaryAsync);
         group.MapGet("/report.csv", CsvAsync);

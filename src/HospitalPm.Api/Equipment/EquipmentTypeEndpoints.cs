@@ -1,3 +1,4 @@
+using HospitalPm.Api.Auth;
 using System.Text;
 using HospitalPm.Domain.Assets;
 using HospitalPm.Domain.Equipment;
@@ -55,7 +56,7 @@ public static class EquipmentTypeEndpoints
             .WithTags("Equipment types")
             // The whole group, reads included: the pickers everyone uses are on
             // /api/lookups. This is the page for changing them.
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
+            .RequirePermission(Permissions.EquipmentTypesEdit);
 
         group.MapGet("/", ListAsync);
         group.MapPost("/", CreateAsync);

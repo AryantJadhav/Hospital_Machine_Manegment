@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../auth/useAuth';
-import { ROLES } from '../auth/context';
+import { PERMISSIONS } from '../auth/context';
 import { EquipmentForm } from './EquipmentForm';
 import { AddPmDatesForm } from './AddPmDatesForm';
 import { MoveMachineForm } from './MoveMachineForm';
@@ -130,11 +130,11 @@ type Spend = {
 export function EquipmentDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { can } = useAuth();
-  const canPrint = can(ROLES.admin);
+  const { may } = useAuth();
+  const canPrint = may(PERMISSIONS.labelsPrint);
 
-  const canEdit = can(ROLES.admin);
-  const canCondemn = can(ROLES.admin);
+  const canEdit = may(PERMISSIONS.equipmentEdit);
+  const canCondemn = may(PERMISSIONS.equipmentEdit);
 
   const [data, setData] = useState<History | null>(null);
   const [loading, setLoading] = useState(true);

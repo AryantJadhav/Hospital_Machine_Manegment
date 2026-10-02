@@ -1,3 +1,4 @@
+using HospitalPm.Api.Auth;
 using System.Security.Claims;
 using System.Text;
 using HospitalPm.Domain.Identity;
@@ -34,7 +35,7 @@ public static class PmComplianceEndpoints
     {
         var group = app.MapGroup("/api/reports/pm-compliance")
             .WithTags("Reports")
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
+            .RequirePermission(Permissions.ReportsView);
 
         group.MapGet("/", SummaryAsync);
         group.MapGet("/report.pdf", PdfAsync);

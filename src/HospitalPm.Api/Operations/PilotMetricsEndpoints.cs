@@ -1,3 +1,4 @@
+using HospitalPm.Api.Auth;
 using HospitalPm.Domain.Identity;
 using HospitalPm.Domain.Maintenance;
 using HospitalPm.Domain.WorkOrders;
@@ -25,7 +26,7 @@ public static class PilotMetricsEndpoints
     {
         app.MapGet("/api/admin/pilot-metrics", MetricsAsync)
             .WithTags("Pilot")
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
+            .RequirePermission(Permissions.SystemDiagnostics);
     }
 
     private static async Task<IResult> MetricsAsync(

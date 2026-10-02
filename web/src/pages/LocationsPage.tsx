@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/useAuth';
-import { ROLES } from '../auth/context';
+import { PERMISSIONS } from '../auth/context';
 import { suggestCode, suggestNames } from '../locationSuggestions';
 import { AddPlaceForm } from './AddPlaceForm';
 import { useFeatures } from '../features';
@@ -37,8 +37,8 @@ const COLLAPSED_KEY = 'hospitalpm.collapsedLocations';
 
 export function LocationsPage() {
   const features = useFeatures();
-  const { can } = useAuth();
-  const canEdit = can(ROLES.admin);
+  const { may } = useAuth();
+  const canEdit = may(PERMISSIONS.locationsEdit);
 
   const [items, setItems] = useState<Location[]>([]);
   const [loading, setLoading] = useState(true);

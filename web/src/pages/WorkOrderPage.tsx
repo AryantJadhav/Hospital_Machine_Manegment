@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../auth/useAuth';
-import { ROLES } from '../auth/context';
+import { PERMISSIONS } from '../auth/context';
 import { HandoffNotice } from '../HandoffNotice';
 import { useHandoff } from '../handoff';
 import { StatusPill } from '../StatusPill';
@@ -46,8 +46,8 @@ export function WorkOrderPage() {
   const id = Number(idParam);
   const valid = Number.isInteger(id) && id > 0;
 
-  const { can } = useAuth();
-  const canAssign = can(ROLES.admin);
+  const { may } = useAuth();
+  const canAssign = may(PERMISSIONS.workOrdersAssign);
   const location = useLocation();
   const navigate = useNavigate();
   // Where they came from, filters and all, so Back is the list as they left it.

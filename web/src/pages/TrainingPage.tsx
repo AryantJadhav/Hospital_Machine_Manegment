@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../auth/useAuth';
-import { ROLES } from '../auth/context';
+import { PERMISSIONS } from '../auth/context';
 import { StatusPill } from '../StatusPill';
 import { formatDate } from '../time';
 import { describeTrainer, formatMinutes } from '../trainingTypes';
@@ -20,8 +20,8 @@ const PAGE_SIZE = 25;
  * them is the point of keeping it. Only an Administrator adds or changes a session.
  */
 export function TrainingPage() {
-  const { can } = useAuth();
-  const canEdit = can(ROLES.admin);
+  const { may } = useAuth();
+  const canEdit = may(PERMISSIONS.trainingEdit);
   const navigate = useNavigate();
 
   const [params, setParams] = useSearchParams();

@@ -1,3 +1,4 @@
+using HospitalPm.Api.Auth;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
@@ -21,7 +22,7 @@ public static class DiagnosticsEndpoints
     {
         app.MapGet("/api/admin/diagnostics", RunAsync)
             .WithTags("Diagnostics")
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
+            .RequirePermission(Permissions.SystemDiagnostics);
     }
 
     private static async Task<IResult> RunAsync(

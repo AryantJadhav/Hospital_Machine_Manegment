@@ -1,18 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
+import { PERMISSIONS } from './auth/context';
+import { useAuth } from './auth/useAuth';
 import type { Features } from './features';
 
 // A feature here can be switched off for everyone in the settings file. It is offered only while it is on.
-const ITEMS: { to: string; label: string; feature?: keyof Features }[] = [
-  { to: '/reports', label: 'Reports' },
-  { to: '/compliance', label: 'Compliance report' },
-  { to: '/import', label: 'Import', feature: 'import' },
-  { to: '/export', label: 'Export data', feature: 'export' },
-  { to: '/staff', label: 'Staff' },
-  { to: '/backups', label: 'Backups', feature: 'backups' },
-  { to: '/diagnostics', label: 'Diagnostics' },
-  { to: '/licence', label: 'Licence' },
-  { to: '/updates', label: 'Updates', feature: 'updates' },
+// Each is offered only to someone who may use it.
+const ITEMS: { to: string; label: string; permission: string; feature?: keyof Features }[] = [
+  { to: '/reports', label: 'Reports', permission: PERMISSIONS.reportsView },
+  { to: '/compliance', label: 'Compliance report', permission: PERMISSIONS.reportsView },
+  { to: '/import', label: 'Import', permission: PERMISSIONS.dataImport, feature: 'import' },
+  { to: '/export', label: 'Export data', permission: PERMISSIONS.dataExport, feature: 'export' },
+  { to: '/staff', label: 'Staff', permission: PERMISSIONS.staffManage },
+  { to: '/backups', label: 'Backups', permission: PERMISSIONS.systemBackups, feature: 'backups' },
+  { to: '/diagnostics', label: 'Diagnostics', permission: PERMISSIONS.systemDiagnostics },
+  { to: '/licence', label: 'Licence', permission: PERMISSIONS.systemLicence },
+  { to: '/updates', label: 'Updates', permission: PERMISSIONS.systemUpdates, feature: 'updates' },
 ];
 
 /**
@@ -28,7 +31,8 @@ export function AdminMenu({ features }: { features: Features | null }) {
   const root = useRef<HTMLDivElement>(null);
   const { pathname } = useLocation();
   // Until the switches are known, only what is never switched off.
-  const items = ITEMS.filter((i) => !i.feature || features?.[i.feature] === true);
+  const { may } = useAuth();
+  const items = ITEMS.filter((i) => may(i.permission) && (!i.feature || features?.[i.feature] === true));
 
   // The button shows as current when the page underneath it is one of these,
   // so the bar still says where you are.
@@ -51,6 +55,9 @@ export function AdminMenu({ features }: { features: Features | null }) {
       document.removeEventListener('keydown', onKey);
     };
   }, [open]);
+
+  // Someone who may use none of these has no menu.
+  if (items.length === 0) return null;
 
   return (
     <div className="nav-menu" ref={root}>

@@ -1,3 +1,4 @@
+using HospitalPm.Api.Auth;
 using HospitalPm.Domain.Identity;
 using HospitalPm.Domain.Operations;
 using HospitalPm.Infrastructure.Operations;
@@ -23,7 +24,7 @@ public static class BackupEndpoints
     {
         var group = app.MapGroup("/api/admin/backups")
             .WithTags("Backups")
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
+            .RequirePermission(Permissions.SystemBackups);
 
         group.MapGet("/", StatusAsync);
         group.MapPost("/run", RunAsync);

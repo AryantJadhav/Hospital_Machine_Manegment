@@ -1,3 +1,4 @@
+using HospitalPm.Api.Auth;
 using System.Security.Claims;
 using HospitalPm.Domain.Identity;
 using HospitalPm.Infrastructure.Export;
@@ -24,7 +25,7 @@ public static class ExportEndpoints
     {
         app.MapGet("/api/admin/export", ExportAsync)
             .WithTags("Export")
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
+            .RequirePermission(Permissions.DataExport);
     }
 
     private static async Task ExportAsync(

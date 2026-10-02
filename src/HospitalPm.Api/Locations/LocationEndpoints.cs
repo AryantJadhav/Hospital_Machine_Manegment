@@ -1,3 +1,4 @@
+using HospitalPm.Api.Auth;
 using HospitalPm.Domain.Identity;
 using HospitalPm.Domain.Locations;
 using HospitalPm.Infrastructure.Persistence;
@@ -44,13 +45,13 @@ public static class LocationEndpoints
         // The location tree is the spine of the register. Getting it wrong
         // misfiles every asset under it, so editing is a register-owner job.
         group.MapPost("/", CreateAsync)
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
+            .RequirePermission(Permissions.LocationsEdit);
 
         group.MapPut("/{id:int}", UpdateAsync)
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
+            .RequirePermission(Permissions.LocationsEdit);
 
         group.MapDelete("/{id:int}", DeleteAsync)
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
+            .RequirePermission(Permissions.LocationsEdit);
     }
 
     private static async Task<IResult> ListAsync(HospitalPmDbContext db, CancellationToken ct)

@@ -1,3 +1,4 @@
+using HospitalPm.Api.Auth;
 using System.Globalization;
 using System.Security.Claims;
 using HospitalPm.Domain.Assets;
@@ -51,7 +52,7 @@ public static class PmVendorEndpoints
         // is holding the list; but a photo that should never have been uploaded, one showing
         // a patient by mistake, has to be removable.
         group.MapDelete("/attachments/{attachmentId:int}", DeleteAsync)
-            .RequireAuthorization(p => p.RequireRole(Roles.Admin));
+            .RequirePermission(Permissions.AttachmentsDelete);
     }
 
     private static int UserId(ClaimsPrincipal principal) => int.Parse(

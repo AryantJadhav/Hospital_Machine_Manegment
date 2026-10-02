@@ -1,3 +1,4 @@
+using HospitalPm.Api.Auth;
 using HospitalPm.Domain.Identity;
 using HospitalPm.Domain.Inventory;
 using HospitalPm.Infrastructure.Persistence;
@@ -75,8 +76,8 @@ public static class SparePartEndpoints
         group.MapGet("/", SearchAsync);
         group.MapGet("/{id:int}", GetAsync);
 
-        group.MapPost("/", CreateAsync).RequireAuthorization(p => p.RequireRole(Roles.Admin));
-        group.MapPut("/{id:int}", UpdateAsync).RequireAuthorization(p => p.RequireRole(Roles.Admin));
+        group.MapPost("/", CreateAsync).RequirePermission(Permissions.SparePartsEdit);
+        group.MapPut("/{id:int}", UpdateAsync).RequirePermission(Permissions.SparePartsEdit);
     }
 
     private static async Task<IResult> SearchAsync(

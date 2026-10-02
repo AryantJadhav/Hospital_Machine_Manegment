@@ -1,6 +1,7 @@
 using HospitalPm.Infrastructure.Identity;
 using HospitalPm.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -82,6 +83,7 @@ public static class AuthenticationSetup
             });
 
         services.AddAuthorization();
+        services.AddSingleton<IAuthorizationHandler, PermissionHandler>();
 
         return services;
     }
