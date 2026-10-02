@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { formatDateTime } from '../time';
 import { StatusPill } from '../StatusPill';
+import { formatBytes } from '../bytes';
 import { BACKUP_LOOK } from '../statusTones';
 
 type Run = {
@@ -104,7 +105,7 @@ export function BackupsPage() {
   if (!data) {
     return (
       <div className="page">
-        <p className="alert alert-error">{error ?? 'Could not load backup status.'}</p>
+        <p className="alert alert-error" role="alert">{error ?? 'Could not load backup status.'}</p>
       </div>
     );
   }
@@ -144,7 +145,7 @@ export function BackupsPage() {
       </p>
 
       {!data.tool.found && (
-        <p className="alert alert-error">
+        <p className="alert alert-error" role="alert">
           <strong>pg_dump was not found.</strong> {data.tool.problem} Until this is fixed, no
           backup can run.
         </p>
@@ -198,7 +199,7 @@ export function BackupsPage() {
                 </td>
                 <td>{TRIGGER[r.trigger] ?? '—'}</td>
                 <td className="mono">{r.fileName ?? <span className="muted">—</span>}</td>
-                <td>{r.sizeBytes !== null ? formatSize(r.sizeBytes) : <span className="muted">—</span>}</td>
+                <td>{r.sizeBytes !== null ? formatBytes(r.sizeBytes) : <span className="muted">—</span>}</td>
                 <td>{r.durationMs !== null ? formatDuration(r.durationMs) : <span className="muted">—</span>}</td>
                 <td>
                   {r.status === 20 && r.fileName && (
@@ -228,12 +229,6 @@ function formatAge(hours: number): string {
 
 function plural(n: number, unit: string): string {
   return `${n} ${unit}${n === 1 ? '' : 's'}`;
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function formatDuration(ms: number): string {

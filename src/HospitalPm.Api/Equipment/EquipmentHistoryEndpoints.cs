@@ -240,7 +240,9 @@ public static class EquipmentHistoryEndpoints
                 completedPmCount = await db.PmTasks.CountAsync(
                     t => t.EquipmentId == id && t.Status == PmTaskStatus.Completed, ct),
                 openWorkOrderCount = workOrders.Count(w =>
-                    w.Status != WorkOrderStatus.Closed && w.Status != WorkOrderStatus.Cancelled),
+                    w.Status != WorkOrderStatus.Resolved
+                    && w.Status != WorkOrderStatus.Closed
+                    && w.Status != WorkOrderStatus.Cancelled),
                 totalWorkOrderCount = await db.WorkOrders.CountAsync(w => w.EquipmentId == id, ct),
                 // Hours down since the machine was put on the register, and the last 30 days split into
                 // down and up. The numbers a hospital is asked for when it reports equipment uptime.

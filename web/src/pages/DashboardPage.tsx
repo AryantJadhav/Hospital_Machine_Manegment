@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { api } from '../api/client';
-import { formatDateTime } from '../time';
+import { formatAge, formatDateTime } from '../time';
 import { HandoffNotice } from '../HandoffNotice';
+import { StatusPill } from '../StatusPill';
 import { Tile } from '../Tile';
 import { useHandoff } from '../handoff';
 import { useFeatures } from '../features';
+import { PRIORITY_LABEL, PRIORITY_LOOK, WORK_ORDER_LABEL, WORK_ORDER_LOOK } from '../statusTones';
+import type { WorkOrderRow } from '../workOrderTypes';
 
 type Dashboard = {
   /* Present for an administrator only. */
@@ -69,13 +72,13 @@ export function DashboardPage() {
               label="Machines down"
               value={data.workOrders.machinesDown}
               tone={data.workOrders.machinesDown > 0 ? 'danger' : undefined}
-              to="/work-orders"
+              to="/work-orders?down=1"
             />
             <Tile
               label="Critical faults"
               value={data.workOrders.critical}
               tone={data.workOrders.critical > 0 ? 'danger' : undefined}
-              to="/work-orders"
+              to="/work-orders?priority=40"
             />
             <Tile
               label="PMs overdue"
@@ -113,15 +116,17 @@ export function DashboardPage() {
               tone={
                 data.pm.complianceThisMonth === null
                   ? undefined
-                  : data.pm.complianceThisMonth >= 90
+                  : data.pm.complianceThisMonth >= 95
                     ? 'ok'
-                    : data.pm.complianceThisMonth >= 70
+                    : data.pm.complianceThisMonth >= 80
                       ? 'warn'
                       : 'danger'
               }
               hint="Completed against due, this month"
             />
           </div>
+
+          <NeedsAttention />
 
           <div className="card">
             <h2 className="section-h">Register</h2>
@@ -133,6 +138,71 @@ export function DashboardPage() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * The faults to look at first. The tiles above say how many; this says which, so the morning
+ * starts with a name and a link rather than a number. Worst first, then longest waiting, which
+ * is the order the work orders list already uses. Left out when there is nothing open, and
+ * quietly when it cannot be loaded: the tiles stand on their own.
+ */
+function NeedsAttention() {
+  const [rows, setRows] = useState<WorkOrderRow[]>([]);
+  const location = useLocation();
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const d = await api.get<{ items: WorkOrderRow[] }>('/api/work-orders?pageSize=8');
+        if (!cancelled) setRows(d.items);
+      } catch {
+        // The rest of the page does not depend on it.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="card table-wrap">
+      <h2 className="section-h" style={{ padding: '0.7rem 0.9rem 0', margin: 0 }}>Needs attention</h2>
+      <table className="table">
+        <thead>
+          <tr>
+            <th>Number</th>
+            <th>Priority</th>
+            <th>Asset</th>
+            <th>Fault</th>
+            <th>Status</th>
+            <th>Reported</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((w) => (
+            <tr key={w.id}>
+              <td className="mono">
+                <Link to={`/work-orders/${w.id}`} state={{ from: location.pathname }}>{w.number}</Link>
+              </td>
+              <td><StatusPill look={PRIORITY_LOOK[w.priority]}>{PRIORITY_LABEL[w.priority]}</StatusPill></td>
+              <td className="mono">
+                <Link to={`/equipment/${w.equipmentId}`} state={{ from: location.pathname }}>{w.assetTag}</Link>
+              </td>
+              <td className="truncate">{w.faultDescription}</td>
+              <td><StatusPill look={WORK_ORDER_LOOK[w.status]}>{WORK_ORDER_LABEL[w.status]}</StatusPill></td>
+              <td title={formatDateTime(w.reportedAtUtc)}>{formatAge(w.reportedAtUtc)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p style={{ margin: 0, padding: '0.6rem 0.9rem' }}>
+        <Link to="/work-orders">See all work orders</Link>
+      </p>
     </div>
   );
 }

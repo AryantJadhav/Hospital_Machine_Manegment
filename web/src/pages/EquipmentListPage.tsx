@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../auth/useAuth';
 import { ROLES } from '../auth/context';
 import { EquipmentForm } from './EquipmentForm';
 import { StatusPill } from '../StatusPill';
-import { CRITICALITY_LABEL, CRITICALITY_LOOK, EQUIPMENT_LOOK } from '../statusTones';
+import { CRITICALITY_LABEL, CRITICALITY_LOOK, EQUIPMENT_LABEL, EQUIPMENT_LOOK } from '../statusTones';
 import { useFeatures } from '../features';
 
 type Equipment = {
@@ -28,14 +28,6 @@ type Paged<T> = { items: T[]; total: number; page: number; pageSize: number };
 type Lookup = { id: number; code: string; name: string };
 type LocationLookup = Lookup & { depth: number; level: number };
 
-const STATUS: Record<number, string> = {
-  10: 'In store',
-  20: 'In use',
-  30: 'Under repair',
-  40: 'Condemned',
-  50: 'Disposed',
-};
-
 const PAGE_SIZE = 25;
 
 export function EquipmentListPage() {
@@ -46,12 +38,15 @@ export function EquipmentListPage() {
   const [adding, setAdding] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [printing, setPrinting] = useState(false);
-  const [query, setQuery] = useState('');
-  const [debounced, setDebounced] = useState('');
-  const [locationId, setLocationId] = useState('');
-  const [typeId, setTypeId] = useState('');
-  const [status, setStatus] = useState('');
-  const [page, setPage] = useState(1);
+  // The filters live in the address as well, so a dashboard tile can link to "Under repair", the
+  // browser's Back button returns to the list as it was left, and a filtered list can be shared.
+  const [params, setParams] = useSearchParams();
+  const [query, setQuery] = useState(params.get('q') ?? '');
+  const [debounced, setDebounced] = useState(params.get('q') ?? '');
+  const [locationId, setLocationId] = useState(params.get('location') ?? '');
+  const [typeId, setTypeId] = useState(params.get('type') ?? '');
+  const [status, setStatus] = useState(params.get('status') ?? '');
+  const [page, setPage] = useState(Math.max(1, Number(params.get('page')) || 1));
 
   const [data, setData] = useState<Paged<Equipment> | null>(null);
   const [types, setTypes] = useState<Lookup[]>([]);
@@ -62,12 +57,27 @@ export function EquipmentListPage() {
   // Debounced so typing an asset tag does not fire a request per keystroke
   // against a hospital PC also running Postgres.
   useEffect(() => {
+    // Nothing to wait for when what is typed is what is already applied - which is also what
+    // keeps a page number read from the address from being thrown back to 1 on arrival.
+    if (query === debounced) return;
     const t = setTimeout(() => {
       setDebounced(query);
       setPage(1);
     }, 300);
     return () => clearTimeout(t);
-  }, [query]);
+  }, [query, debounced]);
+
+  // Said in the address whenever a filter or the page changes. Replaced rather than pushed, so
+  // typing an asset tag is not one history entry per letter.
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (debounced.trim()) next.set('q', debounced.trim());
+    if (locationId) next.set('location', locationId);
+    if (typeId) next.set('type', typeId);
+    if (status) next.set('status', status);
+    if (page > 1) next.set('page', String(page));
+    setParams(next, { replace: true });
+  }, [debounced, locationId, typeId, status, page, setParams]);
 
   useEffect(() => {
     (async () => {
@@ -166,7 +176,7 @@ export function EquipmentListPage() {
           <h1>Equipment register</h1>
           {data && (
             <p className="muted">
-              {data.total.toLocaleString()} {data.total === 1 ? 'asset' : 'assets'}
+              {data.total.toLocaleString('en-IN')} {data.total === 1 ? 'asset' : 'assets'}
               {hasFilters ? ' matching' : ''}
             </p>
           )}
@@ -233,7 +243,7 @@ export function EquipmentListPage() {
 
         <select aria-label="Filter by status" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}>
           <option value="">Any status</option>
-          {Object.entries(STATUS).map(([v, label]) => (
+          {Object.entries(EQUIPMENT_LABEL).map(([v, label]) => (
             <option key={v} value={v}>{label}</option>
           ))}
         </select>
@@ -304,7 +314,7 @@ export function EquipmentListPage() {
                 <td>{e.manufacturer ?? <span className="muted">—</span>}</td>
                 <td className="mono">{e.serialNumber ?? <span className="muted">—</span>}</td>
                 <td>
-                  <StatusPill look={EQUIPMENT_LOOK[e.status]}>{STATUS[e.status] ?? 'Unknown'}</StatusPill>
+                  <StatusPill look={EQUIPMENT_LOOK[e.status]}>{EQUIPMENT_LABEL[e.status] ?? 'Unknown'}</StatusPill>
                 </td>
                 <td>
                   {e.criticality != null ? (

@@ -275,6 +275,21 @@ a { color: var(--accent); }
 /* ---------- layout ---------- */
 
 main { padding: 1.5rem; }
+main:focus { outline: none; }
+
+/* Out of sight until it is tabbed to, then the first thing on the page. */
+.skip-link {
+  position: absolute;
+  left: 0.5rem;
+  top: -3rem;
+  z-index: 100;
+  padding: 0.5rem 0.9rem;
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+}
+.skip-link:focus { top: 0.5rem; }
 
 .page { max-width: 1200px; margin: 0 auto; display: grid; gap: 1rem; }
 
@@ -584,26 +599,20 @@ a.tile:hover { border-color: var(--border-strong); }
 
 .late { color: var(--err-text); font-size: 0.8rem; }
 
-.wo-grid {
+/* One work order's page: the story on the left, what to do with it and the facts on the right. */
+.wo-page {
   display: grid;
   gap: 1rem;
-  grid-template-columns: minmax(0, 7fr) minmax(0, 3fr);
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
   align-items: start;
 }
 
-/* The list has six columns and used to run under the detail panel's edge, with
-   Status cut off and reachable only by scrolling sideways. The fault text is
-   the one column that can give: it is a hint to which order this is, and the
-   panel beside it has the whole text. */
-.wo-grid .truncate { max-width: 13rem; }
-
 @media (max-width: 980px) {
-  .wo-grid { grid-template-columns: 1fr; }
+  .wo-page { grid-template-columns: 1fr; }
 }
 
 .row-clickable { cursor: pointer; }
 .row-clickable:hover td { background: var(--row-hover); }
-.row-selected td { background: var(--accent-tint); }
 
 /* Fault text can be a paragraph; the table must not stretch off-screen. */
 .truncate { max-width: 22rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

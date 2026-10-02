@@ -125,7 +125,7 @@ export function UpdatesPage() {
       {error && <p className="alert alert-error" role="alert">{error}</p>}
 
       {data && !data.enabled && (
-        <p className="alert alert-error">
+        <p className="alert alert-error" role="alert">
           This build cannot check whether an update was really issued by us, so it will not install
           one. That is deliberate — an update runs with full rights on this machine. Ask your
           supplier for a build that can.

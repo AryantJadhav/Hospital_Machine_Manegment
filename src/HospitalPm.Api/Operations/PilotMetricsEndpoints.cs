@@ -114,7 +114,8 @@ public static class PilotMetricsEndpoints
                  && w.ResolvedAtUtc < nextWeekStartUtc, ct);
 
         var wosOpen = await db.WorkOrders.CountAsync(
-            w => w.Status != WorkOrderStatus.Closed
+            w => w.Status != WorkOrderStatus.Resolved
+                 && w.Status != WorkOrderStatus.Closed
                  && w.Status != WorkOrderStatus.Cancelled, ct);
 
         // --- Users ---

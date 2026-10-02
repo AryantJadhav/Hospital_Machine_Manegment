@@ -794,7 +794,7 @@ function DraftEditor({
       {notice && <p className="alert alert-ok" role="status">{notice}</p>}
 
       {problems.length > 0 && (
-        <div className="alert alert-error">
+        <div className="alert alert-error" role="alert">
           <strong>This checklist cannot be published yet.</strong>
           <ul style={{ margin: '0.5rem 0 0', paddingLeft: '1.2rem' }}>
             {problems.map((p, i) => (
@@ -807,7 +807,7 @@ function DraftEditor({
       )}
 
       {published && (
-        <p className="alert alert-ok">
+        <p className="alert alert-ok" role="status">
           Version {published.versionNo} is live with {published.itemCount} check
           {published.itemCount === 1 ? '' : 's'}. Editing here builds the next version; the
           live one is untouched until you publish.

@@ -25,6 +25,7 @@ import { CompliancePage } from './pages/CompliancePage';
 import { ReportsPage } from './pages/ReportsPage';
 import { ExportPage } from './pages/ExportPage';
 import { ChecklistsPage } from './pages/ChecklistsPage';
+import { WorkOrderPage } from './pages/WorkOrderPage';
 import { WorkOrdersPage } from './pages/WorkOrdersPage';
 import { AdminMenu } from './AdminMenu';
 import { LicenceBanner } from './LicenceBanner';
@@ -64,6 +65,8 @@ function Shell() {
 
   return (
     <div className="shell">
+      {/* First thing a keyboard user reaches: past the dozen menu links, to the page itself. */}
+      <a className="skip-link" href="#main">Skip to the page</a>
       <nav className="nav">
         <span className="brand">Hospital PM</span>
 
@@ -128,7 +131,7 @@ function Shell() {
         </div>
       </nav>
 
-      <main>
+      <main id="main" tabIndex={-1}>
         {/* The login screen's chooser disagreed with the account. Said
             once, here rather than there, because the sign-in has already
             succeeded by the time it is known. */}
@@ -149,6 +152,7 @@ function Shell() {
           <Route path="/pm" element={<PmTasksPage />} />
           <Route path="/pm/:taskId/do" element={<PmDoPage />} />
           <Route path="/work-orders" element={<WorkOrdersPage />} />
+          <Route path="/work-orders/:id" element={<WorkOrderPage />} />
           <Route path="/equipment" element={<EquipmentListPage />} />
           <Route path="/equipment/:id" element={<EquipmentDetailPage />} />
           <Route path="/locations" element={<LocationsPage />} />

@@ -13,7 +13,19 @@ import { useHandoff } from '../handoff';
 import { HandoffNotice } from '../HandoffNotice';
 import { StatusPill } from '../StatusPill';
 import { Tile } from '../Tile';
-import { CONTRACT_LABEL, CRITICALITY_LABEL, CRITICALITY_LOOK, EQUIPMENT_LOOK, PM_LOOK, PRIORITY_LOOK, WORK_ORDER_LOOK } from '../statusTones';
+import {
+  CONTRACT_LABEL,
+  CRITICALITY_LABEL,
+  CRITICALITY_LOOK,
+  EQUIPMENT_LABEL,
+  EQUIPMENT_LOOK,
+  PM_LABEL,
+  PM_LOOK,
+  PRIORITY_LABEL,
+  PRIORITY_LOOK,
+  WORK_ORDER_LABEL,
+  WORK_ORDER_LOOK,
+} from '../statusTones';
 import { formatHours } from '../hours';
 
 type History = {
@@ -100,21 +112,6 @@ type Move = {
   to: string | null;
   movedBy: string | null;
 };
-
-const EQUIPMENT_STATUS: Record<number, string> = {
-  10: 'In store', 20: 'In use', 30: 'Under repair', 40: 'Condemned', 50: 'Disposed',
-};
-
-const PM_STATUS: Record<number, string> = {
-  10: 'Scheduled', 20: 'Due', 30: 'Overdue', 40: 'Completed', 50: 'Skipped',
-};
-
-const WO_STATUS: Record<number, string> = {
-  10: 'Reported', 20: 'Assigned', 30: 'In progress', 40: 'On hold',
-  50: 'Resolved', 60: 'Closed', 70: 'Cancelled',
-};
-
-const PRIORITY: Record<number, string> = { 10: 'Low', 20: 'Medium', 30: 'High', 40: 'Critical' };
 
 /** What the machine has cost over its whole life, as the Cost report works it out. */
 type Spend = {
@@ -212,7 +209,7 @@ export function EquipmentDetailPage() {
   }
 
   if (loading) return <div className="page"><p className="muted">Loading…</p></div>;
-  if (error) return <div className="page"><p className="alert alert-error">{error}</p></div>;
+  if (error) return <div className="page"><p className="alert alert-error" role="alert">{error}</p></div>;
   if (!data) return null;
 
   const e = data.equipment;
@@ -262,7 +259,9 @@ export function EquipmentDetailPage() {
             <button
               className="btn"
               onClick={() =>
-                api.downloadPost('/api/labels/sheet', { equipmentIds: [e.id] }, `${e.assetTag}.pdf`)
+                void api
+                  .downloadPost('/api/labels/sheet', { equipmentIds: [e.id] }, `${e.assetTag}.pdf`)
+                  .catch((err: unknown) => setActionError(err instanceof Error ? err.message : 'Could not make the label.'))
               }
             >
               Print label
@@ -370,7 +369,7 @@ export function EquipmentDetailPage() {
       )}
 
       <div className="row">
-        <StatusPill look={EQUIPMENT_LOOK[e.status]}>{EQUIPMENT_STATUS[e.status] ?? '—'}</StatusPill>
+        <StatusPill look={EQUIPMENT_LOOK[e.status]}>{EQUIPMENT_LABEL[e.status] ?? '—'}</StatusPill>
         {e.criticality != null && (
           <StatusPill look={CRITICALITY_LOOK[e.criticality]}>{CRITICALITY_LABEL[e.criticality] ?? '—'}</StatusPill>
         )}
@@ -535,7 +534,7 @@ export function EquipmentDetailPage() {
                 {t.daysLate > 0 && <span className="late"> · {t.daysLate} days late</span>}
               </div>
             </div>
-            <StatusPill look={PM_LOOK[t.status]}>{PM_STATUS[t.status]}</StatusPill>
+            <StatusPill look={PM_LOOK[t.status]}>{PM_LABEL[t.status]}</StatusPill>
             {/* The point of a machine's page: it says what is due, and now it lets
                 the person standing at the machine do it. */}
             <Link className="btn" to={`/pm/${t.id}/do`} state={{ from: `/equipment/${e.id}` }}>
@@ -589,10 +588,9 @@ export function EquipmentDetailPage() {
               <button
                 className="btn btn-quiet"
                 onClick={() =>
-                  api.download(
-                    `/api/reports/pm/${t.id}/certificate.pdf`,
-                    `PM-${e.assetTag}-${t.dueDate}.pdf`,
-                  )
+                  void api
+                    .download(`/api/reports/pm/${t.id}/certificate.pdf`, `PM-${e.assetTag}-${t.dueDate}.pdf`)
+                    .catch((err: unknown) => setActionError(err instanceof Error ? err.message : 'Could not make the certificate.'))
                 }
               >
                 Certificate
@@ -621,8 +619,8 @@ export function EquipmentDetailPage() {
           <div key={w.id} className="hist-row">
             <div className="grow">
               <div>
-                <span className="mono">{w.number}</span>
-                <StatusPill look={PRIORITY_LOOK[w.priority]} className="hist-flag">{PRIORITY[w.priority]}</StatusPill>
+                <Link className="mono" to={`/work-orders/${w.id}`} state={{ from: `/equipment/${e.id}` }}>{w.number}</Link>
+                <StatusPill look={PRIORITY_LOOK[w.priority]} className="hist-flag">{PRIORITY_LABEL[w.priority]}</StatusPill>
               </div>
               <div className="hist-fault">{w.faultDescription}</div>
               {w.resolutionNotes && (
@@ -640,11 +638,13 @@ export function EquipmentDetailPage() {
             </div>
 
             <div className="stack" style={{ gap: '0.35rem', alignItems: 'flex-end' }}>
-              <StatusPill look={WORK_ORDER_LOOK[w.status]}>{WO_STATUS[w.status]}</StatusPill>
+              <StatusPill look={WORK_ORDER_LOOK[w.status]}>{WORK_ORDER_LABEL[w.status]}</StatusPill>
               <button
                 className="btn btn-quiet"
                 onClick={() =>
-                  api.download(`/api/reports/work-orders/${w.id}/report.pdf`, `${w.number}.pdf`)
+                  void api
+                    .download(`/api/reports/work-orders/${w.id}/report.pdf`, `${w.number}.pdf`)
+                    .catch((err: unknown) => setActionError(err instanceof Error ? err.message : 'Could not make the service report.'))
                 }
               >
                 Report

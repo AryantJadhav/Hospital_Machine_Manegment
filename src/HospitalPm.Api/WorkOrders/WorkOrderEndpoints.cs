@@ -90,6 +90,8 @@ public static class WorkOrderEndpoints
         [FromQuery] int? equipmentId,
         [FromQuery] int? assignedToUserId,
         [FromQuery] string? assignee,
+        [FromQuery] string? q,
+        [FromQuery] bool? down,
         [FromQuery] bool openOnly = true,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
@@ -116,15 +118,36 @@ public static class WorkOrderEndpoints
         {
             query = query.Where(w => OnTheAssigneesPlate.Contains(w.Status));
         }
-        else if (openOnly)
+        else if (openOnly && down != true)
         {
-            query = query.Where(w => w.Status != WorkOrderStatus.Closed
+            // Once the fault is fixed it has left the queue: Resolved is waiting on paperwork, not on
+            // an engineer. It is still there under the Resolved filter, and in the machine's history.
+            query = query.Where(w => w.Status != WorkOrderStatus.Resolved
+                                  && w.Status != WorkOrderStatus.Closed
                                   && w.Status != WorkOrderStatus.Cancelled);
+        }
+
+        // The faults behind the dashboard's "Machines down": a machine taken out of service that
+        // has not yet gone back. Counted the same way there, so the tile and this list agree.
+        if (down == true)
+        {
+            query = query.Where(w => w.OutOfServiceAtUtc != null && w.BackInServiceAtUtc == null);
         }
 
         if (priority is not null)
         {
             query = query.Where(w => w.Priority == priority);
+        }
+
+        // By number, by the machine's tag, or by what was said was wrong: the three things a person
+        // has in their head when they go looking for a ticket.
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var term = q.Trim().ToLowerInvariant();
+            query = query.Where(w =>
+                w.Number.ToLower().Contains(term) ||
+                w.Equipment!.AssetTag.ToLower().Contains(term) ||
+                w.FaultDescription.ToLower().Contains(term));
         }
 
         if (equipmentId is not null)
@@ -187,8 +210,23 @@ public static class WorkOrderEndpoints
         var notes = await db.WorkOrderNotes.AsNoTracking()
             .Where(n => n.WorkOrderId == id)
             .OrderBy(n => n.CreatedAtUtc)
-            .Select(n => new { n.Id, n.Body, n.StatusAfter, n.AuthorUserId, n.CreatedAtUtc })
+            .Select(n => new
+            {
+                n.Id,
+                n.Body,
+                n.StatusAfter,
+                n.AuthorUserId,
+                // The page shows who wrote it, and a number is no use to the person reading.
+                AuthorName = db.Users.Where(u => u.Id == n.AuthorUserId).Select(u => u.FullName).FirstOrDefault(),
+                n.CreatedAtUtc,
+            })
             .ToListAsync(ct);
+
+        var reportedByName = await db.Users.AsNoTracking()
+            .Where(u => u.Id == order.ReportedByUserId).Select(u => u.FullName).FirstOrDefaultAsync(ct);
+        var assignedToName = order.AssignedToUserId is { } assigneeId
+            ? await db.Users.AsNoTracking().Where(u => u.Id == assigneeId).Select(u => u.FullName).FirstOrDefaultAsync(ct)
+            : null;
 
         var partsUsed = await db.WorkOrderParts.AsNoTracking()
             .Where(p => p.WorkOrderId == id)
@@ -233,8 +271,10 @@ public static class WorkOrderEndpoints
             equipmentTypeName = order.Equipment?.EquipmentType?.Name,
             locationName = order.Equipment?.Location?.Name,
             order.ReportedByUserId,
+            reportedByName,
             order.ReportedAtUtc,
             order.AssignedToUserId,
+            assignedToName,
             order.AssignedAtUtc,
             order.StartedAtUtc,
             order.ResolutionNotes,
@@ -267,9 +307,12 @@ public static class WorkOrderEndpoints
         => Results.Ok(new
         {
             open = await db.WorkOrders.CountAsync(
-                w => w.Status != WorkOrderStatus.Closed && w.Status != WorkOrderStatus.Cancelled, ct),
+                w => w.Status != WorkOrderStatus.Resolved
+                     && w.Status != WorkOrderStatus.Closed
+                     && w.Status != WorkOrderStatus.Cancelled, ct),
             critical = await db.WorkOrders.CountAsync(
                 w => w.Priority == WorkOrderPriority.Critical
+                     && w.Status != WorkOrderStatus.Resolved
                      && w.Status != WorkOrderStatus.Closed
                      && w.Status != WorkOrderStatus.Cancelled, ct),
             unassigned = await db.WorkOrders.CountAsync(

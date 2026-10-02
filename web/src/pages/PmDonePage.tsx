@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { useAuth } from '../auth/useAuth';
 import { formatDate, formatDateTime } from '../time';
 import { StatusPill } from '../StatusPill';
+import { formatBytes } from '../bytes';
 
 /**
  * Recording that a PM was done, on its own address: /pm/:taskId/do.
@@ -58,12 +59,6 @@ const CONTRACT: Record<number, string> = { 10: 'AMC', 20: 'CMC' };
 const MAX_BYTES = 10 * 1024 * 1024;
 const MAX_FILES = 10;
 const ACCEPT = 'application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp';
-
-function size(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 /** Said once, wherever a file can be chosen: a report is a paper about a machine, never a person. */
 function PatientNotice() {
@@ -130,7 +125,7 @@ function FilePicker({
         <ul className="stack" style={{ listStyle: 'none', margin: 0, padding: 0, gap: '0.25rem' }}>
           {files.map((f, i) => (
             <li key={`${f.name}-${i}`} className="row" style={{ justifyContent: 'space-between', gap: '0.75rem' }}>
-              <span>{f.name} <span className="muted">· {size(f.size)}</span></span>
+              <span>{f.name} <span className="muted">· {formatBytes(f.size)}</span></span>
               <button
                 type="button"
                 className="btn btn-quiet"
@@ -378,7 +373,7 @@ export function PmDonePage({
                 <li key={f.id} className="row" style={{ justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap' }}>
                   <span>
                     <strong>{f.fileName}</strong>
-                    <span className="muted"> · {size(f.sizeBytes)} · {f.uploadedBy ?? 'unknown'}, {formatDateTime(f.uploadedAtUtc)}</span>
+                    <span className="muted"> · {formatBytes(f.sizeBytes)} ·{f.uploadedBy ?? 'unknown'}, {formatDateTime(f.uploadedAtUtc)}</span>
                   </span>
                   <span className="row" style={{ gap: '0.5rem' }}>
                     <button className="btn" onClick={() => void api.view(`/api/pm/attachments/${f.id}`).catch((err: unknown) => setError(err instanceof Error ? err.message : 'Could not open the file.'))}>

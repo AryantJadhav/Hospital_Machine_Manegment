@@ -5,7 +5,7 @@ import { useHandoff } from '../handoff';
 import { HandoffNotice } from '../HandoffNotice';
 import { formatDate } from '../time';
 import { StatusPill } from '../StatusPill';
-import { PM_LOOK } from '../statusTones';
+import { PM_LABEL, PM_LOOK } from '../statusTones';
 
 type PmTask = {
   id: number;
@@ -26,14 +26,6 @@ type PmTask = {
 
 type Paged<T> = { items: T[]; total: number; page: number; pageSize: number };
 type Lookup = { id: number; code: string; name: string; depth: number };
-
-const STATUS: Record<number, string> = {
-  10: 'Scheduled',
-  20: 'Due',
-  30: 'Overdue',
-  40: 'Completed',
-  50: 'Skipped',
-};
 
 const PAGE_SIZE = 25;
 
@@ -142,7 +134,7 @@ export function PmTasksPage() {
         <div>
           <h1>Preventive maintenance</h1>
           <p className="muted">
-            {data ? `${data.total.toLocaleString()} task${data.total === 1 ? '' : 's'}` : ' '}
+            {data ? `${data.total.toLocaleString('en-IN')} task${data.total === 1 ? '' : 's'}` : ' '}
           </p>
         </div>
       </header>
@@ -161,7 +153,7 @@ export function PmTasksPage() {
         />
         <select aria-label="Filter by status" value={status} onChange={(e) => setFilter('status', e.target.value)}>
           <option value="">Open (scheduled, due, overdue)</option>
-          {Object.entries(STATUS).map(([v, label]) => (
+          {Object.entries(PM_LABEL).map(([v, label]) => (
             <option key={v} value={v}>{label}</option>
           ))}
         </select>
@@ -220,7 +212,7 @@ export function PmTasksPage() {
                   {t.checklistName}
                   {t.performedBy === 20 && <StatusPill tone="info" className="hist-flag">Vendor</StatusPill>}
                 </td>
-                <td><StatusPill look={PM_LOOK[t.status]}>{STATUS[t.status] ?? '—'}</StatusPill></td>
+                <td><StatusPill look={PM_LOOK[t.status]}>{PM_LABEL[t.status] ?? '—'}</StatusPill></td>
                 <td style={{ whiteSpace: 'nowrap' }}>
                   {/* Scheduled, Due and Overdue are open work. Completed and
                       Skipped are finished records — a completion is immutable

@@ -265,4 +265,99 @@ public sealed class WorkOrderApiTests(PostgresFixture fixture) : IAsyncLifetime,
         Assert.DoesNotContain(items, i => i.GetProperty("id").GetInt32() == _workOrderId);
         Assert.All(items, i => Assert.Equal((int)WorkOrderPriority.Critical, i.GetProperty("priority").GetInt32()));
     }
+
+    [Fact]
+    public async Task The_detail_names_who_reported_it_and_who_wrote_each_note()
+    {
+        (await _client.PostAsJsonAsync($"/api/work-orders/{_workOrderId}/notes", new { body = "Checked the cable." }))
+            .EnsureSuccessStatusCode();
+
+        var body = await _client.GetFromJsonAsync<JsonElement>($"/api/work-orders/{_workOrderId}");
+
+        // The page shows people, and a user number means nothing to the person reading it.
+        Assert.Equal("Work Order API User", body.GetProperty("reportedByName").GetString());
+        var note = body.GetProperty("notes").EnumerateArray().Single();
+        Assert.Equal("Work Order API User", note.GetProperty("authorName").GetString());
+    }
+
+    [Fact]
+    public async Task Searching_finds_a_work_order_by_its_number_its_machine_or_its_fault()
+    {
+        var detail = await _client.GetFromJsonAsync<JsonElement>($"/api/work-orders/{_workOrderId}");
+        var number = detail.GetProperty("number").GetString()!;
+        var tag = detail.GetProperty("assetTag").GetString()!;
+
+        foreach (var term in new[] { number, tag.ToLowerInvariant(), "INTERMITTENTLY blank" })
+        {
+            var found = await _client.GetFromJsonAsync<JsonElement>($"/api/work-orders?q={Uri.EscapeDataString(term)}");
+            Assert.Contains(found.GetProperty("items").EnumerateArray(), i => i.GetProperty("id").GetInt32() == _workOrderId);
+        }
+
+        var none = await _client.GetFromJsonAsync<JsonElement>("/api/work-orders?q=no-such-thing-xyz");
+        Assert.Empty(none.GetProperty("items").EnumerateArray());
+        Assert.Equal(0, none.GetProperty("total").GetInt32());
+    }
+
+    [Fact]
+    public async Task A_list_is_paged_and_says_how_many_there_are()
+    {
+        var tag = (await _client.GetFromJsonAsync<JsonElement>($"/api/work-orders/{_workOrderId}"))
+            .GetProperty("assetTag").GetString()!;
+
+        (await _client.PostAsJsonAsync("/api/work-orders", new
+        {
+            equipmentId = _equipmentId,
+            faultDescription = "Alarm will not silence",
+            priority = 20,
+        })).EnsureSuccessStatusCode();
+
+        var first = await _client.GetFromJsonAsync<JsonElement>($"/api/work-orders?q={tag}&pageSize=1&page=1");
+        var second = await _client.GetFromJsonAsync<JsonElement>($"/api/work-orders?q={tag}&pageSize=1&page=2");
+
+        Assert.Equal(2, first.GetProperty("total").GetInt32());
+        Assert.Single(first.GetProperty("items").EnumerateArray());
+        Assert.Single(second.GetProperty("items").EnumerateArray());
+        Assert.NotEqual(
+            first.GetProperty("items")[0].GetProperty("id").GetInt32(),
+            second.GetProperty("items")[0].GetProperty("id").GetInt32());
+    }
+
+    [Fact]
+    public async Task A_resolved_work_order_leaves_the_open_list_but_stays_under_the_resolved_filter()
+    {
+        await using (var db = fixture.CreateContext())
+        {
+            var order = await db.WorkOrders.SingleAsync(w => w.Id == _workOrderId);
+
+            order.Status = WorkOrderStatus.InProgress;
+            await db.SaveChangesAsync();
+
+            order.Status = WorkOrderStatus.Resolved;
+            order.ResolutionNotes = "Replaced the display cable.";
+            order.ResolvedByUserId = order.ReportedByUserId;
+            order.ResolvedAtUtc = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+        }
+
+        var open = await _client.GetFromJsonAsync<JsonElement>("/api/work-orders?pageSize=100");
+        Assert.DoesNotContain(open.GetProperty("items").EnumerateArray(), i => i.GetProperty("id").GetInt32() == _workOrderId);
+
+        var resolved = await _client.GetFromJsonAsync<JsonElement>(
+            $"/api/work-orders?status={(int)WorkOrderStatus.Resolved}&pageSize=100");
+        Assert.Contains(resolved.GetProperty("items").EnumerateArray(), i => i.GetProperty("id").GetInt32() == _workOrderId);
+    }
+
+    [Fact]
+    public async Task The_machines_down_filter_lists_the_faults_that_have_a_machine_out_of_service()
+    {
+        var down = await _client.GetFromJsonAsync<JsonElement>("/api/work-orders?down=true&pageSize=100");
+
+        // Reporting a fault takes the machine out of service from that moment, so a fresh one is down.
+        Assert.Contains(down.GetProperty("items").EnumerateArray(), i => i.GetProperty("id").GetInt32() == _workOrderId);
+        Assert.All(
+            down.GetProperty("items").EnumerateArray(),
+            i => Assert.True(
+                i.GetProperty("outOfServiceAtUtc").ValueKind != JsonValueKind.Null
+                && i.GetProperty("backInServiceAtUtc").ValueKind == JsonValueKind.Null));
+    }
 }

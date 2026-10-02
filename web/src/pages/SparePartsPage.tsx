@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { useAuth } from '../auth/useAuth';
 import { ROLES } from '../auth/context';
 import { StatusPill } from '../StatusPill';
+import { formatRupees } from '../money';
 
 /**
  * The biomedical department's own shelf of spares - fuses, tubing sets, sensor
@@ -36,8 +37,6 @@ type Part = {
 
 type Paged = { items: Part[]; total: number; page: number; pageSize: number };
 type Lookup = { id: number; code: string; name: string };
-
-const rupees = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
 
 export function SparePartsPage() {
   const { can } = useAuth();
@@ -92,7 +91,7 @@ export function SparePartsPage() {
         <div>
           <h1>Spare parts</h1>
           <p className="muted">
-            {total.toLocaleString()} part{total === 1 ? '' : 's'}
+            {total.toLocaleString('en-IN')} part{total === 1 ? '' : 's'}
             {lowCount > 0 && `, ${lowCount} at or below their reorder level`}
           </p>
         </div>
@@ -183,7 +182,7 @@ export function SparePartsPage() {
                 </td>
                 <td>
                   {p.supplier ?? <span className="muted">—</span>}
-                  {p.unitCost != null && <div className="muted">{rupees.format(p.unitCost)} / {p.unit}</div>}
+                  {p.unitCost != null && <div className="muted">{formatRupees(p.unitCost)} / {p.unit}</div>}
                 </td>
                 <td>
                   {!p.isActive ? (

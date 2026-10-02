@@ -5,6 +5,7 @@ import { presetPeriods } from '../compliancePeriods';
 import { formatHours } from '../hours';
 import { formatRupees, formatRupeesCompact } from '../money';
 import { formatDate, todayAtHospital } from '../time';
+import { StatusPill } from '../StatusPill';
 import { Tile } from '../Tile';
 
 type Kind = 'downtime' | 'cost';
@@ -327,7 +328,7 @@ function DowntimeView({ report }: { report: DowntimeSummary }) {
                 <MachineCell id={m.equipmentId} tag={m.assetTag} type={m.equipmentType} />
                 <td>
                   {m.location}
-                  {m.stillDown && <span className="pill" style={{ marginLeft: '0.5rem' }}>Still down</span>}
+                  {m.stillDown && <StatusPill tone="danger" className="hist-flag">Still down</StatusPill>}
                 </td>
                 <td className="num">{m.incidents}</td>
                 <td className="num"><strong>{formatHours(m.downtimeHours)}</strong></td>
@@ -356,7 +357,7 @@ function CostDetail({ m }: { m: CostMachine }) {
               <li key={`${p.provider}-${p.expiryDate}`} className="row" style={{ justifyContent: 'space-between' }}>
                 <span>
                   {p.provider}
-                  {p.isCurrent && <span className="pill" style={{ marginLeft: '0.5rem' }}>Current</span>}
+                  {p.isCurrent && <StatusPill tone="success" className="hist-flag">Current</StatusPill>}
                   <span className="muted">
                     {' · '}{p.policyNumber ? `${p.policyNumber} · ` : ''}covered until {formatDate(p.expiryDate)}
                   </span>
@@ -376,7 +377,7 @@ function CostDetail({ m }: { m: CostMachine }) {
               <li key={p.partNumber} className="row" style={{ justifyContent: 'space-between' }}>
                 <span>
                   <span className="mono">{p.quantity}× {p.partNumber}</span> — {p.name}
-                  {p.costMissing && <span className="pill" style={{ marginLeft: '0.5rem' }}>Some cost not recorded</span>}
+                  {p.costMissing && <StatusPill tone="warning" className="hist-flag">Some cost not recorded</StatusPill>}
                 </span>
                 <span>{formatRupees(p.cost)}</span>
               </li>

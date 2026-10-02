@@ -242,7 +242,7 @@ export function PmChecklistForm({
     return (
       <div className="page">
         <button className="btn btn-quiet" onClick={onClose}>← Back to {backLabel}</button>
-        <p className="alert alert-error">{error ?? 'Could not load this PM.'}</p>
+        <p className="alert alert-error" role="alert">{error ?? 'Could not load this PM.'}</p>
       </div>
     );
   }
@@ -288,7 +288,7 @@ export function PmChecklistForm({
         </p>
       )}
 
-      <p className="alert alert-ok">
+      <p className="alert alert-ok" role="status">
         {requiredDone} of {requiredTotal} required check{requiredTotal === 1 ? '' : 's'} answered.
       </p>
 

@@ -36,6 +36,24 @@ export const CONTRACT_LABEL: Record<number, string> = {
   20: 'CMC',
 };
 
+/** What each equipment status is called. */
+export const EQUIPMENT_LABEL: Record<number, string> = {
+  10: 'In store',
+  20: 'In use',
+  30: 'Under repair',
+  40: 'Condemned',
+  50: 'Disposed',
+};
+
+/** What each PM status is called. */
+export const PM_LABEL: Record<number, string> = {
+  10: 'Scheduled',
+  20: 'Due',
+  30: 'Overdue',
+  40: 'Completed',
+  50: 'Skipped',
+};
+
 /** Equipment: In store, In use, Under repair, Condemned, Disposed. */
 export const EQUIPMENT_LOOK: Record<number, Look> = {
   10: T('neutral'),
@@ -53,6 +71,20 @@ export const PM_LOOK: Record<number, Look> = {
   40: T('success'),
   50: T('neutral'),
 };
+
+/** What each work order status is called. The numbers are the server's WorkOrderStatus. */
+export const WORK_ORDER_LABEL: Record<number, string> = {
+  10: 'Reported',
+  20: 'Assigned',
+  30: 'In progress',
+  40: 'On hold',
+  50: 'Resolved',
+  60: 'Closed',
+  70: 'Cancelled',
+};
+
+/** What each work order priority is called. */
+export const PRIORITY_LABEL: Record<number, string> = { 10: 'Low', 20: 'Medium', 30: 'High', 40: 'Critical' };
 
 /** Work order: Reported, Assigned, In progress, On hold, Resolved, Closed, Cancelled. */
 export const WORK_ORDER_LOOK: Record<number, Look> = {

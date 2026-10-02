@@ -58,7 +58,7 @@ export function DiagnosticsPage() {
   if (!data) {
     return (
       <div className="page">
-        <p className="alert alert-error">{error ?? 'Could not run diagnostics.'}</p>
+        <p className="alert alert-error" role="alert">{error ?? 'Could not run diagnostics.'}</p>
       </div>
     );
   }

@@ -272,10 +272,15 @@ public static class ReportEndpoints
             },
             workOrders = new
             {
+                // A fault that has been fixed is no longer open work, so it is not counted here and is
+                // not in the work orders list's default view either.
                 open = await db.WorkOrders.CountAsync(
-                    w => w.Status != WorkOrderStatus.Closed && w.Status != WorkOrderStatus.Cancelled, ct),
+                    w => w.Status != WorkOrderStatus.Resolved
+                         && w.Status != WorkOrderStatus.Closed
+                         && w.Status != WorkOrderStatus.Cancelled, ct),
                 critical = await db.WorkOrders.CountAsync(
                     w => w.Priority == WorkOrderPriority.Critical
+                         && w.Status != WorkOrderStatus.Resolved
                          && w.Status != WorkOrderStatus.Closed
                          && w.Status != WorkOrderStatus.Cancelled, ct),
                 unassigned = await db.WorkOrders.CountAsync(w => w.Status == WorkOrderStatus.Reported, ct),

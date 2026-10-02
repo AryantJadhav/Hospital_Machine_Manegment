@@ -78,7 +78,7 @@ export function EquipmentTypesPage() {
         <div>
           <h1>Equipment types</h1>
           <p className="muted">
-            {types.length.toLocaleString()} types
+            {types.length.toLocaleString('en-IN')} types
             {switchedOff > 0 && `, ${switchedOff} switched off`}
           </p>
         </div>
@@ -168,7 +168,7 @@ export function EquipmentTypesPage() {
                   ))}
                 </td>
                 <td>
-                  {t.machineCount > 0 ? t.machineCount.toLocaleString() : <span className="muted">0</span>}
+                  {t.machineCount > 0 ? t.machineCount.toLocaleString('en-IN') : <span className="muted">0</span>}
                 </td>
                 <td>
                   <StatusPill tone={t.isActive ? 'success' : 'neutral'}>

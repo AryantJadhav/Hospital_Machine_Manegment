@@ -190,7 +190,9 @@ export function LocationsPage() {
               <button
                 className="btn"
                 onClick={() =>
-                  api.download('/api/equipment/import/locations/template', 'locations-template.xlsx')
+                  void api
+                    .download('/api/equipment/import/locations/template', 'locations-template.xlsx')
+                    .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Could not download the template.'))
                 }
               >
                 Download template

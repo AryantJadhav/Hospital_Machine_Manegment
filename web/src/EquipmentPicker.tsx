@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { api } from './api/client';
+import { EQUIPMENT_LABEL } from './statusTones';
 
 type Machine = {
   id: number;
@@ -11,14 +12,6 @@ type Machine = {
 };
 
 type Page = { items: Machine[]; total: number };
-
-const STATUS: Record<number, string> = {
-  10: 'In store',
-  20: 'In use',
-  30: 'Under repair',
-  40: 'Condemned',
-  50: 'Disposed',
-};
 
 const SHOWN = 8;
 
@@ -177,7 +170,7 @@ export function EquipmentPicker({
                       it is a status we know: a machine the ward is reporting
                       as broken is usually In use, and "In use" on
                       every row would be noise. */}
-                  {m.status !== 20 && STATUS[m.status] && ` · ${STATUS[m.status]}`}
+                  {m.status !== 20 && EQUIPMENT_LABEL[m.status] && ` · ${EQUIPMENT_LABEL[m.status]}`}
                 </span>
               </li>
             ))}
@@ -188,7 +181,7 @@ export function EquipmentPicker({
             {state === 'failed' && 'Could not search the register. Try again.'}
             {state === 'idle' && results.length === 0 && 'No machine matches that.'}
             {state !== 'failed' && results.length > 0 && more &&
-              `Showing ${results.length} of ${total.toLocaleString()}. Keep typing to narrow it down.`}
+              `Showing ${results.length} of ${total.toLocaleString('en-IN')}. Keep typing to narrow it down.`}
           </p>
         </div>
       )}

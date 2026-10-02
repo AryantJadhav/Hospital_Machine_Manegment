@@ -77,6 +77,30 @@ export function formatDateTime(value: string | null | undefined): string {
   return `${pad(p.d)}/${pad(p.mo)}/${p.y} ${pad(p.h)}:${pad(p.mi)} ${ZONE_LABEL}`;
 }
 
+/**
+ * How long ago, in the words a person would use: "just now", "5 hours ago", "3 days ago".
+ *
+ * For a list, where the age says more than the date: a fault reported three days ago is a
+ * different problem from one reported this morning. Show the exact time beside it (a title).
+ * Past a year it is simply the date.
+ */
+export function formatAge(value: string | null | undefined, now: Date = new Date()): string {
+  const instant = value ? toInstant(value) : null;
+  if (!instant) return '—';
+
+  const minutes = Math.floor((now.getTime() - instant.getTime()) / 60_000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} min ago`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
+
+  const days = Math.floor(hours / 24);
+  if (days < 365) return `${days} ${days === 1 ? 'day' : 'days'} ago`;
+
+  return formatDate(value) ?? '—';
+}
+
 /** Today's date at the hospital, as yyyy-mm-dd for a date input. */
 export function todayAtHospital(): string {
   const p = hospitalParts(new Date());

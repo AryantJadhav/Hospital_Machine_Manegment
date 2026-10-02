@@ -82,12 +82,14 @@ export function ImportPage() {
         <button
           className="btn"
           onClick={() =>
-            api.download(
-              kind === 'locations'
-                ? '/api/equipment/import/locations/template'
-                : '/api/equipment/import/template',
-              `${kind}-template.xlsx`,
-            )
+            void api
+              .download(
+                kind === 'locations'
+                  ? '/api/equipment/import/locations/template'
+                  : '/api/equipment/import/template',
+                `${kind}-template.xlsx`,
+              )
+              .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Could not download the template.'))
           }
         >
           Download template
@@ -147,13 +149,16 @@ export function ImportPage() {
 
         {result?.committed && (
           <p className="alert alert-ok" role="status">
-            Imported {result.validRows.toLocaleString()} assets.
+            Imported {result.validRows.toLocaleString('en-IN')}{' '}
+            {kind === 'locations'
+              ? result.validRows === 1 ? 'location' : 'locations'
+              : result.validRows === 1 ? 'asset' : 'assets'}.
           </p>
         )}
 
         {result && !result.committed && result.errorCount === 0 && (
           <p className="alert alert-ok" role="status">
-            {result.totalRows.toLocaleString()} rows checked, no problems found. Nothing has been
+            {result.totalRows.toLocaleString('en-IN')} rows checked, no problems found. Nothing has been
             saved yet — press Import to apply.
           </p>
         )}
@@ -167,8 +172,8 @@ export function ImportPage() {
             </div>
 
             <p className="alert alert-error" role="alert">
-              {result.errorCount.toLocaleString()} problem
-              {result.errorCount === 1 ? '' : 's'} found in {result.totalRows.toLocaleString()} rows.
+              {result.errorCount.toLocaleString('en-IN')} problem
+              {result.errorCount === 1 ? '' : 's'} found in {result.totalRows.toLocaleString('en-IN')} rows.
               Nothing has been saved. Fix the file and check it again.
             </p>
 

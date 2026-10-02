@@ -155,7 +155,7 @@ export function LicencePage() {
         </p>
 
         {error && <p className="alert alert-error" role="alert">{error}</p>}
-        {saved && <p className="alert alert-ok">Licence installed.</p>}
+        {saved && <p className="alert alert-ok" role="status">Licence installed.</p>}
 
         <input
           type="file"
