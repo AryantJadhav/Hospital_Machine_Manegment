@@ -5,6 +5,7 @@ using HospitalPm.Domain.Inventory;
 using HospitalPm.Domain.Maintenance;
 using HospitalPm.Domain.WorkOrders;
 using HospitalPm.Domain.Operations;
+using HospitalPm.Domain.Training;
 using HospitalPm.Domain.Locations;
 using HospitalPm.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity;
@@ -31,6 +32,10 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
     public DbSet<EquipmentTypeCategory> EquipmentTypeCategories => Set<EquipmentTypeCategory>();
 
     public DbSet<SparePart> SpareParts => Set<SparePart>();
+
+    public DbSet<TrainingSession> TrainingSessions => Set<TrainingSession>();
+
+    public DbSet<TrainingAttendee> TrainingAttendees => Set<TrainingAttendee>();
 
     public DbSet<Location> Locations => Set<Location>();
 
@@ -167,6 +172,64 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
             // The low-stock list on the register page: active parts at or below
             // their reorder level, which is exactly this ordering.
             e.HasIndex(x => new { x.IsActive, x.QuantityOnHand }).HasDatabaseName("ix_spare_part_active_quantity");
+        });
+
+        builder.Entity<TrainingSession>(e =>
+        {
+            e.ToTable("training_session");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.Title).HasColumnName("title").HasMaxLength(200).IsRequired();
+            e.Property(x => x.SessionDate).HasColumnName("session_date");
+            e.Property(x => x.EquipmentTypeId).HasColumnName("equipment_type_id");
+            e.Property(x => x.EquipmentId).HasColumnName("equipment_id");
+            e.Property(x => x.Trainer).HasColumnName("trainer").HasMaxLength(200);
+            e.Property(x => x.Venue).HasColumnName("venue").HasMaxLength(200);
+            e.Property(x => x.DurationMinutes).HasColumnName("duration_minutes");
+            e.Property(x => x.Notes).HasColumnName("notes");
+            e.Property(x => x.CreatedByUserId).HasColumnName("created_by_user_id");
+            e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").HasDefaultValueSql("now()");
+            e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").HasDefaultValueSql("now()");
+
+            e.HasOne(x => x.EquipmentType)
+                .WithMany()
+                .HasForeignKey(x => x.EquipmentTypeId)
+                // Restrict: a kind of machine that has had training given on it is not removed from under it.
+                .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Machine)
+                .WithMany()
+                .HasForeignKey(x => x.EquipmentId)
+                // Restrict: a machine that has had training given on it keeps its record.
+                .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasIndex(x => x.EquipmentId).HasDatabaseName("ix_training_session_equipment");
+
+            // The register, newest session first.
+            e.HasIndex(x => x.SessionDate).HasDatabaseName("ix_training_session_date");
+            e.HasIndex(x => x.EquipmentTypeId).HasDatabaseName("ix_training_session_equipment_type");
+        });
+
+        builder.Entity<TrainingAttendee>(e =>
+        {
+            e.ToTable("training_attendee");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.TrainingSessionId).HasColumnName("training_session_id");
+            e.Property(x => x.UserId).HasColumnName("user_id");
+            e.Property(x => x.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
+            e.Property(x => x.Designation).HasColumnName("designation").HasMaxLength(200);
+
+            // A session's list of people goes with it: the attendees mean nothing without it.
+            e.HasOne(x => x.Session)
+                .WithMany(x => x.Attendees)
+                .HasForeignKey(x => x.TrainingSessionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(x => x.TrainingSessionId).HasDatabaseName("ix_training_attendee_session");
+            e.HasIndex(x => x.UserId).HasDatabaseName("ix_training_attendee_user");
         });
 
         builder.Entity<PmTaskAttachment>(e =>

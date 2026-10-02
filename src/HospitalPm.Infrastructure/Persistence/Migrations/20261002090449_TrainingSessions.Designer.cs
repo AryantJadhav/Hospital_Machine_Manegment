@@ -3,6 +3,7 @@ using System;
 using HospitalPm.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace HospitalPm.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(HospitalPmDbContext))]
-    partial class HospitalPmDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261002090449_TrainingSessions")]
+    partial class TrainingSessions
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1222,10 +1225,6 @@ namespace HospitalPm.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("duration_minutes");
 
-                    b.Property<int?>("EquipmentId")
-                        .HasColumnType("integer")
-                        .HasColumnName("equipment_id");
-
                     b.Property<int?>("EquipmentTypeId")
                         .HasColumnType("integer")
                         .HasColumnName("equipment_type_id");
@@ -1267,9 +1266,6 @@ namespace HospitalPm.Infrastructure.Persistence.Migrations
                         .HasColumnName("venue");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("EquipmentId")
-                        .HasDatabaseName("ix_training_session_equipment");
 
                     b.HasIndex("EquipmentTypeId")
                         .HasDatabaseName("ix_training_session_equipment_type");
@@ -2136,19 +2132,12 @@ namespace HospitalPm.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("HospitalPm.Domain.Training.TrainingSession", b =>
                 {
-                    b.HasOne("HospitalPm.Domain.Assets.Equipment", "Machine")
-                        .WithMany()
-                        .HasForeignKey("EquipmentId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("HospitalPm.Domain.Equipment.EquipmentType", "EquipmentType")
                         .WithMany()
                         .HasForeignKey("EquipmentTypeId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("EquipmentType");
-
-                    b.Navigation("Machine");
                 });
 
             modelBuilder.Entity("HospitalPm.Domain.WorkOrders.WorkOrder", b =>

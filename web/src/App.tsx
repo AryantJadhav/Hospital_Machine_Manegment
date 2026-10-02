@@ -26,6 +26,9 @@ import { ReportsPage } from './pages/ReportsPage';
 import { ExportPage } from './pages/ExportPage';
 import { ChecklistsPage } from './pages/ChecklistsPage';
 import { ServiceReportPreviewPage } from './pages/ServiceReportPreviewPage';
+import { TrainingPage } from './pages/TrainingPage';
+import { TrainingReportPreviewPage } from './pages/TrainingReportPreviewPage';
+import { TrainingSessionPage } from './pages/TrainingSessionPage';
 import { WorkOrderPage } from './pages/WorkOrderPage';
 import { WorkOrdersPage } from './pages/WorkOrdersPage';
 import { AdminMenu } from './AdminMenu';
@@ -105,6 +108,12 @@ function Shell() {
           <NavLink to="/checklists" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
             Checklists
           </NavLink>
+
+          {/* Visible to everyone, editable only by an Admin: who has been trained on what is a
+              question anyone handing a machine over wants answered. */}
+          <NavLink to="/training" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+            Training
+          </NavLink>
         </div>
 
         {isAdmin && <AdminMenu features={features} />}
@@ -152,6 +161,9 @@ function Shell() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/pm" element={<PmTasksPage />} />
           <Route path="/pm/:taskId/do" element={<PmDoPage />} />
+          <Route path="/training" element={<TrainingPage />} />
+          <Route path="/training/:id" element={<TrainingSessionPage />} />
+          <Route path="/training/:id/report" element={<TrainingReportPreviewPage />} />
           <Route path="/work-orders" element={<WorkOrdersPage />} />
           <Route path="/work-orders/:id" element={<WorkOrderPage />} />
           <Route path="/work-orders/:id/report" element={<ServiceReportPreviewPage />} />

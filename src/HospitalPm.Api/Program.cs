@@ -9,6 +9,7 @@ using HospitalPm.Api.Locations;
 using HospitalPm.Api.Maintenance;
 using HospitalPm.Api.Operations;
 using HospitalPm.Api.Reports;
+using HospitalPm.Api.Training;
 using HospitalPm.Api.WorkOrders;
 using HospitalPm.Infrastructure.Identity;
 using Hangfire;
@@ -319,6 +320,7 @@ app.MapDowntimeReportEndpoints();
 app.MapCostReportEndpoints();
 app.MapWorkDoneReportEndpoints();
 app.MapStockReportEndpoints();
+app.MapTrainingEndpoints();
 app.MapExportEndpoints();
 
 app.UseDefaultFiles();
