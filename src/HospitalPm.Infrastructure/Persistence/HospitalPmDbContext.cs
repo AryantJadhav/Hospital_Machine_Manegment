@@ -184,6 +184,7 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
             e.Property(x => x.SessionDate).HasColumnName("session_date");
             e.Property(x => x.EquipmentTypeId).HasColumnName("equipment_type_id");
             e.Property(x => x.EquipmentId).HasColumnName("equipment_id");
+            e.Property(x => x.TrainerType).HasColumnName("trainer_type").HasMaxLength(20);
             e.Property(x => x.Trainer).HasColumnName("trainer").HasMaxLength(200);
             e.Property(x => x.Venue).HasColumnName("venue").HasMaxLength(200);
             e.Property(x => x.DurationMinutes).HasColumnName("duration_minutes");

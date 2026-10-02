@@ -3,7 +3,11 @@ import type { FormEvent } from 'react';
 import { api } from '../api/client';
 import { EquipmentPicker } from '../EquipmentPicker';
 import { todayAtHospital } from '../time';
-import type { TrainingDetail, TrainingMachine } from '../trainingTypes';
+import { AttendeeGrid } from './AttendeeGrid';
+import { attendeesFrom, duplicateName, rowsFrom } from './attendeeRows';
+import type { AttendeeRow } from './attendeeRows';
+import { TRAINER_TYPE_LABEL } from '../trainingTypes';
+import type { TrainerType, TrainingDetail, TrainingMachine } from '../trainingTypes';
 
 /** What the machine's own record says, for the details that fill in once it is chosen. */
 type MachineRecord = {
@@ -18,16 +22,12 @@ type MachineRecord = {
 
 type Staff = { id: number; fullName: string };
 
-/** One line of "Name, designation" for a person without an account. */
-function otherLine(name: string, designation: string | null): string {
-  return designation ? `${name}, ${designation}` : name;
-}
-
 /**
  * Adding or changing a training session and the people who came.
  *
- * People with an account are ticked from the staff list; everyone else - most of the nurses and
- * technicians trained on a ward's equipment have no login - is typed one to a line.
+ * The attendance is a sheet of rows (Name, Job): staff with an account can be picked from a list, and
+ * everyone else - most of the nurses and technicians trained on a ward's equipment have no login - is
+ * typed in, or pasted from Excel.
  */
 export function TrainingForm({
   editing,
@@ -49,19 +49,15 @@ export function TrainingForm({
   const [machine, setMachine] = useState<TrainingMachine | null>(editing?.machine ?? null);
 
   const [sessionDate, setSessionDate] = useState(editing?.sessionDate ?? todayAtHospital());
+  const [trainerType, setTrainerType] = useState<TrainerType | ''>(editing?.trainerType ?? '');
   const [trainer, setTrainer] = useState(editing?.trainer ?? '');
   const [venue, setVenue] = useState(editing?.venue ?? '');
   const [minutes, setMinutes] = useState(editing?.durationMinutes?.toString() ?? '');
   const [notes, setNotes] = useState(editing?.notes ?? '');
 
-  const [ticked, setTicked] = useState<Set<number>>(
-    () => new Set((editing?.attendees ?? []).filter((a) => a.userId !== null).map((a) => a.userId as number)),
-  );
-  const [others, setOthers] = useState(
-    (editing?.attendees ?? [])
-      .filter((a) => a.userId === null)
-      .map((a) => otherLine(a.name, a.designation))
-      .join('\n'),
+  // The attendance sheet: a few empty rows to start on, or the people already listed and one to add to.
+  const [rows, setRows] = useState<AttendeeRow[]>(() =>
+    rowsFrom(editing?.attendees ?? [], editing && editing.attendees.length > 0 ? editing.attendees.length + 1 : 5),
   );
 
   const [staff, setStaff] = useState<Staff[]>([]);
@@ -115,29 +111,15 @@ export function TrainingForm({
     };
   }, [machineId, machine?.id]);
 
-  function toggle(id: number) {
-    setTicked((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
   async function submit(e: FormEvent) {
     e.preventDefault();
     setError(null);
 
-    const typed = others
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-      .map((line) => {
-        const comma = line.indexOf(',');
-        return comma < 0
-          ? { name: line, designation: null }
-          : { name: line.slice(0, comma).trim(), designation: line.slice(comma + 1).trim() || null };
-      });
+    const twice = duplicateName(rows);
+    if (twice) {
+      setError(`${twice} is listed twice. Take one of the rows out.`);
+      return;
+    }
 
     setBusy(true);
     try {
@@ -147,11 +129,12 @@ export function TrainingForm({
         equipmentId: machineId,
         // With a machine chosen the server uses the machine's own kind.
         equipmentTypeId,
+        trainerType: trainerType || null,
         trainer: trainer.trim() || null,
         venue: venue.trim() || null,
         durationMinutes: minutes.trim() ? Number(minutes) : null,
         notes: notes.trim() || null,
-        attendees: [...[...ticked].map((userId) => ({ userId })), ...typed],
+        attendees: attendeesFrom(rows),
       };
 
       if (editing) {
@@ -226,12 +209,21 @@ export function TrainingForm({
       </div>
 
       <div className="filters">
-        <label className="field grow">
+        <label className="field">
           <span>Trainer (optional)</span>
+          <select value={trainerType} onChange={(e) => setTrainerType(e.target.value as TrainerType | '')}>
+            <option value="">Not said</option>
+            <option value="Vendor">{TRAINER_TYPE_LABEL.Vendor}</option>
+            <option value="InHouse">{TRAINER_TYPE_LABEL.InHouse}</option>
+          </select>
+        </label>
+
+        <label className="field grow">
+          <span>Trainer&apos;s name (optional)</span>
           <input
             value={trainer}
             onChange={(e) => setTrainer(e.target.value)}
-            placeholder="Who ran it, or the manufacturer's trainer"
+            placeholder={trainerType === 'Vendor' ? 'e.g. the manufacturer\'s applications specialist' : 'Who ran it'}
             maxLength={200}
           />
         </label>
@@ -245,41 +237,7 @@ export function TrainingForm({
       <fieldset className="stack" style={{ border: 'none', padding: 0, margin: 0 }}>
         <legend style={{ fontWeight: 600, padding: 0 }}>Who attended</legend>
 
-        {staff.length > 0 && (
-          <div className="stack" style={{ gap: '0.3rem' }}>
-            <span className="muted">People with an account</span>
-            <div
-              style={{
-                display: 'grid',
-                gap: '0.25rem 1rem',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(14rem, 1fr))',
-                maxHeight: '14rem',
-                overflow: 'auto',
-              }}
-            >
-              {staff.map((s) => (
-                <label key={s.id} className="row" style={{ gap: '0.5rem', alignItems: 'center' }}>
-                  <input type="checkbox" checked={ticked.has(s.id)} onChange={() => toggle(s.id)} />
-                  <span>{s.fullName}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <label className="field">
-          <span>Everyone else, one to a line</span>
-          <textarea
-            rows={4}
-            value={others}
-            onChange={(e) => setOthers(e.target.value)}
-            placeholder={'Meera Nair, Staff nurse, ICU\nRavi Patil, Technician'}
-          />
-          <span className="muted">
-            A name, then a comma and their job if you like. Staff only: this system holds no patient information,
-            so do not enter a patient&apos;s name.
-          </span>
-        </label>
+        <AttendeeGrid rows={rows} onChange={setRows} staff={staff} />
       </fieldset>
 
       <label className="field">

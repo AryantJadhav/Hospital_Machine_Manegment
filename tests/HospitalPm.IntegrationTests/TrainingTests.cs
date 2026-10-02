@@ -350,6 +350,36 @@ public sealed class TrainingTests(PostgresFixture fixture) : IAsyncLifetime, IDi
     }
 
     [Fact]
+    public async Task A_trainer_is_from_the_vendor_or_the_in_house_team_and_nothing_else()
+    {
+        var id = await CreateAsync(Session("Vendor day", trainer: "Dr Rao").With("trainerType", "Vendor"));
+
+        var seen = await GetAsync(id);
+        Assert.Equal("Vendor", seen.GetProperty("trainerType").GetString());
+        Assert.Equal("Dr Rao", seen.GetProperty("trainer").GetString());
+
+        var listed = await _employee.GetFromJsonAsync<JsonElement>($"/api/training?q=Vendor day {_suffix}");
+        Assert.Equal("Vendor", listed.GetProperty("items")[0].GetProperty("trainerType").GetString());
+
+        // The printed report still opens with it.
+        var pdf = await _employee.GetAsync($"/api/training/{id}/report.pdf");
+        Assert.Equal(HttpStatusCode.OK, pdf.StatusCode);
+
+        // Changed to the in-house team, then not said at all.
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await _admin.PutAsJsonAsync($"/api/training/{id}", Session("Vendor day").With("trainerType", "InHouse"))).StatusCode);
+        Assert.Equal("InHouse", (await GetAsync(id)).GetProperty("trainerType").GetString());
+
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await _admin.PutAsJsonAsync($"/api/training/{id}", Session("Vendor day").With("trainerType", "  "))).StatusCode);
+        Assert.Equal(JsonValueKind.Null, (await GetAsync(id)).GetProperty("trainerType").ValueKind);
+
+        // Anything else is refused.
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await _admin.PostAsJsonAsync("/api/training", Session("Other").With("trainerType", "Friend"))).StatusCode);
+    }
+
+    [Fact]
     public async Task The_same_person_cannot_be_listed_twice_and_everyone_needs_a_name()
     {
         var twiceByAccount = await _admin.PostAsJsonAsync("/api/training",

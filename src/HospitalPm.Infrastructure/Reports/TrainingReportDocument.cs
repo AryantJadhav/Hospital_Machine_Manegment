@@ -1,4 +1,5 @@
 using System.Globalization;
+using HospitalPm.Domain.Training;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
@@ -19,6 +20,7 @@ public sealed record TrainingReportData(
     string? Model,
     string? SerialNumber,
     string? Location,
+    string? TrainerType,
     string? Trainer,
     string? Venue,
     int? DurationMinutes,
@@ -159,6 +161,7 @@ public sealed class TrainingReportDocument(TrainingReportData data, ReportOption
 
                 row.RelativeItem().Column(right =>
                 {
+                    Field(right, "Trainer from", TrainerKind.Label(data.TrainerType));
                     Field(right, "Trainer", data.Trainer);
                     Field(right, "Where", data.Venue);
                     Field(right, "Recorded by", data.RecordedBy);

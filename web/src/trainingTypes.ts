@@ -1,5 +1,20 @@
 /** What the training pages ask the server for. */
 
+/** Where a session's trainer came from. */
+export type TrainerType = 'Vendor' | 'InHouse';
+
+export const TRAINER_TYPE_LABEL: Record<TrainerType, string> = {
+  Vendor: 'Vendor / Manufacturer',
+  InHouse: 'In-house team',
+};
+
+/** The trainer as one line: where from, then the name when there is one. */
+export function describeTrainer(type: TrainerType | null, name: string | null): string | null {
+  const from = type ? TRAINER_TYPE_LABEL[type] : null;
+  if (from && name) return `${from} · ${name}`;
+  return from ?? name;
+}
+
 export type TrainingRow = {
   id: number;
   title: string;
@@ -11,6 +26,7 @@ export type TrainingRow = {
   machineName: string | null;
   manufacturer: string | null;
   model: string | null;
+  trainerType: TrainerType | null;
   trainer: string | null;
   venue: string | null;
   durationMinutes: number | null;
@@ -47,6 +63,7 @@ export type TrainingDetail = {
   equipmentTypeName: string | null;
   equipmentId: number | null;
   machine: TrainingMachine | null;
+  trainerType: TrainerType | null;
   trainer: string | null;
   venue: string | null;
   durationMinutes: number | null;

@@ -24,6 +24,8 @@ public sealed record TrainingSessionRequest(
     int? EquipmentTypeId,
     // The machine the training was given on. Its name, company and model are read from its record.
     int? EquipmentId,
+    // "Vendor" (the vendor or manufacturer) or "InHouse" (our own team); left out when not said.
+    string? TrainerType,
     string? Trainer,
     string? Venue,
     int? DurationMinutes,
@@ -133,6 +135,7 @@ public static class TrainingEndpoints
                 MachineName = s.Machine == null ? null : s.Machine.EquipmentType!.Name,
                 Manufacturer = s.Machine == null ? null : s.Machine.Manufacturer,
                 Model = s.Machine == null ? null : s.Machine.Model,
+                s.TrainerType,
                 s.Trainer,
                 s.Venue,
                 s.DurationMinutes,
@@ -153,6 +156,7 @@ public static class TrainingEndpoints
             r.MachineName,
             r.Manufacturer,
             r.Model,
+            r.TrainerType,
             r.Trainer,
             r.Venue,
             r.DurationMinutes,
@@ -255,6 +259,7 @@ public static class TrainingEndpoints
                     s.Machine.SerialNumber,
                     LocationName = s.Machine.Location?.Name,
                 },
+            s.TrainerType,
             s.Trainer,
             s.Venue,
             s.DurationMinutes,
@@ -288,6 +293,7 @@ public static class TrainingEndpoints
             SessionDate = request.SessionDate,
             EquipmentId = request.EquipmentId,
             EquipmentTypeId = await TypeAsync(request, db, ct),
+            TrainerType = Blank(request.TrainerType),
             Trainer = Blank(request.Trainer),
             Venue = Blank(request.Venue),
             DurationMinutes = request.DurationMinutes,
@@ -325,6 +331,7 @@ public static class TrainingEndpoints
         session.SessionDate = request.SessionDate;
         session.EquipmentId = request.EquipmentId;
         session.EquipmentTypeId = await TypeAsync(request, db, ct);
+        session.TrainerType = Blank(request.TrainerType);
         session.Trainer = Blank(request.Trainer);
         session.Venue = Blank(request.Venue);
         session.DurationMinutes = request.DurationMinutes;
@@ -391,6 +398,7 @@ public static class TrainingEndpoints
             s.Machine?.Model,
             s.Machine?.SerialNumber,
             s.Machine?.Location?.Name,
+            s.TrainerType,
             s.Trainer,
             s.Venue,
             s.DurationMinutes,
@@ -435,6 +443,11 @@ public static class TrainingEndpoints
         if (request.SessionDate.Year < 2000 || request.SessionDate > today.AddYears(5))
         {
             return (none, Results.BadRequest(new { error = "Give the date of the session." }));
+        }
+
+        if (Blank(request.TrainerType) is { } trainerType && !TrainerKind.IsKnown(trainerType))
+        {
+            return (none, Results.BadRequest(new { error = "The trainer must be from the vendor or manufacturer, or the in-house team." }));
         }
 
         if (request.Trainer?.Trim().Length > MaxTextLength || request.Venue?.Trim().Length > MaxTextLength)

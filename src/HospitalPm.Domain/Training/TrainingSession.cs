@@ -38,7 +38,10 @@ public sealed class TrainingSession
     /// </summary>
     public int? EquipmentId { get; set; }
 
-    /// <summary>Who ran it - one of our own people, or the manufacturer's applications specialist. Free text.</summary>
+    /// <summary>Where the trainer came from: <see cref="TrainerKind.Vendor"/> or <see cref="TrainerKind.InHouse"/>. Null when not said.</summary>
+    public string? TrainerType { get; set; }
+
+    /// <summary>The trainer's name, when it is worth recording. Free text.</summary>
     public string? Trainer { get; set; }
 
     /// <summary>Where it was held - "ICU seminar room". Free text.</summary>

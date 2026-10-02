@@ -8,7 +8,7 @@ import { useHandoff } from '../handoff';
 import { StatusPill } from '../StatusPill';
 import { usePageTitle } from '../pageTitle';
 import { formatDate, formatDateTime } from '../time';
-import { formatMinutes } from '../trainingTypes';
+import { formatMinutes, TRAINER_TYPE_LABEL } from '../trainingTypes';
 import type { TrainingDetail } from '../trainingTypes';
 import { TrainingForm } from './TrainingForm';
 
@@ -154,6 +154,8 @@ export function TrainingSessionPage() {
         <dl className="detail">
           <dt>Date</dt>
           <dd>{formatDate(session.sessionDate)}</dd>
+          <dt>Trainer from</dt>
+          <dd>{session.trainerType ? TRAINER_TYPE_LABEL[session.trainerType] : <span className="muted">—</span>}</dd>
           <dt>Trainer</dt>
           <dd>{session.trainer ?? <span className="muted">—</span>}</dd>
           <dt>Where</dt>

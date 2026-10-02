@@ -5,7 +5,7 @@ import { useAuth } from '../auth/useAuth';
 import { ROLES } from '../auth/context';
 import { StatusPill } from '../StatusPill';
 import { formatDate } from '../time';
-import { formatMinutes } from '../trainingTypes';
+import { describeTrainer, formatMinutes } from '../trainingTypes';
 import type { TrainingPerson, TrainingRow } from '../trainingTypes';
 import { TrainingForm } from './TrainingForm';
 
@@ -217,7 +217,7 @@ function SessionsTable({ data, filtered }: { data: Paged<TrainingRow> | null; fi
                   <span className="muted">—</span>
                 )}
               </td>
-              <td>{s.trainer ?? <span className="muted">—</span>}</td>
+              <td>{describeTrainer(s.trainerType, s.trainer) ?? <span className="muted">—</span>}</td>
               <td>
                 {s.attendeeCount === 0 ? (
                   <span className="muted">{s.isPlanned ? 'Not yet' : 'No one listed'}</span>
