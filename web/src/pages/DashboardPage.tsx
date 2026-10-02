@@ -105,7 +105,7 @@ export function DashboardPage() {
               tone={data.workOrders.unassigned > 0 ? 'warn' : undefined}
               to="/work-orders?status=10"
             />
-            <Tile label="Open work orders" value={data.workOrders.open} to="/work-orders" />
+            <Tile label="Open service requests" value={data.workOrders.open} to="/work-orders" />
             <Tile label="PMs done this month" value={data.pm.completedThisMonth} to="/pm?status=40" />
             <Tile
               label="PM compliance"
@@ -201,7 +201,7 @@ function NeedsAttention() {
         </tbody>
       </table>
       <p style={{ margin: 0, padding: '0.6rem 0.9rem' }}>
-        <Link to="/work-orders">See all work orders</Link>
+        <Link to="/work-orders">See all service requests</Link>
       </p>
     </div>
   );

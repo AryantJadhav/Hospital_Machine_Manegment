@@ -1,14 +1,15 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
-import { presetPeriods } from '../compliancePeriods';
+import { presetPeriods, recentPeriods } from '../compliancePeriods';
 import { formatHours } from '../hours';
 import { formatRupees, formatRupeesCompact } from '../money';
-import { formatDate, todayAtHospital } from '../time';
+import { formatDate, formatDateTime, todayAtHospital } from '../time';
+import { PRIORITY_LOOK } from '../statusTones';
 import { StatusPill } from '../StatusPill';
 import { Tile } from '../Tile';
 
-type Kind = 'downtime' | 'cost';
+type Kind = 'downtime' | 'cost' | 'work' | 'stock';
 
 type DowntimeMachine = {
   equipmentId: number;
@@ -68,35 +69,112 @@ type CostSummary = {
   totals: { purchase: number; insurance: number; contract: number; parts: number; total: number };
 };
 
+type WorkDonePart = { partNumber: string; name: string; quantity: number; unitCost: number | null };
+
+type WorkDoneItem = {
+  workOrderId: number;
+  number: string;
+  equipmentId: number;
+  assetTag: string;
+  equipmentType: string;
+  location: string;
+  priority: string;
+  fault: string;
+  solution: string | null;
+  doneBy: string;
+  reportedAtUtc: string;
+  resolvedAtUtc: string;
+  hoursToFix: number;
+  downtimeHours: number | null;
+  parts: WorkDonePart[];
+  partsCost: number;
+  partsCostMissing: boolean;
+};
+
+type WorkDonePerson = { userId: number | null; name: string; done: number; averageHoursToFix: number; partsCost: number };
+
+type WorkDoneSummary = {
+  from: string;
+  to: string;
+  countedThrough: string;
+  scope: string;
+  done: number;
+  people: number;
+  averageHoursToFix: number;
+  partsCost: number;
+  byPerson: WorkDonePerson[];
+  items: WorkDoneItem[];
+};
+
+type StockLine = {
+  id: number;
+  partNumber: string;
+  name: string;
+  quantityOnHand: number;
+  unit: string;
+  equipmentType: string | null;
+  supplier: string | null;
+  storageLocation: string | null;
+  unitCost: number | null;
+};
+
+type StockSummary = {
+  outOfStockCount: number;
+  lowStockCount: number;
+  outOfStock: StockLine[];
+  lowStock: StockLine[];
+};
+
 type Place = { id: number; name: string; depth: number };
+type Person = { id: number; fullName: string };
 
 const CUSTOM = 'custom';
 
-const TITLES: Record<Kind, string> = { downtime: 'Downtime', cost: 'Cost' };
+const TITLES: Record<Kind, string> = { downtime: 'Downtime', cost: 'Cost', work: 'Work done', stock: 'Spare part stock' };
+
+/** Where each report lives on the server. */
+const PATH: Record<Kind, string> = { downtime: 'downtime', cost: 'cost', work: 'work-done', stock: 'stock' };
+
+/** The priority names the server sends, as the look each one wears. */
+const PRIORITY_BY_NAME: Record<string, number> = { Low: 10, Medium: 20, High: 30, Critical: 40 };
 
 /**
- * The fleet-wide reports: which machines were down and for how long, and what has been spent on
- * each and on what.
+ * The fleet-wide reports: which machines were down and for how long, what has been spent on each
+ * and on what, and what work was done and by whom.
  *
- * Pick a period and, if wanted, a department; see the headline and the machines behind it, and
- * take away the CSV for a spreadsheet. The period and place are shared by both reports, so
+ * Pick a period and, if wanted, a department; see the headline and the detail behind it, and
+ * take away the CSV for a spreadsheet. The period and place are shared by the reports, so
  * switching between them keeps the question the same.
  */
 export function ReportsPage() {
-  const presets = useMemo(() => presetPeriods(todayAtHospital()), []);
+  const today = useMemo(() => todayAtHospital(), []);
+  const monthly = useMemo(() => presetPeriods(today), [today]);
+  const recent = useMemo(() => recentPeriods(today), [today]);
   const [params, setParams] = useSearchParams();
-  const kind: Kind = params.get('report') === 'cost' ? 'cost' : 'downtime';
+  const reportParam = params.get('report');
+  const kind: Kind =
+    reportParam === 'cost' ? 'cost' : reportParam === 'work' ? 'work' : reportParam === 'stock' ? 'stock' : 'downtime';
 
-  // This month by default: a period still running is the one a head asks about while it matters.
-  const initial = presets.find((p) => p.key === 'this-month') ?? presets[0];
+  // What was done is mostly asked about for a day or a week, so that report offers those first.
+  const presets = useMemo(() => (kind === 'work' ? [...recent, ...monthly] : monthly), [kind, recent, monthly]);
+
+  // Today for the work report, and this month for the others: a period still running is the one
+  // a head asks about while it matters.
+  const initial =
+    (kind === 'work' ? recent.find((p) => p.key === 'today') : monthly.find((p) => p.key === 'this-month')) ??
+    monthly[0];
 
   const [choice, setChoice] = useState(initial.key);
   const [from, setFrom] = useState(initial.from);
   const [to, setTo] = useState(initial.to);
   const [locationId, setLocationId] = useState('');
+  const [userId, setUserId] = useState('');
   const [places, setPlaces] = useState<Place[]>([]);
+  const [people, setPeople] = useState<Person[]>([]);
   const [downtime, setDowntime] = useState<DowntimeSummary | null>(null);
   const [cost, setCost] = useState<CostSummary | null>(null);
+  const [work, setWork] = useState<WorkDoneSummary | null>(null);
+  const [stock, setStock] = useState<StockSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -115,31 +193,59 @@ export function ReportsPage() {
     };
   }, []);
 
+  // The people a fault can be credited to, for the work report's filter. An Admin route, like this page.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await api.get<Person[]>('/api/users');
+        if (!cancelled) setPeople(list);
+      } catch {
+        // The work report still lists everyone without the filter.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const query = useMemo(() => {
     const q = new URLSearchParams({ from, to });
     if (locationId) q.set('locationId', locationId);
+    if (kind === 'work' && userId) q.set('userId', userId);
     return q.toString();
-  }, [from, to, locationId]);
+  }, [from, to, locationId, userId, kind]);
 
   const valid = from !== '' && to !== '' && from <= to;
 
+  // The stock report is the shelf as it is now, so it has no period to be valid or not.
+  const ready = kind === 'stock' || valid;
+
   useEffect(() => {
-    if (!valid) return;
+    if (!ready) return;
     let cancelled = false;
     (async () => {
       setError(null);
       try {
-        if (kind === 'downtime') {
+        if (kind === 'stock') {
+          const s = await api.get<StockSummary>('/api/reports/stock');
+          if (!cancelled) setStock(s);
+        } else if (kind === 'downtime') {
           const s = await api.get<DowntimeSummary>(`/api/reports/downtime?${query}`);
           if (!cancelled) setDowntime(s);
-        } else {
+        } else if (kind === 'cost') {
           const s = await api.get<CostSummary>(`/api/reports/cost?${query}`);
           if (!cancelled) setCost(s);
+        } else {
+          const s = await api.get<WorkDoneSummary>(`/api/reports/work-done?${query}`);
+          if (!cancelled) setWork(s);
         }
       } catch (e) {
         if (!cancelled) {
           setDowntime(null);
           setCost(null);
+          setWork(null);
+          setStock(null);
           setError(e instanceof Error ? e.message : 'Could not work out the report.');
         }
       }
@@ -147,11 +253,11 @@ export function ReportsPage() {
     return () => {
       cancelled = true;
     };
-  }, [kind, query, valid]);
+  }, [kind, query, ready]);
 
-  function pick(key: string) {
+  function pick(key: string, among = presets) {
     setChoice(key);
-    const p = presets.find((x) => x.key === key);
+    const p = among.find((x) => x.key === key);
     if (p) {
       setFrom(p.from);
       setTo(p.to);
@@ -162,16 +268,23 @@ export function ReportsPage() {
     const q = new URLSearchParams(params);
     q.set('report', next);
     setParams(q, { replace: true });
+
+    // A day or a week only exists for the work report; leaving it for another, go back to the month.
+    // And arriving at it from the untouched default, start with today, which is what it is mostly asked.
+    if (next === 'work' && choice === 'this-month') pick('today', [...recent, ...monthly]);
+    if (next !== 'work' && recent.some((p) => p.key === choice)) pick('this-month', monthly);
   }
 
   async function download() {
     setBusy(true);
     setError(null);
     try {
-      await api.download(
-        `/api/reports/${kind}/report.csv?${query}`,
-        `${kind}-${from.replaceAll('-', '')}-${to.replaceAll('-', '')}.csv`,
-      );
+      await (kind === 'stock'
+        ? api.download('/api/reports/stock/report.csv', `spare-part-stock-${today.replaceAll('-', '')}.csv`)
+        : api.download(
+            `/api/reports/${PATH[kind]}/report.csv?${query}`,
+            `${PATH[kind]}-${from.replaceAll('-', '')}-${to.replaceAll('-', '')}.csv`,
+          ));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not download the report.');
     } finally {
@@ -179,7 +292,8 @@ export function ReportsPage() {
     }
   }
 
-  const summary = kind === 'downtime' ? downtime : cost;
+  // The ones with a period to say; the stock report is simply as of now.
+  const summary = kind === 'downtime' ? downtime : kind === 'cost' ? cost : kind === 'work' ? work : null;
 
   return (
     <div className="page">
@@ -189,10 +303,14 @@ export function ReportsPage() {
           <p className="muted">
             {kind === 'downtime'
               ? 'Which machines were down, for how long, and how often.'
-              : 'What has been spent on each machine, and on what.'}
+              : kind === 'cost'
+                ? 'What has been spent on each machine, and on what.'
+                : kind === 'work'
+                  ? 'The faults that were fixed, what was done, and who did it.'
+                  : 'The spare parts that are out of stock, and the ones running low, as they stand now.'}
           </p>
         </div>
-        <button className="btn btn-primary" disabled={!valid || busy} onClick={() => void download()}>
+        <button className="btn btn-primary" disabled={!ready || busy} onClick={() => void download()}>
           {busy ? 'Preparing…' : 'Download CSV'}
         </button>
       </header>
@@ -211,6 +329,8 @@ export function ReportsPage() {
         ))}
       </div>
 
+      {/* The shelf as it is now: there is no period or place to choose. */}
+      {kind !== 'stock' && (
       <div className="filters card">
         <label className="field">
           <span>Period</span>
@@ -260,9 +380,22 @@ export function ReportsPage() {
             ))}
           </select>
         </label>
-      </div>
 
-      {!valid && from !== '' && to !== '' && (
+        {kind === 'work' && (
+          <label className="field">
+            <span>Done by</span>
+            <select aria-label="Done by" value={userId} onChange={(e) => setUserId(e.target.value)}>
+              <option value="">Everyone</option>
+              {people.map((p) => (
+                <option key={p.id} value={p.id}>{p.fullName}</option>
+              ))}
+            </select>
+          </label>
+        )}
+      </div>
+      )}
+
+      {kind !== 'stock' && !valid && from !== '' && to !== '' && (
         <p className="alert alert-error" role="alert">The end of the period is before its start.</p>
       )}
 
@@ -279,7 +412,176 @@ export function ReportsPage() {
 
       {kind === 'downtime' && downtime && <DowntimeView report={downtime} />}
       {kind === 'cost' && cost && <CostView report={cost} />}
+      {kind === 'work' && work && <WorkDoneView report={work} />}
+      {kind === 'stock' && stock && <StockView report={stock} />}
     </div>
+  );
+}
+
+function StockView({ report }: { report: StockSummary }) {
+  if (report.outOfStockCount === 0 && report.lowStockCount === 0) {
+    return <p className="alert alert-ok" role="status">Every spare part has more than 5 on the shelf.</p>;
+  }
+
+  return (
+    <>
+      <div className="tiles">
+        <Tile
+          label="Out of stock"
+          value={report.outOfStockCount}
+          tone={report.outOfStockCount > 0 ? 'danger' : undefined}
+          hint="None left"
+        />
+        <Tile
+          label="Low stock"
+          value={report.lowStockCount}
+          tone={report.lowStockCount > 0 ? 'warn' : undefined}
+          hint="1 to 5 left"
+        />
+      </div>
+
+      <StockTable title="Out of stock" empty="No spare part is out of stock." lines={report.outOfStock} />
+      <StockTable title="Low stock" empty="No spare part is running low." lines={report.lowStock} />
+    </>
+  );
+}
+
+function StockTable({ title, empty, lines }: { title: string; empty: string; lines: StockLine[] }) {
+  return (
+    <section className="card table-wrap">
+      <table className="table">
+        <caption className="table-caption">{title}</caption>
+        <thead>
+          <tr>
+            <th>Part</th>
+            <th className="num">In stock</th>
+            <th>Used in</th>
+            <th>Supplier</th>
+            <th>Where it&rsquo;s kept</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lines.length === 0 && (
+            <tr><td colSpan={5} className="empty">{empty}</td></tr>
+          )}
+          {lines.map((l) => (
+            <tr key={l.id}>
+              <td>
+                <strong>{l.name}</strong>
+                <div className="mono muted">{l.partNumber}</div>
+              </td>
+              <td className="num">{l.quantityOnHand} {l.unit}</td>
+              <td>{l.equipmentType ?? <span className="muted">Not specific to one type</span>}</td>
+              <td>
+                {l.supplier ?? <span className="muted">—</span>}
+                {l.unitCost != null && <div className="muted">{formatRupees(l.unitCost)} / {l.unit}</div>}
+              </td>
+              <td>{l.storageLocation ?? <span className="muted">—</span>}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function WorkDoneView({ report }: { report: WorkDoneSummary }) {
+  if (report.items.length === 0) {
+    return <p className="alert alert-info">No work was finished in this period.</p>;
+  }
+
+  return (
+    <>
+      <div className="tiles">
+        <Tile label="Faults fixed" value={report.done} />
+        <Tile label="People" value={report.people} />
+        <Tile label="Average time to fix" value={formatHours(report.averageHoursToFix)} hint="From reported to resolved" />
+        <Tile label="Parts used" value={formatRupees(report.partsCost)} />
+      </div>
+
+      <section className="card table-wrap">
+        <table className="table">
+          <caption className="table-caption">Who did the work</caption>
+          <thead>
+            <tr>
+              <th>Person</th>
+              <th className="num">Faults fixed</th>
+              <th className="num">Average time to fix</th>
+              <th className="num">Parts used</th>
+            </tr>
+          </thead>
+          <tbody>
+            {report.byPerson.map((p) => (
+              <tr key={p.name}>
+                <td>{p.name}</td>
+                <td className="num">{p.done}</td>
+                <td className="num">{formatHours(p.averageHoursToFix)}</td>
+                <td className="num">{formatRupees(p.partsCost)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+
+      <section className="card table-wrap">
+        <table className="table">
+          <caption className="table-caption">Work done, latest first</caption>
+          <thead>
+            <tr>
+              <th>Service request</th>
+              <th>Machine</th>
+              <th>Fault</th>
+              <th>What was done</th>
+              <th>Done by</th>
+              <th>Resolved</th>
+              <th className="num">Took</th>
+              <th>Parts</th>
+            </tr>
+          </thead>
+          <tbody>
+            {report.items.map((i) => (
+              <tr key={i.workOrderId}>
+                <td>
+                  <Link
+                    to={`/work-orders/${i.workOrderId}`}
+                    state={{ from: '/reports?report=work' }}
+                    className="mono"
+                  >
+                    {i.number}
+                  </Link>
+                  <div>
+                    <StatusPill look={PRIORITY_LOOK[PRIORITY_BY_NAME[i.priority] ?? 20]}>{i.priority}</StatusPill>
+                  </div>
+                </td>
+                <MachineCell id={i.equipmentId} tag={i.assetTag} type={i.equipmentType} />
+                <td>{i.fault}</td>
+                <td>{i.solution ?? <span className="muted">—</span>}</td>
+                <td>{i.doneBy}</td>
+                <td>{formatDateTime(i.resolvedAtUtc)}</td>
+                <td className="num">{formatHours(i.hoursToFix)}</td>
+                <td>
+                  {i.parts.length === 0 ? (
+                    <span className="muted">None</span>
+                  ) : (
+                    <>
+                      {i.parts.map((p) => (
+                        <div key={`${p.partNumber}-${p.quantity}`}>
+                          <span className="mono">{p.quantity}× {p.partNumber}</span>
+                        </div>
+                      ))}
+                      <div className="muted">
+                        {formatRupees(i.partsCost)}
+                        {i.partsCostMissing && ' · some cost not recorded'}
+                      </div>
+                    </>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+    </>
   );
 }
 
@@ -406,7 +708,7 @@ function CostView({ report }: { report: CostSummary }) {
     return (
       <p className="alert alert-info">
         No cost is recorded for any machine here. Add a purchase cost, insurance or maintenance contract
-        to a machine's record, or use a spare part on a work order.
+        to a machine's record, or use a spare part on a service request.
       </p>
     );
   }

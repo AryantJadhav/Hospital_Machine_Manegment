@@ -611,6 +611,16 @@ a.tile:hover { border-color: var(--border-strong); }
   .wo-page { grid-template-columns: 1fr; }
 }
 
+/* The PDF reader, filling the page below the header. */
+.pdf-preview {
+  width: 100%;
+  height: calc(100vh - 11rem);
+  min-height: 28rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
 .row-clickable { cursor: pointer; }
 .row-clickable:hover td { background: var(--row-hover); }
 

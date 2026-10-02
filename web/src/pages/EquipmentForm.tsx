@@ -322,16 +322,20 @@ export function EquipmentForm({
         )}
       </label>
 
-      <label className="stack">
-        <span>Status</span>
-        <select
-          className="field"
-          value={form.status}
-          onChange={(e) => set('status', Number(e.target.value))}
-        >
-          {STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-        </select>
-      </label>
+      {/* Asked when a machine is edited, where moving it between In store, In use and Under repair
+          is a real change. A machine being added is simply put in use, so there is nothing to choose. */}
+      {editing && (
+        <label className="stack">
+          <span>Status</span>
+          <select
+            className="field"
+            value={form.status}
+            onChange={(e) => set('status', Number(e.target.value))}
+          >
+            {STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+          </select>
+        </label>
+      )}
 
       <label className="stack">
         <span>Criticality</span>

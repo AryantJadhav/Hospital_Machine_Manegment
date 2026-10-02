@@ -73,7 +73,7 @@ export function WorkOrdersPage() {
       if (mine) query.set('assignee', 'me');
       setData(await api.get<Paged<WorkOrderRow>>(`/api/work-orders?${query}`));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not load work orders.');
+      setError(e instanceof Error ? e.message : 'Could not load service requests.');
     } finally {
       setLoading(false);
     }
@@ -145,12 +145,12 @@ export function WorkOrdersPage() {
     <div className="page">
       <header className="page-head">
         <div>
-          <h1>{mine ? 'My work orders' : 'Work orders'}</h1>
+          <h1>{mine ? 'My service requests' : 'Request Service'}</h1>
           <p className="muted">
             {mine
               ? 'Faults assigned to you that are still to be done.'
               : 'Breakdowns and unscheduled repairs.'}
-            {data && ` ${data.total.toLocaleString('en-IN')} ${data.total === 1 ? 'work order' : 'work orders'}${hasFilters ? ' match.' : '.'}`}
+            {data && ` ${data.total.toLocaleString('en-IN')} ${data.total === 1 ? 'service request' : 'service requests'}${hasFilters ? ' match.' : '.'}`}
           </p>
         </div>
         <button className="btn btn-primary" onClick={() => setReporting(true)}>Report a fault</button>
@@ -163,7 +163,7 @@ export function WorkOrdersPage() {
       {down && (
         <p className="alert alert-info" role="status">
           Showing only the faults that have a machine out of service.{' '}
-          <button className="btn btn-quiet" onClick={() => setParam('down', '')}>Show all work orders</button>
+          <button className="btn btn-quiet" onClick={() => setParam('down', '')}>Show all service requests</button>
         </p>
       )}
 
@@ -191,13 +191,13 @@ export function WorkOrdersPage() {
         <input
           type="search"
           className="grow"
-          aria-label="Search work orders"
-          placeholder="Find a work order: number, asset tag or what was wrong"
+          aria-label="Search service requests"
+          placeholder="Find a service request: number, asset tag or what was wrong"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
         <select
-          aria-label="Whose work orders"
+          aria-label="Whose service requests"
           value={mine ? 'me' : ''}
           onChange={(e) => setParam('assignee', e.target.value)}
         >
@@ -237,7 +237,7 @@ export function WorkOrdersPage() {
             {data && data.items.length === 0 && (
               <tr>
                 <td colSpan={columns} className="empty">
-                  {mine && !hasFilters ? 'Nothing is assigned to you right now.' : 'No work orders match.'}
+                  {mine && !hasFilters ? 'Nothing is assigned to you right now.' : 'No service requests match.'}
                 </td>
               </tr>
             )}
@@ -291,7 +291,6 @@ function ReportForm({
 }) {
   const [equipmentId, setEquipmentId] = useState<number | null>(initial?.id ?? null);
   const [fault, setFault] = useState('');
-  const [priority, setPriority] = useState(20);
   const [busy, setBusy] = useState(false);
 
   async function submit(e: FormEvent) {
@@ -299,10 +298,10 @@ function ReportForm({
     setBusy(true);
     onError(null);
     try {
+      // No priority is asked for here: the server gives a new fault the usual one.
       const created = await api.post<{ id: number; number: string }>('/api/work-orders', {
         equipmentId,
         faultDescription: fault,
-        priority,
       });
       await onDone(created);
     } catch (err) {
@@ -318,15 +317,6 @@ function ReportForm({
 
       <div className="filters">
         <EquipmentPicker value={equipmentId} onChange={setEquipmentId} initialLabel={initial?.label} />
-
-        <label className="field">
-          <span>Priority</span>
-          <select value={priority} onChange={(e) => setPriority(Number(e.target.value))}>
-            {Object.entries(PRIORITY_LABEL).map(([v, label]) => (
-              <option key={v} value={v}>{label}</option>
-            ))}
-          </select>
-        </label>
       </div>
 
       <label className="field">

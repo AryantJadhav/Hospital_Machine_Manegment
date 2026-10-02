@@ -81,7 +81,7 @@ export function StaffPage() {
     // how the wrong person loses their access.
     if (!confirm(
       `Stop ${person.fullName} signing in?\n\n`
-      + 'Their PM records, signatures and work orders stay exactly as they are — '
+      + 'Their PM records, signatures and service requests stay exactly as they are — '
       + 'nothing is deleted. Any session they have open ends immediately.\n\n'
       + 'You can let them back in later.',
     )) return;
@@ -115,7 +115,7 @@ export function StaffPage() {
           <h1>Staff</h1>
           <p className="muted">
             Who can sign in, and what they are allowed to do. People are never deleted —
-            their PM signatures and work orders have to stay readable — so someone who
+            their PM signatures and service requests have to stay readable — so someone who
             leaves is stopped from signing in instead.
           </p>
         </div>

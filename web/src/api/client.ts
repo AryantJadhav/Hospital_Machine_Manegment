@@ -168,6 +168,29 @@ export const api = {
       throw err;
     }
   },
+  /**
+   * Fetches a file with the sign-in and hands back its bytes, for a page that shows it itself:
+   * a preview shown in the page, before anyone decides to keep a copy.
+   */
+  blob: async (path: string): Promise<Blob> => {
+    const send = () =>
+      fetch(path, { headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {} });
+    let res = await send();
+    if (res.status === 401 && (await refresh())) res = await send();
+
+    if (!res.ok) {
+      let message = `Could not open the file (${res.status})`;
+      try {
+        const body = (await res.json()) as Record<string, unknown>;
+        if (typeof body?.error === 'string') message = body.error;
+      } catch {
+        /* non-JSON error body */
+      }
+      throw new ApiError(res.status, message);
+    }
+
+    return res.blob();
+  },
   upload: <T>(path: string, file: File) => {
     const form = new FormData();
     form.append('file', file);

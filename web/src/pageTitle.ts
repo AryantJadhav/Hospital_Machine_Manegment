@@ -6,7 +6,7 @@ const PRODUCT = 'Hospital PM';
 const TITLES: [prefix: string, title: string][] = [
   ['/dashboard', 'Today'],
   ['/pm', 'Preventive maintenance'],
-  ['/work-orders', 'Work orders'],
+  ['/work-orders', 'Request Service'],
   ['/equipment', 'Equipment'],
   ['/equipment-types', 'Equipment types'],
   ['/locations', 'Locations'],

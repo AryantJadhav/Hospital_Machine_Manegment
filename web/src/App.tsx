@@ -25,6 +25,7 @@ import { CompliancePage } from './pages/CompliancePage';
 import { ReportsPage } from './pages/ReportsPage';
 import { ExportPage } from './pages/ExportPage';
 import { ChecklistsPage } from './pages/ChecklistsPage';
+import { ServiceReportPreviewPage } from './pages/ServiceReportPreviewPage';
 import { WorkOrderPage } from './pages/WorkOrderPage';
 import { WorkOrdersPage } from './pages/WorkOrdersPage';
 import { AdminMenu } from './AdminMenu';
@@ -80,7 +81,7 @@ function Shell() {
           </NavLink>
 
           <NavLink to="/work-orders" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-            Work orders
+            Request Service
           </NavLink>
 
           <NavLink to="/equipment" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
@@ -153,6 +154,7 @@ function Shell() {
           <Route path="/pm/:taskId/do" element={<PmDoPage />} />
           <Route path="/work-orders" element={<WorkOrdersPage />} />
           <Route path="/work-orders/:id" element={<WorkOrderPage />} />
+          <Route path="/work-orders/:id/report" element={<ServiceReportPreviewPage />} />
           <Route path="/equipment" element={<EquipmentListPage />} />
           <Route path="/equipment/:id" element={<EquipmentDetailPage />} />
           <Route path="/locations" element={<LocationsPage />} />

@@ -317,6 +317,8 @@ app.MapPilotMetricsEndpoints();
 app.MapPmComplianceEndpoints();
 app.MapDowntimeReportEndpoints();
 app.MapCostReportEndpoints();
+app.MapWorkDoneReportEndpoints();
+app.MapStockReportEndpoints();
 app.MapExportEndpoints();
 
 app.UseDefaultFiles();

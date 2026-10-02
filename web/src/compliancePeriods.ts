@@ -44,6 +44,31 @@ function financialYear(key: string, label: string, startYear: number): Period {
   };
 }
 
+/** A day moved by some number of days, on plain dates, so no time zone gets a say in it. */
+function addDays(day: string, days: number): string {
+  const [y, m, d] = day.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d + days));
+  return iso(t.getUTCFullYear(), t.getUTCMonth() + 1, t.getUTCDate());
+}
+
+/**
+ * The short periods a department asks about day to day: what was done today, yesterday, this
+ * week. The week runs Monday to Sunday, as a hospital's rota does. `today` is a yyyy-mm-dd string.
+ */
+export function recentPeriods(today: string): Period[] {
+  const [y, m, d] = today.split('-').map(Number);
+  // 0 is Sunday; counted from Monday, so Monday is 0 and Sunday is 6.
+  const sinceMonday = (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7;
+  const monday = addDays(today, -sinceMonday);
+
+  return [
+    { key: 'today', label: 'Today', from: today, to: today },
+    { key: 'yesterday', label: 'Yesterday', from: addDays(today, -1), to: addDays(today, -1) },
+    { key: 'this-week', label: 'This week (Mon–Sun)', from: monday, to: addDays(monday, 6) },
+    { key: 'last-7-days', label: 'Last 7 days', from: addDays(today, -6), to: today },
+  ];
+}
+
 /** `today` is a yyyy-mm-dd string. */
 export function presetPeriods(today: string): Period[] {
   const [y, m] = today.split('-').map(Number);

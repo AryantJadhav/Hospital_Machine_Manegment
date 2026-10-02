@@ -74,18 +74,18 @@ public static class WorkOrderTransitions
     {
         if (from == to)
         {
-            return $"This work order is already {Describe(from)}.";
+            return $"This service request is already {Describe(from)}.";
         }
 
         if (IsTerminal(from))
         {
             return from == WorkOrderStatus.Closed
-                ? "This work order is closed. Raise a new one if the fault has returned."
-                : "This work order was cancelled and cannot be reopened.";
+                ? "This service request is closed. Raise a new one if the fault has returned."
+                : "This service request was cancelled and cannot be reopened.";
         }
 
         var options = From(from).Select(Describe);
-        return $"A work order that is {Describe(from)} can only move to: {string.Join(", ", options)}.";
+        return $"A service request that is {Describe(from)} can only move to: {string.Join(", ", options)}.";
     }
 
     private static string Describe(WorkOrderStatus status) => status switch

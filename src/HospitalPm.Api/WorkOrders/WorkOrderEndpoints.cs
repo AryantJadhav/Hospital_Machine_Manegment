@@ -447,7 +447,7 @@ public static class WorkOrderEndpoints
         if (request.Status == WorkOrderStatus.Cancelled && !CanCancel(principal))
         {
             return Results.Json(
-                new { error = "Only an administrator can cancel a work order. Add a note and ask one to." },
+                new { error = "Only an administrator can cancel a service request. Add a note and ask one to." },
                 statusCode: StatusCodes.Status403Forbidden);
         }
 
@@ -566,7 +566,7 @@ public static class WorkOrderEndpoints
         {
             return Results.Conflict(new
             {
-                error = "This work order is closed. Reopen it, or raise a new one, before recording parts against it.",
+                error = "This service request is closed. Reopen it, or raise a new one, before recording parts against it.",
             });
         }
 
@@ -625,7 +625,7 @@ public static class WorkOrderEndpoints
         {
             return Results.Conflict(new
             {
-                error = "This work order is closed. Reopen it before correcting parts recorded against it.",
+                error = "This service request is closed. Reopen it before correcting parts recorded against it.",
             });
         }
 
@@ -671,7 +671,7 @@ public static class WorkOrderEndpoints
         {
             return Results.Conflict(new
             {
-                error = "This work order is closed. Reopen it, or raise a new one, before adding photos.",
+                error = "This service request is closed. Reopen it, or raise a new one, before adding photos.",
             });
         }
 
@@ -695,7 +695,7 @@ public static class WorkOrderEndpoints
         {
             return Results.BadRequest(new
             {
-                error = $"A work order can have at most {MaxPhotosPerWorkOrder} photos.",
+                error = $"A service request can have at most {MaxPhotosPerWorkOrder} photos.",
             });
         }
 

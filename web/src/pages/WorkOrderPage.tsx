@@ -29,8 +29,8 @@ const CANCELLED = 70;
 
 /** What a person is asked before one of the two changes that cannot be taken back. */
 const CONFIRM: Record<number, string> = {
-  [CLOSED]: 'Close this work order? A closed work order cannot be changed afterwards.',
-  [CANCELLED]: 'Cancel this work order? A cancelled work order cannot be reopened.',
+  [CLOSED]: 'Close this service request? A closed service request cannot be changed afterwards.',
+  [CANCELLED]: 'Cancel this service request? A cancelled service request cannot be reopened.',
 };
 
 /**
@@ -66,7 +66,7 @@ export function WorkOrderPage() {
       setMissing(false);
     } catch (e) {
       if (e instanceof ApiError && e.status === 404) setMissing(true);
-      else setError(e instanceof Error ? e.message : 'Could not open that work order.');
+      else setError(e instanceof Error ? e.message : 'Could not open that service request.');
     } finally {
       setLoading(false);
     }
@@ -116,7 +116,7 @@ export function WorkOrderPage() {
 
   if (!valid) return <Navigate to="/work-orders" replace />;
 
-  const backLabel = from.startsWith('/equipment') ? 'Back to the machine' : 'Back to work orders';
+  const backLabel = from.startsWith('/equipment') ? 'Back to the machine' : 'Back to Request Service';
 
   if (loading) return <div className="page"><p className="muted">Loading…</p></div>;
 
@@ -124,7 +124,7 @@ export function WorkOrderPage() {
     return (
       <div className="page stack">
         {error && <p className="alert alert-error" role="alert">{error}</p>}
-        {missing && <p className="alert alert-error" role="alert">That work order does not exist.</p>}
+        {missing && <p className="alert alert-error" role="alert">That service request does not exist.</p>}
         <div><Link className="btn" to={from}>{backLabel}</Link></div>
       </div>
     );
@@ -144,16 +144,10 @@ export function WorkOrderPage() {
           </p>
         </div>
 
-        <button
-          className="btn"
-          onClick={() =>
-            void api
-              .download(`/api/reports/work-orders/${order.id}/report.pdf`, `${order.number}.pdf`)
-              .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Could not make the service report.'))
-          }
-        >
-          Download service report
-        </button>
+        {/* A preview in a tab of its own first; downloading is a choice made there. */}
+        <a className="btn" href={`/work-orders/${order.id}/report`} target="_blank" rel="noopener">
+          View service report
+        </a>
       </header>
 
       <div className="row">
@@ -180,10 +174,12 @@ export function WorkOrderPage() {
             </p>
           </section>
 
-          <Solution order={order} act={act} onResolved={() => resolved(order.number)} />
+          <Solution order={order} />
           <Parts order={order} isTerminal={isTerminal} act={act} />
           <Photos order={order} isTerminal={isTerminal} canRemove={canAssign} act={act} />
           <History order={order} act={act} />
+          {/* Last, because it is the last thing done: the job is finished, then it is resolved. */}
+          <ResolveForm order={order} act={act} onResolved={() => resolved(order.number)} />
         </div>
 
         <div className="stack">
@@ -195,12 +191,48 @@ export function WorkOrderPage() {
   );
 }
 
-/** What was wrong and what was done. It goes on the service report, so it is not optional to resolve. */
-function Solution({ order, act, onResolved }: { order: WorkOrderDetail; act: Act; onResolved: () => void }) {
-  const [resolution, setResolution] = useState('');
+/** What was done, once it has been said. Writing it, and resolving, is the last thing on the page. */
+function Solution({ order }: { order: WorkOrderDetail }) {
+  const canResolve = order.allowedTransitions.includes(RESOLVED);
+
+  return (
+    <section className="card stack">
+      <h2 className="section-h">Solution</h2>
+
+      {order.resolutionNotes && (
+        <>
+          <p style={{ margin: 0 }}>{order.resolutionNotes}</p>
+          {order.resolvedAtUtc && (
+            <p className="muted" style={{ margin: 0 }}>Resolved {formatDateTime(order.resolvedAtUtc)}</p>
+          )}
+        </>
+      )}
+
+      {!order.resolutionNotes && (
+        <p className="muted" style={{ margin: 0 }}>
+          {canResolve
+            ? 'Not resolved yet. When the work is done, say what was wrong and what was done at the bottom of this page.'
+            : order.allowedTransitions.length === 0
+              ? 'No solution was recorded.'
+              : 'Not resolved yet. Once the work is In progress, you can say what was done and resolve it at the bottom of this page.'}
+        </p>
+      )}
+    </section>
+  );
+}
+
+/**
+ * The last step of the job, so it is the last thing on the page: parts drawn and photos taken
+ * first, then what was wrong and what was done. It goes on the service report, so it is not
+ * optional to resolve.
+ */
+function ResolveForm({ order, act, onResolved }: { order: WorkOrderDetail; act: Act; onResolved: () => void }) {
+  // A work order that was resolved and then reopened keeps its earlier words to start from.
+  const [resolution, setResolution] = useState(order.resolutionNotes ?? '');
   const [problem, setProblem] = useState<string | null>(null);
   const box = useRef<HTMLTextAreaElement>(null);
-  const canResolve = order.allowedTransitions.includes(RESOLVED);
+
+  if (!order.allowedTransitions.includes(RESOLVED)) return null;
 
   // The button stays clickable when the box is empty and says what is missing. A greyed-out
   // button explained only by a placeholder reads as broken.
@@ -217,47 +249,25 @@ function Solution({ order, act, onResolved }: { order: WorkOrderDetail; act: Act
 
   return (
     <section className="card stack">
-      <h2 className="section-h">Solution</h2>
-
-      {order.resolutionNotes && (
-        <>
-          <p style={{ margin: 0 }}>{order.resolutionNotes}</p>
-          {order.resolvedAtUtc && (
-            <p className="muted" style={{ margin: 0 }}>Resolved {formatDateTime(order.resolvedAtUtc)}</p>
-          )}
-        </>
-      )}
-
-      {!order.resolutionNotes && canResolve && (
-        <>
-          <label className="field">
-            <span>What was wrong and what you did</span>
-            <textarea
-              ref={box}
-              rows={4}
-              aria-invalid={problem !== null}
-              placeholder="Required to resolve. It goes on the service report."
-              value={resolution}
-              onChange={(e) => {
-                setResolution(e.target.value);
-                if (e.target.value.trim()) setProblem(null);
-              }}
-            />
-          </label>
-          {problem && <p className="alert alert-error" role="alert">{problem}</p>}
-          <div>
-            <button className="btn btn-primary" onClick={resolve}>Resolve and return to service</button>
-          </div>
-        </>
-      )}
-
-      {!order.resolutionNotes && !canResolve && (
-        <p className="muted" style={{ margin: 0 }}>
-          {order.allowedTransitions.length === 0
-            ? 'No solution was recorded.'
-            : 'Not resolved yet. Once the work is In progress, say here what was wrong and what was done.'}
-        </p>
-      )}
+      <h2 className="section-h">Resolve</h2>
+      <label className="field">
+        <span>What was wrong and what you did</span>
+        <textarea
+          ref={box}
+          rows={4}
+          aria-invalid={problem !== null}
+          placeholder="Required to resolve. It goes on the service report."
+          value={resolution}
+          onChange={(e) => {
+            setResolution(e.target.value);
+            if (e.target.value.trim()) setProblem(null);
+          }}
+        />
+      </label>
+      {problem && <p className="alert alert-error" role="alert">{problem}</p>}
+      <div>
+        <button className="btn btn-primary" onClick={resolve}>Resolve and return to service</button>
+      </div>
     </section>
   );
 }
@@ -411,7 +421,7 @@ function Photos({
         continue;
       }
       if (next.length - photoFiles.length >= room) {
-        setPhotoError(`A work order can have at most ${MAX_PHOTOS} photos.`);
+        setPhotoError(`A service request can have at most ${MAX_PHOTOS} photos.`);
         break;
       }
       setPhotoError(null);
@@ -633,7 +643,7 @@ function Actions({
 
       {isTerminal && (
         <p className="muted" style={{ margin: 0 }}>
-          This work order is {WORK_ORDER_LABEL[order.status].toLowerCase()}, so it can no longer be changed.
+          This service request is {WORK_ORDER_LABEL[order.status].toLowerCase()}, so it can no longer be changed.
         </p>
       )}
 

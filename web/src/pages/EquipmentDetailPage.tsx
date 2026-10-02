@@ -188,7 +188,7 @@ export function EquipmentDetailPage() {
       [
         `Condemn ${data?.equipment.assetTag}?`,
         '',
-        'The machine stays on the register so its PM certificates and work-order',
+        'The machine stays on the register so its PM certificates and service request',
         'history remain readable — nothing is deleted.',
         '',
         'But its preventive maintenance stops: no further PM tasks will be',
@@ -465,7 +465,7 @@ export function EquipmentDetailPage() {
           {spend.spend.total <= 0 && spend.spend.policies.length === 0 && spend.spend.parts.length === 0 ? (
             <p className="muted" style={{ margin: 0 }}>
               No cost is recorded for this machine yet. Add its cost, insurance or maintenance contract with
-              Edit, or record a spare part on one of its work orders.
+              Edit, or record a spare part on one of its service requests.
             </p>
           ) : (
             <>
@@ -639,16 +639,15 @@ export function EquipmentDetailPage() {
 
             <div className="stack" style={{ gap: '0.35rem', alignItems: 'flex-end' }}>
               <StatusPill look={WORK_ORDER_LOOK[w.status]}>{WORK_ORDER_LABEL[w.status]}</StatusPill>
-              <button
+              <a
                 className="btn btn-quiet"
-                onClick={() =>
-                  void api
-                    .download(`/api/reports/work-orders/${w.id}/report.pdf`, `${w.number}.pdf`)
-                    .catch((err: unknown) => setActionError(err instanceof Error ? err.message : 'Could not make the service report.'))
-                }
+                href={`/work-orders/${w.id}/report`}
+                target="_blank"
+                rel="noopener"
+                aria-label={`View the service report for ${w.number}`}
               >
                 Report
-              </button>
+              </a>
             </div>
           </div>
         ))}
