@@ -113,8 +113,8 @@ public sealed class PermissionTests(PostgresFixture fixture) : IAsyncLifetime, I
         string[] floor =
         [
             Permissions.RegisterView, Permissions.SparePartsView, Permissions.ChecklistsView, Permissions.TrainingView,
-            Permissions.PmWork, Permissions.WorkOrdersView, Permissions.WorkOrdersReport, Permissions.WorkOrdersWork,
-            Permissions.EquipmentMove,
+            Permissions.PmWork, Permissions.WorkOrdersView, Permissions.WorkOrdersReport, Permissions.WorkOrdersNote,
+            Permissions.WorkOrdersWork, Permissions.EquipmentMove,
         ];
         Assert.True(engineer.SetEquals(floor));
 
@@ -142,9 +142,32 @@ public sealed class PermissionTests(PostgresFixture fixture) : IAsyncLifetime, I
     }
 
     [Fact]
-    public void A_department_user_holds_nothing_until_their_departments_are_set_up()
+    public void A_department_user_may_see_their_own_departments_report_a_fault_and_answer_about_it_and_nothing_more()
     {
-        Assert.Empty(RolePermissions.For(Roles.DepartmentUser));
+        var ward = RolePermissions.For(Roles.DepartmentUser);
+
+        Assert.True(ward.SetEquals(
+        [
+            Permissions.DepartmentView, Permissions.WorkOrdersView, Permissions.WorkOrdersReport, Permissions.WorkOrdersNote,
+        ]));
+
+        // The whole register is what limits them to their own part of it: they must not hold it.
+        Assert.DoesNotContain(Permissions.RegisterView, ward);
+        Assert.DoesNotContain(Permissions.WorkOrdersWork, ward);
+        Assert.DoesNotContain(Permissions.SparePartsView, ward);
+        Assert.DoesNotContain(Permissions.ReportsView, ward);
+    }
+
+    [Fact]
+    public void No_role_that_works_across_the_whole_hospital_is_limited_to_departments()
+    {
+        // Being limited to departments means holding DepartmentView and not RegisterView; only the ward role does.
+        foreach (var role in new[] { Roles.Developer, Roles.BmeHead, Roles.BmeEngineer })
+        {
+            Assert.Contains(Permissions.RegisterView, RolePermissions.For(role));
+        }
+
+        Assert.DoesNotContain(Permissions.DepartmentView, RolePermissions.For(Roles.ItAdmin));
     }
 
     [Fact]
@@ -197,7 +220,8 @@ public sealed class PermissionTests(PostgresFixture fixture) : IAsyncLifetime, I
         Assert.Equal(0, engineerMe.GetProperty("manageableRoles").GetArrayLength());
 
         var departmentMe = await department.GetFromJsonAsync<JsonElement>("/api/auth/me");
-        Assert.Equal(0, departmentMe.GetProperty("permissions").GetArrayLength());
+        Assert.Equal(RolePermissions.For(Roles.DepartmentUser).Count, departmentMe.GetProperty("permissions").GetArrayLength());
+        Assert.Equal(0, departmentMe.GetProperty("departments").GetArrayLength());
     }
 
     /// <summary>

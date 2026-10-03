@@ -48,7 +48,7 @@ public static class WorkOrderEndpoints
         // raise a ticket phones the biomedical department instead, and the
         // fault never enters the record at all.
         group.MapPost("/", ReportAsync).RequirePermission(Permissions.WorkOrdersReport);
-        group.MapPost("/{id:int}/notes", AddNoteAsync).RequirePermission(Permissions.WorkOrdersWork);
+        group.MapPost("/{id:int}/notes", AddNoteAsync).RequirePermission(Permissions.WorkOrdersNote);
         group.MapPost("/{id:int}/status", ChangeStatusAsync).RequirePermission(Permissions.WorkOrdersWork);
         group.MapPost("/{id:int}/resolve", ResolveAsync).RequirePermission(Permissions.WorkOrdersWork);
 
@@ -62,7 +62,7 @@ public static class WorkOrderEndpoints
         // authority as a note. Removing one is an Administrator's, the same
         // as a PM's report file: it is evidence, not for whoever holds the
         // list, but a photo that should never have been taken has to go.
-        group.MapPost("/{id:int}/photos", AddPhotosAsync).DisableAntiforgery().RequirePermission(Permissions.WorkOrdersWork);
+        group.MapPost("/{id:int}/photos", AddPhotosAsync).DisableAntiforgery().RequirePermission(Permissions.WorkOrdersNote);
         group.MapGet("/photos/{attachmentId:int}", DownloadPhotoAsync);
         group.MapDelete("/photos/{attachmentId:int}", DeletePhotoAsync)
             .RequirePermission(Permissions.AttachmentsDelete);
@@ -198,6 +198,7 @@ public static class WorkOrderEndpoints
         int id, HospitalPmDbContext db, ClaimsPrincipal principal, PermissionService permissions, TimeProvider clock, CancellationToken ct)
     {
         var mayCancel = await permissions.CanAsync(principal, Permissions.WorkOrdersCancel, ct);
+        var mayWork = await permissions.CanAsync(principal, Permissions.WorkOrdersWork, ct);
 
         var order = await db.WorkOrders.AsNoTracking()
             .Include(w => w.Equipment)!.ThenInclude(e => e!.EquipmentType)
@@ -230,6 +231,9 @@ public static class WorkOrderEndpoints
             ? await db.Users.AsNoTracking().Where(u => u.Id == assigneeId).Select(u => u.FullName).FirstOrDefaultAsync(ct)
             : null;
 
+        // A person in another department is told which parts were used, and not what they cost.
+        var hideCosts = db.IsScoped;
+
         var partsUsed = await db.WorkOrderParts.AsNoTracking()
             .Where(p => p.WorkOrderId == id)
             .OrderBy(p => p.UsedAtUtc)
@@ -240,7 +244,7 @@ public static class WorkOrderEndpoints
                 p.SparePart!.PartNumber,
                 p.SparePart.Name,
                 p.QuantityUsed,
-                p.UnitCostAtUse,
+                UnitCostAtUse = hideCosts ? (decimal?)null : p.UnitCostAtUse,
                 p.UsedByUserId,
                 p.UsedAtUtc,
             })
@@ -296,9 +300,11 @@ public static class WorkOrderEndpoints
             // Told to the client so a UI offers only what will actually work -
             // for this caller. Cancelling is left out for anyone but an
             // administrator, so the button is not offered only to be refused.
-            allowedTransitions = WorkOrderTransitions.From(order.Status)
-                .Where(s => s != WorkOrderStatus.Cancelled || mayCancel)
-                .ToList(),
+            allowedTransitions = !mayWork
+                ? []
+                : WorkOrderTransitions.From(order.Status)
+                    .Where(s => s != WorkOrderStatus.Cancelled || mayCancel)
+                    .ToList(),
             notes,
             partsUsed,
             photos,

@@ -22,6 +22,7 @@ public static class PermissionCatalog
         new(Permissions.PmWork, "Looking", "See and do PM", "The PM list, recording a PM, and its certificate."),
 
         new(Permissions.WorkOrdersReport, "Everyday work", "Report a fault", "Open a new service request."),
+        new(Permissions.WorkOrdersNote, "Everyday work", "Add a note or photo to a request", "Answer what the engineer asks, and show what is wrong."),
         new(Permissions.WorkOrdersWork, "Everyday work", "Work a service request", "Notes, status, parts used, photos, and marking it resolved."),
         new(Permissions.EquipmentMove, "Everyday work", "Move a machine", "Record that a machine is now somewhere else."),
 

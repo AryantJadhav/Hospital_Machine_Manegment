@@ -7,6 +7,8 @@ export type CurrentUser = {
   roles: string[];
   /** What the server will let this person do. The screen shows what is allowed and no more. */
   permissions: string[];
+  /** For a department user: the places they were given, so the screen can say whose equipment it shows. */
+  departments: string[];
   /** The roles this person may give to an account on the Staff page. */
   manageableRoles: string[];
   /** The roles whose accounts this person may stop from signing in, and let back in. */
@@ -56,7 +58,7 @@ export const ROLE_HELP: Record<string, string> = {
   ItAdmin: "The hospital's IT team: staff accounts, backups, updates, the licence and diagnostics.",
   BmeHead: 'Head of Biomedical: the register, schedules, checklists, spare parts, training, reports and staff.',
   BmeEngineer: 'Works the floor: PM rounds, faults, and reading the register. Cannot change what the department has committed to.',
-  DepartmentUser: 'Reports faults on the equipment of their own department. Cannot read anything yet: departments are set up in a later step.',
+  DepartmentUser: 'Reports faults on the equipment of their own departments, and follows them. Sees nothing outside the departments they are given.',
 };
 
 /**
@@ -66,6 +68,8 @@ export const ROLE_HELP: Record<string, string> = {
  */
 export const PERMISSIONS = {
   registerView: 'register.view',
+  departmentView: 'department.view',
+  workOrdersNote: 'work-orders.note',
   sparePartsView: 'spare-parts.view',
   checklistsView: 'checklists.view',
   trainingView: 'training.view',

@@ -24,6 +24,20 @@ public static class Permissions
     public const string TrainingView = "training.view";
     public const string PmWork = "pm.work";
     public const string WorkOrdersView = "work-orders.view";
+
+    /// <summary>
+    /// Add a note or a photo to a service request. Held by everyone who may report a fault, so the
+    /// person who raised one can answer what the engineer asks. Resolving it, changing its status
+    /// and drawing parts for it are <see cref="WorkOrdersWork"/>, which a department user does not hold.
+    /// </summary>
+    public const string WorkOrdersNote = "work-orders.note";
+
+    /// <summary>
+    /// See the equipment of one's own departments, and nothing outside them. Not a section that can
+    /// be given: it is what makes a person a department user, and it is held with no
+    /// <see cref="RegisterView"/>, which is how the system knows to limit what they see.
+    /// </summary>
+    public const string DepartmentView = "department.view";
     public const string WorkOrdersReport = "work-orders.report";
     public const string WorkOrdersWork = "work-orders.work";
     public const string EquipmentMove = "equipment.move";
@@ -63,7 +77,7 @@ public static class Permissions
     public static readonly IReadOnlyList<string> All =
     [
         RegisterView, SparePartsView, ChecklistsView, TrainingView, PmWork,
-        WorkOrdersView, WorkOrdersReport, WorkOrdersWork, EquipmentMove,
+        WorkOrdersView, WorkOrdersReport, WorkOrdersNote, WorkOrdersWork, EquipmentMove, DepartmentView,
         EquipmentEdit, EquipmentTypesEdit, LocationsEdit, LabelsPrint, DataImport, DataExport,
         ChecklistsEdit, PmManage, WorkOrdersAssign, WorkOrdersCancel, AttachmentsDelete,
         SparePartsEdit, TrainingEdit, ReportsView,

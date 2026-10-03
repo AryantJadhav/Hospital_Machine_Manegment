@@ -17,7 +17,9 @@ public static class LookupEndpoints
     {
         var group = app.MapGroup("/api/lookups")
             .WithTags("Lookups")
-            .RequirePermission(Permissions.RegisterView);
+            // The register's readers, a department user for their own part (the context hides the other
+            // departments' places), and whoever looks after staff, who must be able to name a department.
+            .RequireAnyPermission(Permissions.RegisterView, Permissions.DepartmentView, Permissions.StaffManage);
 
         group.MapGet("/equipment-types", async (HospitalPmDbContext db, CancellationToken ct) =>
             Results.Ok(await db.EquipmentTypes

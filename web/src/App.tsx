@@ -7,6 +7,7 @@ import { useAuth } from './auth/useAuth';
 import { PERMISSIONS, ROLE_LABEL } from './auth/context';
 import { LoginPage } from './pages/LoginPage';
 import { EquipmentListPage } from './pages/EquipmentListPage';
+import { DepartmentMachinePage } from './pages/DepartmentMachinePage';
 import { EquipmentDetailPage } from './pages/EquipmentDetailPage';
 import { EquipmentTypesPage } from './pages/EquipmentTypesPage';
 import { SparePartsPage } from './pages/SparePartsPage';
@@ -62,6 +63,8 @@ function Landing() {
   const { may } = useAuth();
   const { state } = useLocation();
   if (may(PERMISSIONS.registerView)) return <Navigate to="/dashboard" replace state={state} />;
+  // A person from another department starts at their own service requests.
+  if (may(PERMISSIONS.workOrdersView)) return <Navigate to="/work-orders" replace state={state} />;
   if (may(PERMISSIONS.staffManage)) return <Navigate to="/staff" replace state={state} />;
   return (
     <div className="page stack">
@@ -82,6 +85,8 @@ function Shell() {
   // A page for people who may use it; anyone else is sent to their own starting page.
   const needs = (permission: string, page: ReactNode) =>
     may(permission) ? page : <Elsewhere notice={ADMIN_ONLY} />;
+  const needsAny = (permissions: string[], page: ReactNode) =>
+    may(...permissions) ? page : <Elsewhere notice={ADMIN_ONLY} />;
   // Import, export, backups and updates can be switched off for everyone. Null until they are known.
   const features = useFeatures();
   const gated = (permission: string, on: boolean | undefined, page: ReactNode) =>
@@ -117,7 +122,7 @@ function Shell() {
             </NavLink>
           )}
 
-          {may(PERMISSIONS.registerView) && (
+          {may(PERMISSIONS.registerView, PERMISSIONS.departmentView) && (
             <NavLink to="/equipment" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
               Equipment
             </NavLink>
@@ -166,6 +171,7 @@ function Shell() {
             <span className="nav-role">
               {' · '}
               {roleName}
+              {(user?.departments.length ?? 0) > 0 && ` (${user?.departments.join(', ')})`}
             </span>
           </span>
           {/* For whoever does PM work: the reminders are about the department's PMs. */}
@@ -198,8 +204,16 @@ function Shell() {
           <Route path="/work-orders" element={needs(PERMISSIONS.workOrdersView, <WorkOrdersPage />)} />
           <Route path="/work-orders/:id" element={needs(PERMISSIONS.workOrdersView, <WorkOrderPage />)} />
           <Route path="/work-orders/:id/report" element={needs(PERMISSIONS.workOrdersView, <ServiceReportPreviewPage />)} />
-          <Route path="/equipment" element={needs(PERMISSIONS.registerView, <EquipmentListPage />)} />
-          <Route path="/equipment/:id" element={needs(PERMISSIONS.registerView, <EquipmentDetailPage />)} />
+          <Route path="/equipment" element={needsAny([PERMISSIONS.registerView, PERMISSIONS.departmentView], <EquipmentListPage />)} />
+          <Route
+            path="/equipment/:id"
+            element={needsAny(
+              [PERMISSIONS.registerView, PERMISSIONS.departmentView],
+              // The whole record for those who may see the whole register; the part that is theirs for a
+              // person from another department.
+              may(PERMISSIONS.registerView) ? <EquipmentDetailPage /> : <DepartmentMachinePage />,
+            )}
+          />
           <Route path="/locations" element={needs(PERMISSIONS.registerView, <LocationsPage />)} />
           <Route path="/checklists" element={needs(PERMISSIONS.checklistsView, <ChecklistsPage />)} />
           <Route path="/spare-parts" element={needs(PERMISSIONS.sparePartsView, <SparePartsPage />)} />

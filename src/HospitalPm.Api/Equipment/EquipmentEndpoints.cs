@@ -125,13 +125,14 @@ public static class EquipmentEndpoints
     {
         var group = app.MapGroup("/api/equipment")
             .WithTags("Equipment")
-            .RequirePermission(Permissions.RegisterView);
+            .RequireAuthorization();
 
-        // Every role can read the register: a technician needs to look up the
-        // machine in front of them.
-        group.MapGet("/", SearchAsync);
-        group.MapGet("/{id:int}", GetAsync);
-        group.MapGet("/by-tag/{assetTag}", GetByTagAsync);
+        // Whoever works on the equipment can read the register: a technician needs to look up the
+        // machine in front of them. A person in another department reads only their own departments'
+        // machines (the context hides the rest) and without the money (see Redact).
+        group.MapGet("/", SearchAsync).RequireAnyPermission(Permissions.RegisterView, Permissions.DepartmentView);
+        group.MapGet("/{id:int}", GetAsync).RequireAnyPermission(Permissions.RegisterView, Permissions.DepartmentView);
+        group.MapGet("/by-tag/{assetTag}", GetByTagAsync).RequireAnyPermission(Permissions.RegisterView, Permissions.DepartmentView);
 
         // Writes are restricted. A technician records work against equipment;
         // they do not add or retire assets on the register.
@@ -242,7 +243,8 @@ public static class EquipmentEndpoints
                 e.MaintenanceCost))
             .ToListAsync(ct);
 
-        return Results.Ok(new PagedResult<EquipmentResponse>(items, total, page, pageSize));
+        return Results.Ok(new PagedResult<EquipmentResponse>(
+            db.IsScoped ? items.Select(Redact).ToList() : items, total, page, pageSize));
     }
 
     private static async Task<IResult> GetAsync(int id, HospitalPmDbContext db, CancellationToken ct)
@@ -279,8 +281,30 @@ public static class EquipmentEndpoints
                 e.MaintenanceCost))
             .SingleOrDefaultAsync(ct);
 
-        return item is null ? Results.NotFound() : Results.Ok(item);
+        return item is null ? Results.NotFound() : Results.Ok(db.IsScoped ? Redact(item) : item);
     }
+
+    /// <summary>
+    /// What a person in another department is not shown about a machine: what it cost, how it is
+    /// insured and under what contract, and the notes the department keeps about it. They are shown
+    /// what the machine is, where it is, and what state it is in.
+    /// </summary>
+    private static EquipmentResponse Redact(EquipmentResponse e) => e with
+    {
+        Notes = null,
+        IsInsured = false,
+        InsuranceProvider = null,
+        InsurancePolicyNumber = null,
+        InsuranceExpiryDate = null,
+        PurchaseCost = null,
+        InsuranceCost = null,
+        MaintenanceContractType = null,
+        MaintenanceVendor = null,
+        MaintenanceContractNumber = null,
+        MaintenanceStartDate = null,
+        MaintenanceEndDate = null,
+        MaintenanceCost = null,
+    };
 
     /// <summary>
     /// Looks a machine up by its asset tag. Case-insensitive: a technician who types
@@ -322,7 +346,7 @@ public static class EquipmentEndpoints
                 e.MaintenanceCost))
             .SingleOrDefaultAsync(ct);
 
-        return item is null ? Results.NotFound() : Results.Ok(item);
+        return item is null ? Results.NotFound() : Results.Ok(db.IsScoped ? Redact(item) : item);
     }
 
     private static async Task<IResult> CreateAsync(

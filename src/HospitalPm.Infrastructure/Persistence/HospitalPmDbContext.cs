@@ -26,6 +26,31 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
     /// </summary>
     private static readonly JsonSerializerOptions ChecklistJson = new(JsonSerializerDefaults.Web);
 
+    // ---- Department scope -------------------------------------------------------------------
+    //
+    // A person in another department sees only the equipment of their own departments, and the
+    // service requests on it. That is enforced here, once, as a query filter on the tables that hold
+    // them, so that no endpoint can forget it: whatever a request asks the context for, the rows of
+    // other departments are not there. It is set on the request's own context, after the person has
+    // been identified, and is off (nothing hidden) everywhere else: the people who work across the
+    // whole hospital, background jobs, and the tests.
+    private bool _scoped;
+    private int[] _scopeLocationIds = [];
+
+    /// <summary>True when this context hides everything outside the departments given to <see cref="RestrictTo"/>.</summary>
+    public bool IsScoped => _scoped;
+
+    /// <summary>
+    /// From now on, show only equipment in these locations, the service requests on it, and the
+    /// locations themselves. An empty list shows nothing: access that has not been set up is closed,
+    /// not open.
+    /// </summary>
+    public void RestrictTo(IEnumerable<int> locationIds)
+    {
+        _scopeLocationIds = locationIds.Distinct().ToArray();
+        _scoped = true;
+    }
+
     public DbSet<Category> Categories => Set<Category>();
 
     public DbSet<EquipmentType> EquipmentTypes => Set<EquipmentType>();
@@ -76,11 +101,51 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
 
     public DbSet<BackupRun> BackupRuns => Set<BackupRun>();
 
+    public DbSet<UserLocation> UserLocations => Set<UserLocation>();
+
+    /// <summary>The query filters behind <see cref="RestrictTo"/>. See the note on the fields above.</summary>
+    private void ConfigureDepartmentScope(ModelBuilder builder)
+    {
+        builder.Entity<Equipment>().HasQueryFilter(e => !_scoped || _scopeLocationIds.Contains(e.LocationId));
+        builder.Entity<Location>().HasQueryFilter(l => !_scoped || _scopeLocationIds.Contains(l.Id));
+        builder.Entity<WorkOrder>().HasQueryFilter(w => !_scoped || _scopeLocationIds.Contains(w.Equipment!.LocationId));
+
+        // What hangs off a service request goes with it, so a photo or a note cannot be fetched on its
+        // own by number when the request it belongs to is not theirs.
+        builder.Entity<WorkOrderNote>().HasQueryFilter(n => !_scoped || WorkOrders.Any(w => w.Id == n.WorkOrderId));
+        builder.Entity<WorkOrderPart>().HasQueryFilter(p => !_scoped || WorkOrders.Any(w => w.Id == p.WorkOrderId));
+        builder.Entity<WorkOrderAttachment>().HasQueryFilter(a => !_scoped || WorkOrders.Any(w => w.Id == a.WorkOrderId));
+        builder.Entity<WorkOrderAttachmentData>().HasQueryFilter(d => !_scoped || WorkOrderAttachments.Any(a => a.Id == d.AttachmentId));
+    }
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
 
         ConfigureIdentity(builder);
+
+        ConfigureDepartmentScope(builder);
+
+        builder.Entity<UserLocation>(e =>
+        {
+            e.ToTable("user_location");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.UserId).HasColumnName("user_id");
+            e.Property(x => x.LocationId).HasColumnName("location_id");
+            e.Property(x => x.AssignedByUserId).HasColumnName("assigned_by_user_id");
+            e.Property(x => x.AssignedAtUtc).HasColumnName("assigned_at_utc").HasDefaultValueSql("now()");
+
+            // People are deactivated, never deleted, so this is a tidy-up; the audit log keeps what was there.
+            e.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+
+            // A place that someone belongs to is not removed from under them.
+            e.HasOne<Location>().WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.Restrict);
+
+            e.HasIndex(x => new { x.UserId, x.LocationId }).IsUnique().HasDatabaseName("ux_user_location_user_location");
+            e.HasIndex(x => x.LocationId).HasDatabaseName("ix_user_location_location");
+        });
 
         builder.Entity<Category>(e =>
         {

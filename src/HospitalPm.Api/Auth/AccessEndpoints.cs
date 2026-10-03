@@ -99,7 +99,9 @@ public static class AccessEndpoints
         Roles.Developer => "A Developer holds everything, so there is nothing to give or take away.",
         // Their view is limited to their own departments, and until that limit is in place, giving
         // one a section would show them every department's.
-        Roles.DepartmentUser => "A department user cannot be given extra access yet: it would not be limited to their own departments.",
+        // What they see is limited to their own departments, and a section given on top of that would
+        // not be. Their access is set by which departments they are given, on the Staff page.
+        Roles.DepartmentUser => "A department user's access is set by their departments (on the Staff page). Extra sections are not given to them.",
         _ => null,
     };
 

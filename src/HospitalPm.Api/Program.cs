@@ -60,7 +60,12 @@ builder.Configuration.AddJsonFile(
 builder.Services.AddOpenApi();
 
 builder.Services.AddDbContext<HospitalPmDbContext>(o =>
-    o.UseNpgsql(builder.Configuration.GetConnectionString("HospitalPm")));
+    o.UseNpgsql(builder.Configuration.GetConnectionString("HospitalPm"))
+        // Equipment and service requests are filtered for people in other departments (see
+        // HospitalPmDbContext.RestrictTo). EF warns about every required relationship to a filtered
+        // table; the filters are written to match, so the warning has nothing left to say.
+        .ConfigureWarnings(w => w.Ignore(
+            Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.PossibleIncorrectRequiredNavigationWithQueryFilterInteractionWarning)));
 
 builder.Services.AddScoped<HospitalPm.Infrastructure.Import.EquipmentImportService>();
 builder.Services.AddScoped<HospitalPm.Infrastructure.Import.LocationImportService>();
@@ -287,6 +292,10 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UseMiddleware<HospitalPm.Api.Hosting.FeatureSwitchMiddleware>();
 app.UseMiddleware<HospitalPm.Api.Hosting.LicenceReadOnlyMiddleware>();
+
+// After the person is known, and before anything reads the database for them: a person in another
+// department is shown only their own departments' equipment and requests.
+app.UseMiddleware<HospitalPm.Api.Auth.DepartmentScopeMiddleware>();
 
 app.MapSetupEndpoints();
 app.MapFeatureEndpoints();

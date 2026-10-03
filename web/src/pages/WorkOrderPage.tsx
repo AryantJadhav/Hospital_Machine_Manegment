@@ -48,6 +48,9 @@ export function WorkOrderPage() {
 
   const { may } = useAuth();
   const canAssign = may(PERMISSIONS.workOrdersAssign);
+  // Someone who reported a fault, from another department, can follow it and answer about it. Working
+  // it (status, parts, resolving) is the biomedical team's, and is not offered to them.
+  const canWork = may(PERMISSIONS.workOrdersWork);
   const location = useLocation();
   const navigate = useNavigate();
   // Where they came from, filters and all, so Back is the list as they left it.
@@ -130,7 +133,9 @@ export function WorkOrderPage() {
     );
   }
 
-  const isTerminal = order.allowedTransitions.length === 0;
+  // Judged by the request's own state, not by what this person may do to it: someone who may do
+  // nothing to an open request must not be told it is closed.
+  const isTerminal = order.status === CLOSED || order.status === CANCELLED;
 
   return (
     <div className="page">
@@ -174,8 +179,8 @@ export function WorkOrderPage() {
             </p>
           </section>
 
-          <Solution order={order} />
-          <Parts order={order} isTerminal={isTerminal} act={act} />
+          <Solution order={order} isTerminal={isTerminal} canWork={canWork} />
+          <Parts order={order} isTerminal={isTerminal} canWork={canWork} act={act} />
           <Photos order={order} isTerminal={isTerminal} canRemove={canAssign} act={act} />
           <History order={order} act={act} />
           {/* Last, because it is the last thing done: the job is finished, then it is resolved. */}
@@ -192,7 +197,7 @@ export function WorkOrderPage() {
 }
 
 /** What was done, once it has been said. Writing it, and resolving, is the last thing on the page. */
-function Solution({ order }: { order: WorkOrderDetail }) {
+function Solution({ order, isTerminal, canWork }: { order: WorkOrderDetail; isTerminal: boolean; canWork: boolean }) {
   const canResolve = order.allowedTransitions.includes(RESOLVED);
 
   return (
@@ -212,9 +217,11 @@ function Solution({ order }: { order: WorkOrderDetail }) {
         <p className="muted" style={{ margin: 0 }}>
           {canResolve
             ? 'Not resolved yet. When the work is done, say what was wrong and what was done at the bottom of this page.'
-            : order.allowedTransitions.length === 0
+            : isTerminal
               ? 'No solution was recorded.'
-              : 'Not resolved yet. Once the work is In progress, you can say what was done and resolve it at the bottom of this page.'}
+              : canWork
+                ? 'Not resolved yet. Once the work is In progress, you can say what was done and resolve it at the bottom of this page.'
+                : 'Not resolved yet. The biomedical team will say here what was wrong and what was done.'}
         </p>
       )}
     </section>
@@ -275,12 +282,16 @@ function ResolveForm({ order, act, onResolved }: { order: WorkOrderDetail; act: 
 function Parts({
   order,
   isTerminal,
+  canWork,
   act,
 }: {
   order: WorkOrderDetail;
   isTerminal: boolean;
+  canWork: boolean;
   act: Act;
 }) {
+  // Drawing parts is part of doing the repair: offered to whoever works it, while it is open.
+  const editable = canWork && !isTerminal;
   const [spareParts, setSpareParts] = useState<SparePartOption[]>([]);
   const [partId, setPartId] = useState('');
   const [partQty, setPartQty] = useState('1');
@@ -288,7 +299,7 @@ function Parts({
 
   // The shelf to pick from, loaded once a ticket is open rather than with every row in the list.
   useEffect(() => {
-    if (isTerminal) return;
+    if (!editable) return;
     void (async () => {
       try {
         const data = await api.get<{ items: SparePartOption[] }>('/api/spare-parts?pageSize=200');
@@ -297,7 +308,7 @@ function Parts({
         // The rest of the ticket still works without the picker.
       }
     })();
-  }, [isTerminal]);
+  }, [editable]);
 
   // Local: what is missing before the request is even sent. A server-side refusal (not enough
   // stock, a retired part) surfaces through the page's own error banner.
@@ -323,7 +334,7 @@ function Parts({
 
       {order.partsUsed.length === 0 && (
         <p className="muted" style={{ margin: 0 }}>
-          {isTerminal ? 'No spare parts were used.' : 'No spare parts used yet.'}
+          {isTerminal || !canWork ? 'No spare parts were used.' : 'No spare parts used yet.'}
         </p>
       )}
 
@@ -337,7 +348,7 @@ function Parts({
                   <span className="muted"> ({formatRupees(p.unitCostAtUse * p.quantityUsed)})</span>
                 )}
               </span>
-              {!isTerminal && (
+              {editable && (
                 <button
                   className="btn btn-quiet"
                   aria-label={`Undo ${p.partNumber}`}
@@ -358,7 +369,7 @@ function Parts({
         </p>
       )}
 
-      {!isTerminal && (
+      {editable && (
         <div className="row">
           <select
             aria-label="Part to record"

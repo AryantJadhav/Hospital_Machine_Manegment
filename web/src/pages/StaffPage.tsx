@@ -29,7 +29,11 @@ type Staff = {
   /** Sections given on top of the role, and taken away from it. */
   accessGiven: number;
   accessTakenAway: number;
+  /** For a department user: how many departments they were given. */
+  departments: number;
 };
+
+type Place = { id: number; name: string; depth: number; level: number };
 
 export function StaffPage() {
   // Nobody reaches above themselves: only the roles this person may give are offered, and the
@@ -175,7 +179,16 @@ export function StaffPage() {
                 </td>
                 <td className="mono">{p.userName}</td>
                 <td className="mono">{p.staffCode ?? <span className="muted">—</span>}</td>
-                <td>{ROLE_LABEL[p.role] ?? p.role}</td>
+                <td>
+                  {ROLE_LABEL[p.role] ?? p.role}
+                  {p.role === ROLES.departmentUser && (
+                    <div className="muted" style={{ fontSize: '0.8rem', color: p.departments === 0 ? 'var(--err)' : undefined }}>
+                      {p.departments === 0
+                        ? 'No department yet: sees nothing'
+                        : `${p.departments} ${p.departments === 1 ? 'department' : 'departments'}`}
+                    </div>
+                  )}
+                </td>
                 <td>
                   {p.accessGiven === 0 && p.accessTakenAway === 0 ? (
                     <span className="muted">—</span>
@@ -311,6 +324,40 @@ function StaffForm({
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
 
+  // For a department user: the places they belong to, and everything beneath them is theirs too.
+  const [places, setPlaces] = useState<Place[]>([]);
+  const [chosen, setChosen] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    if (role !== ROLES.departmentUser) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const all = await api.get<Place[]>('/api/lookups/locations');
+        if (cancelled) return;
+        setPlaces(all);
+        if (editing && editing.role === ROLES.departmentUser) {
+          const mine = await api.get<{ locationId: number }[]>(`/api/users/${editing.id}/departments`);
+          if (!cancelled) setChosen(new Set(mine.map((m) => m.locationId)));
+        }
+      } catch {
+        // The account can still be saved; departments can be set afterwards.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [role, editing]);
+
+  function toggle(id: number) {
+    setChosen((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     onError(null);
@@ -322,15 +369,21 @@ function StaffForm({
           staffCode: staffCode.trim() || null,
           role,
         });
+        if (role === ROLES.departmentUser) {
+          await api.put(`/api/users/${editing.id}/departments`, { locationIds: [...chosen] });
+        }
         await onSaved(`${fullName.trim()} updated.`);
       } else {
-        await api.post('/api/users', {
+        const created = await api.post<{ id: number }>('/api/users', {
           userName: userName.trim(),
           fullName: fullName.trim(),
           staffCode: staffCode.trim() || null,
           role,
           password,
         });
+        if (role === ROLES.departmentUser) {
+          await api.put(`/api/users/${created.id}/departments`, { locationIds: [...chosen] });
+        }
         await onSaved(`${fullName.trim()} can now sign in.`);
       }
     } catch (err) {
@@ -395,6 +448,24 @@ function StaffForm({
         </select>
         <span className="muted">{ROLE_HELP[role]}</span>
       </label>
+
+      {role === ROLES.departmentUser && (
+        <fieldset className="stack" style={{ border: 'none', padding: 0, margin: 0 }}>
+          <legend style={{ fontWeight: 600, padding: 0 }}>Departments</legend>
+          <span className="muted">
+            They see the equipment in the places ticked, and everything beneath them, and nothing else.
+            With none ticked they see nothing.
+          </span>
+          <div style={{ maxHeight: '16rem', overflow: 'auto', display: 'grid', gap: '0.2rem' }}>
+            {places.map((p) => (
+              <label key={p.id} className="row" style={{ gap: '0.5rem', alignItems: 'center', paddingLeft: `${p.depth * 1.1}rem` }}>
+                <input type="checkbox" checked={chosen.has(p.id)} onChange={() => toggle(p.id)} />
+                <span>{p.name}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      )}
 
       {!editing && (
         <label className="stack">

@@ -23,8 +23,23 @@ public static class RolePermissions
         Permissions.PmWork,
         Permissions.WorkOrdersView,
         Permissions.WorkOrdersReport,
+        Permissions.WorkOrdersNote,
         Permissions.WorkOrdersWork,
         Permissions.EquipmentMove,
+    };
+
+    /// <summary>
+    /// A person in another department: the equipment of their own departments, the service requests on
+    /// it, reporting a fault, and answering about it. No costs, no spare parts, no other departments.
+    /// Holding <see cref="Permissions.DepartmentView"/> without <see cref="Permissions.RegisterView"/>
+    /// is what limits what they see to the places they have been given.
+    /// </summary>
+    private static readonly IReadOnlySet<string> Ward = new HashSet<string>(StringComparer.Ordinal)
+    {
+        Permissions.DepartmentView,
+        Permissions.WorkOrdersView,
+        Permissions.WorkOrdersReport,
+        Permissions.WorkOrdersNote,
     };
 
     /// <summary>Keeping the installation running, and the people who may sign in to it. Nothing about the equipment.</summary>
@@ -56,8 +71,8 @@ public static class RolePermissions
     /// backups, restore, updates, diagnostics and the licence are the IT team's (and the Developer's).
     /// A hospital with no IT team can still be given one of those sections by name.
     ///
-    /// A department user holds nothing yet: what they may see is limited to their own departments,
-    /// and until that limit is in place they are given no way to read the register at all.
+    /// A department user sees only their own departments' equipment and requests (see
+    /// <see cref="Ward"/>).
     /// </summary>
     public static IReadOnlySet<string> For(string? role) => role switch
     {
@@ -65,7 +80,7 @@ public static class RolePermissions
         Roles.BmeHead => Department,
         Roles.ItAdmin => Installation,
         Roles.BmeEngineer => Floor,
-        Roles.DepartmentUser => None,
+        Roles.DepartmentUser => Ward,
         _ => None,
     };
 

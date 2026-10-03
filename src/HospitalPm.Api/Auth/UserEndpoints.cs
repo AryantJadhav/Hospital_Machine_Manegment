@@ -29,7 +29,12 @@ public sealed record UserResponse(
     DateTime? LastLoginAtUtc,
     // Sections given on top of the role, and taken away from it, that are still in force.
     int AccessGiven,
-    int AccessTakenAway);
+    int AccessTakenAway,
+    // For a department user: how many departments they have been given. Nothing is shown until it is at least one.
+    int Departments);
+
+/// <summary>The places a department user belongs to. It replaces what was there.</summary>
+public sealed record SetDepartmentsRequest(List<int>? LocationIds);
 
 /// <summary>
 /// The hospital's staff.
@@ -68,6 +73,10 @@ public static class UserEndpoints
         // What one person has been given or had taken away, for the hospital to read. Changing it is
         // the Developer's, on the Access page.
         group.MapGet("/{id:int}/access", AccessEndpoints.ViewAsync);
+
+        // The departments a department user may see. Whoever may manage the account sets them.
+        group.MapGet("/{id:int}/departments", GetDepartmentsAsync);
+        group.MapPut("/{id:int}/departments", SetDepartmentsAsync);
 
         group.MapPost("/", CreateAsync);
         group.MapPut("/{id:int}", UpdateAsync);
@@ -136,6 +145,7 @@ public static class UserEndpoints
                 u.LastLoginAtUtc,
                 Given = db.PermissionGrants.Count(g => g.UserId == u.Id && g.Effect == GrantEffect.Grant
                     && (g.ExpiresOn == null || g.ExpiresOn >= today)),
+                Departments = db.UserLocations.Count(ul => ul.UserId == u.Id),
                 TakenAway = db.PermissionGrants.Count(g => g.UserId == u.Id && g.Effect == GrantEffect.Revoke
                     && (g.ExpiresOn == null || g.ExpiresOn >= today)),
                 Roles = db.UserRoles
@@ -154,7 +164,8 @@ public static class UserEndpoints
             u.IsActive,
             u.LastLoginAtUtc,
             u.Given,
-            u.TakenAway)));
+            u.TakenAway,
+            u.Departments)));
     }
 
     private static async Task<IResult> CreateAsync(
@@ -269,6 +280,13 @@ public static class UserEndpoints
                 await users.RemoveFromRoleAsync(user, current);
             }
             await users.AddToRoleAsync(user, request.Role);
+
+            // Departments are only for a department user. Someone moved to another role is not left
+            // holding places that mean nothing, or that would mean something again if they moved back.
+            if (current == Roles.DepartmentUser)
+            {
+                await db.UserLocations.Where(ul => ul.UserId == id).ExecuteDeleteAsync(ct);
+            }
         }
 
         return Results.NoContent();
@@ -402,6 +420,74 @@ public static class UserEndpoints
 
     private static int? CallerId(ClaimsPrincipal caller)
         => int.TryParse(caller.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : null;
+
+    private static async Task<IResult> GetDepartmentsAsync(
+        int id, UserManager<ApplicationUser> users, HospitalPmDbContext db, CancellationToken ct)
+    {
+        var user = await users.FindByIdAsync(id.ToString());
+        if (user is null)
+        {
+            return Results.NotFound();
+        }
+
+        var places = await (
+            from ul in db.UserLocations.AsNoTracking()
+            where ul.UserId == id
+            join l in db.Locations.AsNoTracking() on ul.LocationId equals l.Id
+            orderby l.Path
+            select new { LocationId = l.Id, l.Name, l.Code, Level = (int)l.Level }).ToListAsync(ct);
+
+        return Results.Ok(places);
+    }
+
+    private static async Task<IResult> SetDepartmentsAsync(
+        int id,
+        [FromBody] SetDepartmentsRequest request,
+        UserManager<ApplicationUser> users,
+        HospitalPmDbContext db,
+        ClaimsPrincipal caller,
+        CancellationToken ct)
+    {
+        var user = await users.FindByIdAsync(id.ToString());
+        if (user is null)
+        {
+            return Results.NotFound();
+        }
+
+        var role = (await users.GetRolesAsync(user)).FirstOrDefault();
+        if (!MayManage(caller, role))
+        {
+            return Forbidden("You cannot change the departments of that account.");
+        }
+
+        if (role != Roles.DepartmentUser)
+        {
+            return Results.BadRequest(new { error = "Only a department user has departments." });
+        }
+
+        var wanted = (request.LocationIds ?? []).Distinct().ToList();
+        var known = await db.Locations.AsNoTracking().Where(l => wanted.Contains(l.Id)).Select(l => l.Id).ToListAsync(ct);
+        if (known.Count != wanted.Count)
+        {
+            return Results.BadRequest(new { error = "One of the departments chosen does not exist." });
+        }
+
+        var existing = await db.UserLocations.Where(ul => ul.UserId == id).ToListAsync(ct);
+
+        db.UserLocations.RemoveRange(existing.Where(e => !wanted.Contains(e.LocationId)));
+        db.UserLocations.AddRange(wanted
+            .Where(w => existing.All(e => e.LocationId != w))
+            .Select(w => new UserLocation
+            {
+                UserId = id,
+                LocationId = w,
+                AssignedByUserId = CallerId(caller) ?? 0,
+                AssignedAtUtc = DateTime.UtcNow,
+            }));
+        await db.SaveChangesAsync(ct);
+
+        return Results.NoContent();
+    }
 
     private static IEnumerable<string> RolesOf(ClaimsPrincipal caller)
         => caller.FindAll(ClaimTypes.Role).Select(c => c.Value);

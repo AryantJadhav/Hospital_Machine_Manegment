@@ -7,10 +7,13 @@ using Microsoft.EntityFrameworkCore;
 
 namespace HospitalPm.Api.Auth;
 
-/// <summary>Asks that the signed-in person holds one permission. See <see cref="Permissions"/>.</summary>
-public sealed class PermissionRequirement(string permission) : IAuthorizationRequirement
+/// <summary>
+/// Asks that the signed-in person holds one of the permissions listed (usually just one). See
+/// <see cref="Permissions"/>.
+/// </summary>
+public sealed class PermissionRequirement(params string[] anyOf) : IAuthorizationRequirement
 {
-    public string Permission { get; } = permission;
+    public IReadOnlyList<string> AnyOf { get; } = anyOf;
 }
 
 /// <summary>
@@ -65,7 +68,8 @@ public sealed class PermissionHandler(PermissionService permissions) : Authoriza
 {
     protected override async Task HandleRequirementAsync(AuthorizationHandlerContext context, PermissionRequirement requirement)
     {
-        if (await permissions.CanAsync(context.User, requirement.Permission))
+        var held = await permissions.ForAsync(context.User);
+        if (requirement.AnyOf.Any(held.Contains))
         {
             context.Succeed(requirement);
         }
@@ -83,4 +87,14 @@ public static class PermissionExtensions
         builder.RequireAuthorization(p => p
             .RequireAuthenticatedUser()
             .AddRequirements(new PermissionRequirement(permission)));
+
+    /// <summary>
+    /// People who hold at least one of the permissions. For what two kinds of person both need, such
+    /// as the register, which an engineer reads whole and a department user reads for their own part.
+    /// </summary>
+    public static TBuilder RequireAnyPermission<TBuilder>(this TBuilder builder, params string[] permissions)
+        where TBuilder : IEndpointConventionBuilder =>
+        builder.RequireAuthorization(p => p
+            .RequireAuthenticatedUser()
+            .AddRequirements(new PermissionRequirement(permissions)));
 }

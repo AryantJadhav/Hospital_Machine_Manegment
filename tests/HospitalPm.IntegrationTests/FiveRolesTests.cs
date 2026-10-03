@@ -225,14 +225,20 @@ public sealed class FiveRolesTests(PostgresFixture fixture) : IAsyncLifetime, ID
     }
 
     [Fact]
-    public async Task A_department_user_can_sign_in_but_is_given_nothing_to_read_yet()
+    public async Task A_department_user_with_no_department_yet_sees_nothing_and_is_kept_out_of_the_rest()
     {
         var (department, _) = await SignInAsync("dept6", Roles.DepartmentUser);
 
         Assert.Equal(HttpStatusCode.OK, (await department.GetAsync("/api/auth/me")).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await department.GetAsync("/api/equipment")).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await department.GetAsync("/api/work-orders")).StatusCode);
+
+        // Allowed in, and shown none of it: access that has not been set up is closed, not open.
+        var equipment = await department.GetFromJsonAsync<JsonElement>("/api/equipment");
+        Assert.Equal(0, equipment.GetProperty("items").GetArrayLength());
+        var orders = await department.GetFromJsonAsync<JsonElement>("/api/work-orders");
+        Assert.Equal(0, orders.GetProperty("items").GetArrayLength());
+
         Assert.Equal(HttpStatusCode.Forbidden, (await department.GetAsync("/api/users")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await department.GetAsync("/api/dashboard")).StatusCode);
     }
 
     [Fact]

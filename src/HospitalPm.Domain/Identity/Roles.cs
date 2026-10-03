@@ -58,7 +58,7 @@ public static class Roles
         ItAdmin => "The hospital's IT team: staff accounts, backups, updates, the licence and diagnostics.",
         BmeHead => "Head of Biomedical: the register, schedules, checklists, spare parts, training, reports and staff.",
         BmeEngineer => "Works the floor: PM rounds, faults, and reading the register.",
-        DepartmentUser => "Reports faults on the equipment of their own department.",
+        DepartmentUser => "Reports faults on the equipment of their own departments, and follows them.",
         _ => string.Empty,
     };
 

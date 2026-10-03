@@ -130,6 +130,13 @@ public static class ReportEndpoints
         HospitalPm.Infrastructure.Maintenance.HospitalClock clock,
         CancellationToken ct)
     {
+        // The printed report carries what the parts cost. A person in another department sees the
+        // request on screen, without the money, and is not handed the paper that has it.
+        if (db.IsScoped)
+        {
+            return Results.Forbid();
+        }
+
         var order = await db.WorkOrders.AsNoTracking()
             .Include(w => w.Equipment)!.ThenInclude(e => e!.EquipmentType)
             .Include(w => w.Equipment)!.ThenInclude(e => e!.Location)
