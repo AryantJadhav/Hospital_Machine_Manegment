@@ -23,6 +23,7 @@ public sealed class IncidentTests(PostgresFixture fixture) : IAsyncLifetime, IDi
     private string _suffix = null!;
 
     private int _icuDepartmentId;
+    private int _otDepartmentId;
     private int _icuRoomId;
     private int _otRoomId;
     private int _icuMachineId;
@@ -35,6 +36,8 @@ public sealed class IncidentTests(PostgresFixture fixture) : IAsyncLifetime, IDi
     private HttpClient _engineer = null!;
     private HttpClient _it = null!;
     private HttpClient _ward = null!;
+    // A person from another department who has both departments, so what the biomedical team reads has been written up the way it is.
+    private HttpClient _reporter = null!;
     private int _engineerId;
     private int _wardId;
 
@@ -60,6 +63,7 @@ public sealed class IncidentTests(PostgresFixture fixture) : IAsyncLifetime, IDi
             await db.SaveChangesAsync();
 
             _icuDepartmentId = icu.Id;
+            _otDepartmentId = ot.Id;
             _icuRoomId = icuRoom.Id;
             _otRoomId = otRoom.Id;
 
@@ -90,10 +94,14 @@ public sealed class IncidentTests(PostgresFixture fixture) : IAsyncLifetime, IDi
         (_engineer, _engineerId) = await SignInAsync("in-eng", Roles.BmeEngineer);
         (_it, _) = await SignInAsync("in-it", Roles.ItAdmin);
         (_ward, _wardId) = await SignInAsync("in-ward", Roles.DepartmentUser);
+        int reporterId;
+        (_reporter, reporterId) = await SignInAsync("in-rep", Roles.DepartmentUser);
 
         // The ward user belongs to the ICU, and so to everything beneath it.
         Assert.Equal(HttpStatusCode.NoContent,
             (await _head.PutAsJsonAsync($"/api/users/{_wardId}/departments", new { locationIds = new[] { _icuDepartmentId } })).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await _head.PutAsJsonAsync($"/api/users/{reporterId}/departments", new { locationIds = new[] { _icuDepartmentId, _otDepartmentId } })).StatusCode);
     }
 
     private async Task<(HttpClient Client, int UserId)> SignInAsync(string prefix, string role)
@@ -133,6 +141,7 @@ public sealed class IncidentTests(PostgresFixture fixture) : IAsyncLifetime, IDi
         _engineer?.Dispose();
         _it?.Dispose();
         _ward?.Dispose();
+        _reporter?.Dispose();
         _factory?.Dispose();
     }
 
@@ -165,7 +174,8 @@ public sealed class IncidentTests(PostgresFixture fixture) : IAsyncLifetime, IDi
 
     private async Task<int> ReportAsync(object body, HttpClient? by = null)
     {
-        var res = await (by ?? _engineer).PostAsJsonAsync("/api/incidents", body);
+        // Written up the way it is in the hospital: by a person from a department, never by the biomedical team.
+        var res = await (by ?? _reporter).PostAsJsonAsync("/api/incidents", body);
         Assert.Equal(HttpStatusCode.Created, res.StatusCode);
         return (await res.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
     }
@@ -193,19 +203,28 @@ public sealed class IncidentTests(PostgresFixture fixture) : IAsyncLifetime, IDi
     // ---------------------------------------------------------------- who may
 
     [Fact]
-    public async Task The_biomedical_team_and_a_ward_write_incidents_but_the_it_team_sees_none()
+    public async Task A_department_writes_incidents_up_and_the_biomedical_team_reads_them_but_cannot_write_one_and_the_it_team_sees_none()
     {
-        var byEngineer = await ReportAsync(Incident());
-        var byHead = await ReportAsync(Incident(), _head);
+        var byReporter = await ReportAsync(Incident());
         var byWard = await ReportAsync(Incident(), _ward);
 
-        Assert.Equal(HttpStatusCode.OK, (await _engineer.GetAsync($"/api/incidents/{byHead}")).StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await _head.GetAsync($"/api/incidents/{byEngineer}")).StatusCode);
+        // The biomedical team reads what the departments wrote up, in full, and prints it.
+        foreach (var team in new[] { _engineer, _head })
+        {
+            Assert.Equal(HttpStatusCode.OK, (await team.GetAsync($"/api/incidents/{byReporter}")).StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await team.GetAsync($"/api/incidents/{byWard}")).StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await team.GetAsync($"/api/incidents/{byWard}/report.pdf")).StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await team.GetAsync("/api/incidents/summary")).StatusCode);
+
+            // ...but is not the one who writes an incident up.
+            Assert.Equal(HttpStatusCode.Forbidden, (await team.PostAsJsonAsync("/api/incidents", Incident())).StatusCode);
+        }
+
         Assert.Equal(HttpStatusCode.OK, (await _ward.GetAsync($"/api/incidents/{byWard}")).StatusCode);
 
         Assert.Equal(HttpStatusCode.Forbidden, (await _it.GetAsync("/api/incidents")).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await _it.GetAsync($"/api/incidents/{byEngineer}")).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await _it.GetAsync($"/api/incidents/{byEngineer}/report.pdf")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await _it.GetAsync($"/api/incidents/{byReporter}")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await _it.GetAsync($"/api/incidents/{byReporter}/report.pdf")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await _it.GetAsync("/api/incidents/summary")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await _it.PostAsJsonAsync("/api/incidents", Incident())).StatusCode);
     }
@@ -242,7 +261,7 @@ public sealed class IncidentTests(PostgresFixture fixture) : IAsyncLifetime, IDi
         Assert.Equal("Major damage, needs repair", i.GetProperty("damageLabel").GetString());
         Assert.True(i.GetProperty("takenOutOfUse").GetBoolean());
         Assert.Equal("Staff nurse, ICU", i.GetProperty("involvedPerson").GetString());
-        Assert.Equal("in-eng person", i.GetProperty("reportedByName").GetString());
+        Assert.Equal("in-rep person", i.GetProperty("reportedByName").GetString());
         Assert.Equal(_icuTag, i.GetProperty("machine").GetProperty("assetTag").GetString());
         Assert.Equal($"ICU bay {_suffix}", i.GetProperty("locationName").GetString());
         Assert.Equal(JsonValueKind.Null, i.GetProperty("closedAtUtc").ValueKind);
@@ -264,7 +283,7 @@ public sealed class IncidentTests(PostgresFixture fixture) : IAsyncLifetime, IDi
     {
         async Task Refused(object body, string part)
         {
-            var res = await _engineer.PostAsJsonAsync("/api/incidents", body);
+            var res = await _reporter.PostAsJsonAsync("/api/incidents", body);
             Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
             Assert.Contains(part, await ErrorOf(res), StringComparison.OrdinalIgnoreCase);
         }
@@ -512,7 +531,9 @@ public sealed class IncidentTests(PostgresFixture fixture) : IAsyncLifetime, IDi
 
         // Mine: what this person wrote, and no one else's.
         Assert.Equal([spill], Ids(await ListAsync($"q={_suffix}&mine=true", _ward)));
-        Assert.Equal(new[] { fall, closed }.Order(), Ids(await ListAsync($"q={_suffix}&mine=true")).Order());
+        Assert.Equal(new[] { fall, closed }.Order(), Ids(await ListAsync($"q={_suffix}&mine=true", _reporter)).Order());
+        // The biomedical team wrote none of them.
+        Assert.Empty(Ids(await ListAsync($"q={_suffix}&mine=true")));
     }
 
     [Fact]

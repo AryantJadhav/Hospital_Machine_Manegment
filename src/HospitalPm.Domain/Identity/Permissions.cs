@@ -36,7 +36,10 @@ public static class Permissions
     /// </summary>
     public const string IncidentsView = "incidents.view";
 
-    /// <summary>Write up an incident with a machine. Held by everyone who works with the equipment, so it is reported on the day.</summary>
+    /// <summary>
+    /// Write up an incident with a machine. Held by a person from another department, who saw it happen and writes it up
+    /// on the day. Not by the biomedical team, who look into what is reported (<see cref="IncidentsManage"/>).
+    /// </summary>
     public const string IncidentsReport = "incidents.report";
 
     /// <summary>Look into an incident, correct it, say what caused it and close it. The biomedical team's.</summary>

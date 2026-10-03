@@ -28,8 +28,9 @@ public static class RolePermissions
         Permissions.EquipmentMove,
         Permissions.GatePassView,
         Permissions.GatePassEdit,
+        // They look into incidents and close them, and print the reports. They do not write them up: that is the
+        // department that saw it happen (see Ward).
         Permissions.IncidentsView,
-        Permissions.IncidentsReport,
         Permissions.IncidentsManage,
     };
 
@@ -69,6 +70,8 @@ public static class RolePermissions
     private static readonly IReadOnlySet<string> Department =
         new HashSet<string>(
             Permissions.All.Where(p => p != Permissions.AccessManage
+                         // Incidents are written up by the department they happen in, not by the biomedical team.
+                         && p != Permissions.IncidentsReport
                          && (p == Permissions.StaffManage || !Installation.Contains(p))),
             StringComparer.Ordinal);
 

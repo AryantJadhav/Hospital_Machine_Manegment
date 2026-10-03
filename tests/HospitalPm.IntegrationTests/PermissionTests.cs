@@ -115,9 +115,14 @@ public sealed class PermissionTests(PostgresFixture fixture) : IAsyncLifetime, I
             Permissions.RegisterView, Permissions.SparePartsView, Permissions.ChecklistsView, Permissions.TrainingView,
             Permissions.PmWork, Permissions.WorkOrdersView, Permissions.WorkOrdersReport, Permissions.WorkOrdersNote,
             Permissions.WorkOrdersWork, Permissions.EquipmentMove, Permissions.GatePassView, Permissions.GatePassEdit,
-            Permissions.IncidentsView, Permissions.IncidentsReport, Permissions.IncidentsManage,
+            Permissions.IncidentsView, Permissions.IncidentsManage,
         ];
         Assert.True(engineer.SetEquals(floor));
+
+        // Incidents are written up by the department they happen in. The biomedical team reads and closes them.
+        Assert.DoesNotContain(Permissions.IncidentsReport, engineer);
+        Assert.DoesNotContain(Permissions.IncidentsReport, RolePermissions.For(Roles.BmeHead));
+        Assert.DoesNotContain(Permissions.IncidentsReport, RolePermissions.For(Roles.ItAdmin));
 
         // Nothing that edits the register, commits the department, reads the money, or runs the installation.
         Assert.DoesNotContain(Permissions.EquipmentEdit, engineer);
