@@ -36,8 +36,15 @@ public sealed class TokenService(
     /// user. A legitimate client never replays a rotated token, so a replay
     /// means the token leaked and both copies must stop working.
     /// </summary>
-    public async Task<TokenPair?> RefreshAsync(string rawToken, CancellationToken ct = default)
+    public async Task<TokenPair?> RefreshAsync(string? rawToken, CancellationToken ct = default)
     {
+        // A request with no token is simply not a valid one. It must not throw: a server error here
+        // would tell a stranger nothing useful and fill the log with noise.
+        if (string.IsNullOrWhiteSpace(rawToken))
+        {
+            return null;
+        }
+
         var now = clock.GetUtcNow().UtcDateTime;
         var hash = Hash(rawToken);
 
@@ -71,8 +78,14 @@ public sealed class TokenService(
         return new TokenPair(access, replacement, now.AddMinutes(_options.AccessTokenMinutes));
     }
 
-    public async Task RevokeAsync(string rawToken, CancellationToken ct = default)
+    public async Task RevokeAsync(string? rawToken, CancellationToken ct = default)
     {
+        // Signing out with nothing to sign out of is already done.
+        if (string.IsNullOrWhiteSpace(rawToken))
+        {
+            return;
+        }
+
         var hash = Hash(rawToken);
         var stored = await db.RefreshTokens.SingleOrDefaultAsync(t => t.TokenHash == hash, ct);
 
