@@ -2,8 +2,10 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using HospitalPm.Domain.Assets;
 using HospitalPm.Domain.Equipment;
 using HospitalPm.Domain.Identity;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
@@ -627,6 +629,131 @@ public sealed class GatePassTests(PostgresFixture fixture) : IAsyncLifetime, IDi
             var res = await _engineer.GetAsync($"/api/gate-passes/{id}/pdf");
             Assert.Equal(HttpStatusCode.OK, res.StatusCode);
         }
+    }
+
+    // ---------------------------------------------------------------- the register follows
+
+    private async Task<EquipmentStatus> StatusOfAsync(int machineId)
+    {
+        await using var db = fixture.CreateContext();
+        return db.Equipment.AsNoTracking().Single(e => e.Id == machineId).Status;
+    }
+
+    private async Task SetStatusAsync(int machineId, EquipmentStatus status)
+    {
+        await using var db = fixture.CreateContext();
+        var machine = db.Equipment.Single(e => e.Id == machineId);
+        machine.Status = status;
+        await db.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task A_machine_that_goes_out_is_under_repair_on_the_register_and_back_in_use_when_it_returns()
+    {
+        Assert.Equal(EquipmentStatus.InService, await StatusOfAsync(_firstId));
+
+        var (id, _) = await WriteAsync(Pass(items: [new { equipmentId = _firstId }, new { description = "Charger", quantity = 2 }]));
+        Assert.Equal(EquipmentStatus.UnderRepair, await StatusOfAsync(_firstId));
+        // A machine not on the pass is not touched.
+        Assert.Equal(EquipmentStatus.InService, await StatusOfAsync(_secondId));
+
+        Assert.Equal(HttpStatusCode.NoContent, (await _engineer.PostAsJsonAsync($"/api/gate-passes/{id}/return", new { })).StatusCode);
+        Assert.Equal(EquipmentStatus.InService, await StatusOfAsync(_firstId));
+    }
+
+    [Fact]
+    public async Task A_cancelled_pass_puts_the_machine_back_because_it_never_left()
+    {
+        var (id, _) = await WriteAsync(Pass(items: [new { equipmentId = _firstId }]));
+        Assert.Equal(EquipmentStatus.UnderRepair, await StatusOfAsync(_firstId));
+
+        Assert.Equal(HttpStatusCode.NoContent, (await _engineer.PostAsJsonAsync($"/api/gate-passes/{id}/cancel", new { })).StatusCode);
+        Assert.Equal(EquipmentStatus.InService, await StatusOfAsync(_firstId));
+    }
+
+    [Fact]
+    public async Task A_machine_goes_back_to_what_it_was_before_it_went_out()
+    {
+        // Received and not yet put to use: it comes back to the store, not to a ward.
+        await SetStatusAsync(_firstId, EquipmentStatus.InStore);
+
+        var (id, _) = await WriteAsync(Pass(items: [new { equipmentId = _firstId }]));
+        Assert.Equal(EquipmentStatus.UnderRepair, await StatusOfAsync(_firstId));
+
+        await _engineer.PostAsJsonAsync($"/api/gate-passes/{id}/return", new { });
+        Assert.Equal(EquipmentStatus.InStore, await StatusOfAsync(_firstId));
+    }
+
+    [Fact]
+    public async Task A_machine_that_was_already_under_repair_comes_back_in_use()
+    {
+        await SetStatusAsync(_firstId, EquipmentStatus.UnderRepair);
+
+        var (id, _) = await WriteAsync(Pass(items: [new { equipmentId = _firstId }]));
+        await _engineer.PostAsJsonAsync($"/api/gate-passes/{id}/return", new { });
+
+        Assert.Equal(EquipmentStatus.InService, await StatusOfAsync(_firstId));
+    }
+
+    [Fact]
+    public async Task A_decision_made_while_it_was_away_is_not_undone_when_it_returns()
+    {
+        var (id, _) = await WriteAsync(Pass(items: [new { equipmentId = _firstId }, new { equipmentId = _secondId }]));
+
+        // The vendor said it cannot be repaired and it was condemned; the other was put back in use by hand.
+        await SetStatusAsync(_firstId, EquipmentStatus.Condemned);
+        await SetStatusAsync(_secondId, EquipmentStatus.InService);
+
+        await _engineer.PostAsJsonAsync($"/api/gate-passes/{id}/return", new { notes = "Not repairable" });
+
+        Assert.Equal(EquipmentStatus.Condemned, await StatusOfAsync(_firstId));
+        Assert.Equal(EquipmentStatus.InService, await StatusOfAsync(_secondId));
+    }
+
+    [Fact]
+    public async Task A_condemned_machine_stays_condemned_when_it_is_sent_out()
+    {
+        await SetStatusAsync(_firstId, EquipmentStatus.Condemned);
+
+        var (id, _) = await WriteAsync(Pass(items: [new { equipmentId = _firstId }]));
+        Assert.Equal(EquipmentStatus.Condemned, await StatusOfAsync(_firstId));
+
+        await _engineer.PostAsJsonAsync($"/api/gate-passes/{id}/return", new { });
+        Assert.Equal(EquipmentStatus.Condemned, await StatusOfAsync(_firstId));
+    }
+
+    [Fact]
+    public async Task Correcting_a_pass_sends_out_the_machines_added_and_puts_back_the_ones_taken_off()
+    {
+        var (id, _) = await WriteAsync(Pass(items: [new { equipmentId = _firstId }, new { equipmentId = _secondId }]));
+        Assert.Equal(EquipmentStatus.UnderRepair, await StatusOfAsync(_firstId));
+        Assert.Equal(EquipmentStatus.UnderRepair, await StatusOfAsync(_secondId));
+
+        // The second machine was not going after all, and a third is.
+        var edit = await _engineer.PutAsJsonAsync($"/api/gate-passes/{id}", Pass(items: [new { equipmentId = _firstId }, new { equipmentId = _thirdId }]));
+        Assert.Equal(HttpStatusCode.NoContent, edit.StatusCode);
+
+        Assert.Equal(EquipmentStatus.UnderRepair, await StatusOfAsync(_firstId));
+        Assert.Equal(EquipmentStatus.InService, await StatusOfAsync(_secondId));
+        Assert.Equal(EquipmentStatus.UnderRepair, await StatusOfAsync(_thirdId));
+
+        // Saving again with no change leaves everything as it is, and the whole pass still returns cleanly.
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await _engineer.PutAsJsonAsync($"/api/gate-passes/{id}", Pass(items: [new { equipmentId = _firstId }, new { equipmentId = _thirdId }]))).StatusCode);
+        await _engineer.PostAsJsonAsync($"/api/gate-passes/{id}/return", new { });
+
+        Assert.Equal(EquipmentStatus.InService, await StatusOfAsync(_firstId));
+        Assert.Equal(EquipmentStatus.InService, await StatusOfAsync(_thirdId));
+    }
+
+    [Fact]
+    public async Task A_refused_pass_leaves_the_register_alone()
+    {
+        // Valid machine, but the pass itself is refused (no company).
+        var refused = await _engineer.PostAsJsonAsync("/api/gate-passes", Pass(vendor: " ", items: [new { equipmentId = _firstId }]));
+        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+
+        Assert.Equal(EquipmentStatus.InService, await StatusOfAsync(_firstId));
     }
 
     // ---------------------------------------------------------------- the record

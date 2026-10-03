@@ -1,3 +1,4 @@
+using HospitalPm.Domain.Assets;
 using EquipmentAsset = HospitalPm.Domain.Assets.Equipment;
 using HospitalPm.Domain.WorkOrders;
 
@@ -111,6 +112,13 @@ public sealed class GatePassItem
 
     /// <summary>The registered machine this line is, when it is one.</summary>
     public int? EquipmentId { get; set; }
+
+    /// <summary>
+    /// The machine's status on the register at the moment it went out. Sending a machine out marks it
+    /// <see cref="EquipmentStatus.UnderRepair"/>; this is what it goes back to when the pass is returned or
+    /// cancelled, so a machine that was in store comes back to store and not to a ward.
+    /// </summary>
+    public EquipmentStatus? EquipmentStatusBefore { get; set; }
 
     /// <summary>"Meniscus positioning device". Make, model and serial number belong here.</summary>
     public required string Description { get; set; }

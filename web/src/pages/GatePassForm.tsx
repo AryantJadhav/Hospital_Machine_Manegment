@@ -147,7 +147,11 @@ export function GatePassForm({
         await onSaved(editing.id, `Saved ${editing.reference}.`);
       } else {
         const created = await api.post<{ id: number; reference: string }>('/api/gate-passes', body);
-        await onSaved(created.id, `Written ${created.reference}. Print it for the gate and the vendor.`);
+        const machines = rows.some((r) => r.equipmentId !== null);
+        await onSaved(
+          created.id,
+          `Written ${created.reference}. Print it for the gate and the vendor.${machines ? ' Its machines are now marked Under repair.' : ''}`,
+        );
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save the gate pass.');
@@ -247,7 +251,8 @@ export function GatePassForm({
         />
         <span className="muted">
           Type the machine&apos;s number, or its make or model. Its description and number fill in from its
-          record. For something that is not on the register (a probe, a cable), type on a line below.
+          record, and the register marks it Under repair while it is away. For something that is not on the
+          register (a probe, a cable), type on a line below.
         </span>
 
         <GatePassItemsGrid rows={rows} onChange={setRows} />

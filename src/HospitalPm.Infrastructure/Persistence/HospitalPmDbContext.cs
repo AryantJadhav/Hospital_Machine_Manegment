@@ -386,6 +386,7 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
             e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
             e.Property(x => x.GatePassId).HasColumnName("gate_pass_id");
             e.Property(x => x.EquipmentId).HasColumnName("equipment_id");
+            e.Property(x => x.EquipmentStatusBefore).HasColumnName("equipment_status_before").HasConversion<int?>();
             e.Property(x => x.Description).HasColumnName("description").HasMaxLength(300).IsRequired();
             e.Property(x => x.AssetCode).HasColumnName("asset_code").HasMaxLength(100);
             e.Property(x => x.Quantity).HasColumnName("quantity").HasDefaultValue(1);

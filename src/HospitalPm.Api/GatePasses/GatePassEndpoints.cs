@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Claims;
 using HospitalPm.Api.Auth;
 using HospitalPm.Api.Equipment;
+using HospitalPm.Domain.Assets;
 using HospitalPm.Domain.GatePasses;
 using HospitalPm.Domain.Identity;
 using HospitalPm.Infrastructure.Maintenance;
@@ -348,6 +349,9 @@ public static class GatePassEndpoints
             Items = items,
         };
 
+        // Out of the hospital is out of service: the register says Under repair for as long as it is away.
+        await TakeOutAsync(db, items, ct);
+
         db.GatePasses.Add(pass);
         await db.SaveChangesAsync(ct);
 
@@ -389,6 +393,18 @@ public static class GatePassEndpoints
         pass.Notes = Blank(request.Notes);
         pass.UpdatedAtUtc = DateTime.UtcNow;
 
+        // A machine still on the pass keeps what it was before it went out; one added goes out now; one taken
+        // off was never going, so it is put back as it was.
+        var before = pass.Items.Where(i => i.EquipmentId != null).ToDictionary(i => i.EquipmentId!.Value);
+        foreach (var kept in items.Where(i => i.EquipmentId is { } id && before.ContainsKey(id)))
+        {
+            kept.EquipmentStatusBefore = before[kept.EquipmentId!.Value].EquipmentStatusBefore;
+        }
+
+        await TakeOutAsync(db, items.Where(i => i.EquipmentId is { } id && !before.ContainsKey(id)).ToList(), ct);
+        var keptIds = items.Where(i => i.EquipmentId != null).Select(i => i.EquipmentId!.Value).ToHashSet();
+        await BringBackAsync(db, pass.Items.Where(i => i.EquipmentId is { } id && !keptIds.Contains(id)).ToList(), ct);
+
         // The list as sent replaces the list as it was, in the one save, so a failure leaves the old one.
         db.GatePassItems.RemoveRange(pass.Items);
         pass.Items = items;
@@ -405,7 +421,7 @@ public static class GatePassEndpoints
         HospitalClock clock,
         CancellationToken ct)
     {
-        var pass = await db.GatePasses.SingleOrDefaultAsync(p => p.Id == id, ct);
+        var pass = await db.GatePasses.Include(p => p.Items).SingleOrDefaultAsync(p => p.Id == id, ct);
         if (pass is null)
         {
             return Results.NotFound();
@@ -439,6 +455,8 @@ public static class GatePassEndpoints
         pass.OutcomeNotes = Blank(request.Notes);
         pass.UpdatedAtUtc = DateTime.UtcNow;
 
+        await BringBackAsync(db, pass.Items.ToList(), ct);
+
         await db.SaveChangesAsync(ct);
 
         return Results.NoContent();
@@ -450,7 +468,7 @@ public static class GatePassEndpoints
         HospitalPmDbContext db,
         CancellationToken ct)
     {
-        var pass = await db.GatePasses.SingleOrDefaultAsync(p => p.Id == id, ct);
+        var pass = await db.GatePasses.Include(p => p.Items).SingleOrDefaultAsync(p => p.Id == id, ct);
         if (pass is null)
         {
             return Results.NotFound();
@@ -470,9 +488,66 @@ public static class GatePassEndpoints
         pass.OutcomeNotes = Blank(request.Notes);
         pass.UpdatedAtUtc = DateTime.UtcNow;
 
+        // It never left, so the machine is put back as it was.
+        await BringBackAsync(db, pass.Items.ToList(), ct);
+
         await db.SaveChangesAsync(ct);
 
         return Results.NoContent();
+    }
+
+    // ---------------------------------------------------------------- the register
+
+    /// <summary>
+    /// A machine that goes out is Under repair on the register until it is back. What it was is kept on the line, so
+    /// it can be put back as it was. A machine already condemned or disposed of is left alone: sending it out does not
+    /// bring it back into the register's working stock.
+    /// </summary>
+    private static async Task TakeOutAsync(HospitalPmDbContext db, List<GatePassItem> items, CancellationToken ct)
+    {
+        var ids = items.Where(i => i.EquipmentId != null).Select(i => i.EquipmentId!.Value).ToList();
+        if (ids.Count == 0)
+        {
+            return;
+        }
+
+        var machines = await db.Equipment.Where(e => ids.Contains(e.Id)).ToDictionaryAsync(e => e.Id, ct);
+        foreach (var item in items.Where(i => i.EquipmentId != null))
+        {
+            var machine = machines[item.EquipmentId!.Value];
+            item.EquipmentStatusBefore = machine.Status;
+
+            if (machine.Status is not (EquipmentStatus.Condemned or EquipmentStatus.Disposed))
+            {
+                machine.Status = EquipmentStatus.UnderRepair;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Puts machines back when their pass is returned, cancelled, or the machine is taken off it. Only a machine that
+    /// is still Under repair is touched: if someone has since condemned it, or set its status by hand, that is a
+    /// decision this does not undo. One that was in store goes back to store; anything else goes back in use.
+    /// </summary>
+    private static async Task BringBackAsync(HospitalPmDbContext db, List<GatePassItem> items, CancellationToken ct)
+    {
+        var ids = items.Where(i => i.EquipmentId != null).Select(i => i.EquipmentId!.Value).ToList();
+        if (ids.Count == 0)
+        {
+            return;
+        }
+
+        var machines = await db.Equipment.Where(e => ids.Contains(e.Id)).ToDictionaryAsync(e => e.Id, ct);
+        foreach (var item in items.Where(i => i.EquipmentId != null))
+        {
+            var machine = machines[item.EquipmentId!.Value];
+            if (machine.Status == EquipmentStatus.UnderRepair)
+            {
+                machine.Status = item.EquipmentStatusBefore == EquipmentStatus.InStore
+                    ? EquipmentStatus.InStore
+                    : EquipmentStatus.InService;
+            }
+        }
     }
 
     // ---------------------------------------------------------------- rules

@@ -274,6 +274,7 @@ function CloseForm({
   const [busy, setBusy] = useState(false);
 
   const returning = kind === 'return';
+  const hasMachines = pass.items.some((i) => i.equipmentId !== null);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -282,10 +283,10 @@ function CloseForm({
     try {
       if (returning) {
         await api.post(`/api/gate-passes/${pass.id}/return`, { returnedOn: day, notes: notes.trim() || null });
-        await onDone(`Recorded that ${pass.reference} came back on ${formatDate(day)}.`);
+        await onDone(`Recorded that ${pass.reference} came back on ${formatDate(day)}.${hasMachines ? ' Its machines are back on the register as in use.' : ''}`);
       } else {
         await api.post(`/api/gate-passes/${pass.id}/cancel`, { notes: notes.trim() || null });
-        await onDone(`Cancelled ${pass.reference}. Its number stays on the list.`);
+        await onDone(`Cancelled ${pass.reference}. Its number stays on the list.${hasMachines ? ' Its machines are back on the register as they were.' : ''}`);
       }
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Could not save that.');
@@ -305,8 +306,8 @@ function CloseForm({
         </label>
       ) : (
         <p className="muted" style={{ margin: 0 }}>
-          Use this when the machine never left. The number stays on the list as cancelled, and the machine can be
-          sent out on a new pass.
+          Use this when the machine never left. The number stays on the list as cancelled, the register puts the
+          machine back as it was, and it can be sent out on a new pass.
         </p>
       )}
 
@@ -321,7 +322,10 @@ function CloseForm({
         />
       </label>
 
-      <span className="muted">This cannot be undone: a pass that is back or cancelled can no longer be changed.</span>
+      <span className="muted">
+        This cannot be undone: a pass that is back or cancelled can no longer be changed.
+        {hasMachines && returning && ' Its machines go back to in use on the register, unless they have been condemned or changed by hand since.'}
+      </span>
 
       <div className="row">
         <button className="btn btn-primary" type="submit" disabled={busy || (returning && !day)}>
