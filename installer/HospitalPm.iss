@@ -692,10 +692,10 @@ begin
       Exit;
     end;
 
-    if Length(AdminPage.Values[2]) < 10 then
+    if Length(AdminPage.Values[2]) < 5 then
     begin
       Result := 'This is a new installation and no administrator password of at least ' +
-                '10 characters was given.' + #13#10#13#10 +
+                '5 characters was given.' + #13#10#13#10 +
                 'Run Setup again with /ADMINPASSWORD=<password>.' + #13#10#13#10 +
                 'Nothing has been installed.';
       Exit;
@@ -831,9 +831,9 @@ begin
 
     // Matches the application's own rule. Discovering it after the install,
     // from a log, is not a discovery anyone should have to make.
-    if Length(AdminPage.Values[2]) < 10 then
+    if Length(AdminPage.Values[2]) < 5 then
     begin
-      MsgBox('The password must be at least 10 characters.', mbError, MB_OK);
+      MsgBox('The password must be at least 5 characters.', mbError, MB_OK);
       Result := False;
       Exit;
     end;

@@ -101,7 +101,7 @@ export function SetupPage({ onDone }: { onDone: () => void }) {
             required
           />
           <span className="muted" style={{ fontSize: '0.8rem' }}>
-            At least 10 characters, with upper case, lower case and a digit.
+            At least 5 characters, with upper case, lower case and a digit.
           </span>
         </label>
 

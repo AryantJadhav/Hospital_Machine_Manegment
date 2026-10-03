@@ -34,7 +34,7 @@ public static class AuthenticationSetup
                 o.Lockout.MaxFailedAccessAttempts = 5;
                 o.Lockout.AllowedForNewUsers = true;
 
-                o.Password.RequiredLength = 10;
+                o.Password.RequiredLength = 5;
                 o.Password.RequireDigit = true;
                 o.Password.RequireLowercase = true;
                 o.Password.RequireUppercase = true;
