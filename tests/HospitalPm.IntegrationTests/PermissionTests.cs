@@ -114,7 +114,7 @@ public sealed class PermissionTests(PostgresFixture fixture) : IAsyncLifetime, I
         [
             Permissions.RegisterView, Permissions.SparePartsView, Permissions.ChecklistsView, Permissions.TrainingView,
             Permissions.PmWork, Permissions.WorkOrdersView, Permissions.WorkOrdersReport, Permissions.WorkOrdersNote,
-            Permissions.WorkOrdersWork, Permissions.EquipmentMove,
+            Permissions.WorkOrdersWork, Permissions.EquipmentMove, Permissions.GatePassView, Permissions.GatePassEdit,
         ];
         Assert.True(engineer.SetEquals(floor));
 

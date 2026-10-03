@@ -6,6 +6,7 @@ using HospitalPm.Domain.Inventory;
 using HospitalPm.Domain.Maintenance;
 using HospitalPm.Domain.WorkOrders;
 using HospitalPm.Domain.Operations;
+using HospitalPm.Domain.GatePasses;
 using HospitalPm.Domain.Training;
 using HospitalPm.Domain.Locations;
 using HospitalPm.Infrastructure.Identity;
@@ -70,6 +71,10 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
     public DbSet<TrainingSession> TrainingSessions => Set<TrainingSession>();
 
     public DbSet<TrainingAttendee> TrainingAttendees => Set<TrainingAttendee>();
+
+    public DbSet<GatePass> GatePasses => Set<GatePass>();
+
+    public DbSet<GatePassItem> GatePassItems => Set<GatePassItem>();
 
     public DbSet<Location> Locations => Set<Location>();
 
@@ -330,6 +335,76 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
 
             e.HasIndex(x => x.TrainingSessionId).HasDatabaseName("ix_training_attendee_session");
             e.HasIndex(x => x.UserId).HasDatabaseName("ix_training_attendee_user");
+        });
+
+        // The gate pass book's own numbers: 1001, 1002, ... from a sequence, so two passes written at the
+        // same moment cannot be given the same one.
+        builder.HasSequence<int>("gate_pass_number_seq").StartsAt(1001);
+
+        builder.Entity<GatePass>(e =>
+        {
+            e.ToTable("gate_pass");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.Number).HasColumnName("number").ValueGeneratedOnAdd()
+                .HasDefaultValueSql("nextval('gate_pass_number_seq')");
+            e.Property(x => x.PassDate).HasColumnName("pass_date");
+            e.Property(x => x.VendorName).HasColumnName("vendor_name").HasMaxLength(200).IsRequired();
+            e.Property(x => x.ContactPerson).HasColumnName("contact_person").HasMaxLength(200);
+            e.Property(x => x.ContactPhone).HasColumnName("contact_phone").HasMaxLength(50);
+            e.Property(x => x.Purpose).HasColumnName("purpose").HasMaxLength(200).IsRequired();
+            e.Property(x => x.WorkOrderId).HasColumnName("work_order_id");
+            e.Property(x => x.ExpectedReturnDate).HasColumnName("expected_return_date");
+            e.Property(x => x.ReturnedOn).HasColumnName("returned_on");
+            e.Property(x => x.Status).HasColumnName("status").HasConversion<int>();
+            e.Property(x => x.AuthorisedBy).HasColumnName("authorised_by").HasMaxLength(200);
+            e.Property(x => x.Notes).HasColumnName("notes");
+            e.Property(x => x.OutcomeNotes).HasColumnName("outcome_notes");
+            e.Property(x => x.CreatedByUserId).HasColumnName("created_by_user_id");
+            e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").HasDefaultValueSql("now()");
+            e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").HasDefaultValueSql("now()");
+            e.Ignore(x => x.Reference);
+
+            e.HasOne(x => x.WorkOrder)
+                .WithMany()
+                .HasForeignKey(x => x.WorkOrderId)
+                // Restrict: a request that had a machine sent out for it keeps that part of its story.
+                .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasIndex(x => new { x.TenantId, x.Number }).IsUnique().HasDatabaseName("ux_gate_pass_number");
+            e.HasIndex(x => x.WorkOrderId).HasDatabaseName("ix_gate_pass_work_order");
+            e.HasIndex(x => x.PassDate).HasDatabaseName("ix_gate_pass_date");
+            e.HasIndex(x => x.Status).HasDatabaseName("ix_gate_pass_status");
+        });
+
+        builder.Entity<GatePassItem>(e =>
+        {
+            e.ToTable("gate_pass_item");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.GatePassId).HasColumnName("gate_pass_id");
+            e.Property(x => x.EquipmentId).HasColumnName("equipment_id");
+            e.Property(x => x.Description).HasColumnName("description").HasMaxLength(300).IsRequired();
+            e.Property(x => x.AssetCode).HasColumnName("asset_code").HasMaxLength(100);
+            e.Property(x => x.Quantity).HasColumnName("quantity").HasDefaultValue(1);
+            e.Property(x => x.Remarks).HasColumnName("remarks").HasMaxLength(500);
+
+            // The lines go with their pass: they mean nothing without it.
+            e.HasOne(x => x.GatePass)
+                .WithMany(x => x.Items)
+                .HasForeignKey(x => x.GatePassId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(x => x.Machine)
+                .WithMany()
+                .HasForeignKey(x => x.EquipmentId)
+                // Restrict: a machine that has been sent out keeps its record.
+                .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasIndex(x => x.GatePassId).HasDatabaseName("ix_gate_pass_item_pass");
+            e.HasIndex(x => x.EquipmentId).HasDatabaseName("ix_gate_pass_item_equipment");
         });
 
         builder.Entity<PmTaskAttachment>(e =>

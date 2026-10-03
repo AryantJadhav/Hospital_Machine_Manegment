@@ -13,6 +13,7 @@ const TITLES: [prefix: string, title: string][] = [
   ['/locations', 'Locations'],
   ['/checklists', 'Checklists'],
   ['/training', 'Training'],
+  ['/gate-passes', 'Gate passes'],
   ['/spare-parts', 'Spare parts'],
   ['/reports', 'Reports'],
   ['/compliance', 'Compliance report'],

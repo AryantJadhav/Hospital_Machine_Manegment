@@ -10,6 +10,7 @@ import { RenewInsuranceForm } from './RenewInsuranceForm';
 import { formatDate, formatDateTime, todayAtHospital } from '../time';
 import { formatRupees } from '../money';
 import { useHandoff } from '../handoff';
+import { GatePassNotice } from '../GatePassNotice';
 import { HandoffNotice } from '../HandoffNotice';
 import { StatusPill } from '../StatusPill';
 import { Tile } from '../Tile';
@@ -134,6 +135,7 @@ export function EquipmentDetailPage() {
   const canPrint = may(PERMISSIONS.labelsPrint);
 
   const canEdit = may(PERMISSIONS.equipmentEdit);
+  const canSendOut = may(PERMISSIONS.gatePassEdit);
   const canCondemn = may(PERMISSIONS.equipmentEdit);
 
   const [data, setData] = useState<History | null>(null);
@@ -252,6 +254,15 @@ export function EquipmentDetailPage() {
           {e.status !== 40 && e.status !== 50 && !moving && (
             <button className="btn" onClick={() => { setMoving(true); setMovedNote(null); }}>Move</button>
           )}
+          {/* For a machine that cannot be repaired here and has to go to the vendor. */}
+          {canSendOut && e.status !== 40 && e.status !== 50 && (
+            <button
+              className="btn"
+              onClick={() => navigate(`/gate-passes/new?equipmentId=${e.id}`, { state: { from: `/equipment/${e.id}` } })}
+            >
+              Send out for repair
+            </button>
+          )}
           {canEdit && e.status !== 40 && e.status !== 50 && !addingDates && (
             <button className="btn" onClick={() => { setAddingDates(true); setMovedNote(null); }}>Add PM dates</button>
           )}
@@ -286,6 +297,7 @@ export function EquipmentDetailPage() {
       </header>
 
       <HandoffNotice handoff={handoff} />
+      <GatePassNotice equipmentId={e.id} from={`/equipment/${e.id}`} />
 
       {actionError && <p className="alert alert-error" role="alert">{actionError}</p>}
 

@@ -23,6 +23,12 @@ public static class Permissions
     public const string ChecklistsView = "checklists.view";
     public const string TrainingView = "training.view";
     public const string PmWork = "pm.work";
+
+    /// <summary>See the gate passes: which machines are out of the hospital for repair, and with whom.</summary>
+    public const string GatePassView = "gate-pass.view";
+
+    /// <summary>Write a gate pass to send a machine out, record that it came back, or cancel one. Passes are never deleted.</summary>
+    public const string GatePassEdit = "gate-pass.edit";
     public const string WorkOrdersView = "work-orders.view";
 
     /// <summary>
@@ -79,7 +85,7 @@ public static class Permissions
 
     public static readonly IReadOnlyList<string> All =
     [
-        RegisterView, SparePartsView, ChecklistsView, TrainingView, PmWork,
+        RegisterView, SparePartsView, ChecklistsView, TrainingView, PmWork, GatePassView, GatePassEdit,
         WorkOrdersView, WorkOrdersReport, WorkOrdersNote, WorkOrdersWork, EquipmentMove, DepartmentView,
         EquipmentEdit, EquipmentTypesEdit, LocationsEdit, LabelsPrint, DataImport, DataExport,
         ChecklistsEdit, PmManage, WorkOrdersAssign, WorkOrdersCancel, AttachmentsDelete,

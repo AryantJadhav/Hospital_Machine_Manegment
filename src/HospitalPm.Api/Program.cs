@@ -9,6 +9,7 @@ using HospitalPm.Api.Locations;
 using HospitalPm.Api.Maintenance;
 using HospitalPm.Api.Operations;
 using HospitalPm.Api.Reports;
+using HospitalPm.Api.GatePasses;
 using HospitalPm.Api.Training;
 using HospitalPm.Api.WorkOrders;
 using HospitalPm.Infrastructure.Identity;
@@ -335,6 +336,7 @@ app.MapCostReportEndpoints();
 app.MapWorkDoneReportEndpoints();
 app.MapStockReportEndpoints();
 app.MapTrainingEndpoints();
+app.MapGatePassEndpoints();
 app.MapExportEndpoints();
 
 app.UseDefaultFiles();

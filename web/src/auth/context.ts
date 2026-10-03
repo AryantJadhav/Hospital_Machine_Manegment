@@ -74,6 +74,8 @@ export const PERMISSIONS = {
   checklistsView: 'checklists.view',
   trainingView: 'training.view',
   pmWork: 'pm.work',
+  gatePassView: 'gate-pass.view',
+  gatePassEdit: 'gate-pass.edit',
   workOrdersView: 'work-orders.view',
   workOrdersReport: 'work-orders.report',
   workOrdersWork: 'work-orders.work',

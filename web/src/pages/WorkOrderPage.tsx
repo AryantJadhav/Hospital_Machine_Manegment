@@ -3,6 +3,7 @@ import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-route
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../auth/useAuth';
 import { PERMISSIONS } from '../auth/context';
+import { GatePassNotice } from '../GatePassNotice';
 import { HandoffNotice } from '../HandoffNotice';
 import { useHandoff } from '../handoff';
 import { StatusPill } from '../StatusPill';
@@ -51,6 +52,8 @@ export function WorkOrderPage() {
   // Someone who reported a fault, from another department, can follow it and answer about it. Working
   // it (status, parts, resolving) is the biomedical team's, and is not offered to them.
   const canWork = may(PERMISSIONS.workOrdersWork);
+  // Sending the machine to the vendor, when it cannot be repaired here.
+  const canSendOut = may(PERMISSIONS.gatePassEdit);
   const location = useLocation();
   const navigate = useNavigate();
   // Where they came from, filters and all, so Back is the list as they left it.
@@ -149,10 +152,24 @@ export function WorkOrderPage() {
           </p>
         </div>
 
-        {/* A preview in a tab of its own first; downloading is a choice made there. */}
-        <a className="btn" href={`/work-orders/${order.id}/report`} target="_blank" rel="noopener">
-          View service report
-        </a>
+        <div className="row">
+          {canSendOut && order.status !== 60 && order.status !== 70 && (
+            <button
+              className="btn"
+              onClick={() =>
+                navigate(`/gate-passes/new?equipmentId=${order.equipmentId}&workOrderId=${order.id}`, {
+                  state: { from: `/work-orders/${order.id}` },
+                })
+              }
+            >
+              Send out for repair
+            </button>
+          )}
+          {/* A preview in a tab of its own first; downloading is a choice made there. */}
+          <a className="btn" href={`/work-orders/${order.id}/report`} target="_blank" rel="noopener">
+            View service report
+          </a>
+        </div>
       </header>
 
       <div className="row">
@@ -167,6 +184,7 @@ export function WorkOrderPage() {
 
       <HandoffNotice handoff={handoff} />
       {error && <p className="alert alert-error" role="alert">{error}</p>}
+      <GatePassNotice equipmentId={order.equipmentId} from={`/work-orders/${order.id}`} />
 
       <div className="wo-page">
         <div className="stack">

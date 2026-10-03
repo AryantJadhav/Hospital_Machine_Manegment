@@ -26,6 +26,8 @@ public static class RolePermissions
         Permissions.WorkOrdersNote,
         Permissions.WorkOrdersWork,
         Permissions.EquipmentMove,
+        Permissions.GatePassView,
+        Permissions.GatePassEdit,
     };
 
     /// <summary>

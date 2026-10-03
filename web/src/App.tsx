@@ -28,6 +28,10 @@ import { ExportPage } from './pages/ExportPage';
 import { AccessPage } from './pages/AccessPage';
 import { AuditPage } from './pages/AuditPage';
 import { ChecklistsPage } from './pages/ChecklistsPage';
+import { GatePassesPage } from './pages/GatePassesPage';
+import { GatePassNewPage } from './pages/GatePassForm';
+import { GatePassPage } from './pages/GatePassPage';
+import { GatePassPreviewPage } from './pages/GatePassPreviewPage';
 import { ServiceHistoryPage } from './pages/ServiceHistoryPage';
 import { ServiceReportPreviewPage } from './pages/ServiceReportPreviewPage';
 import { TrainingPage } from './pages/TrainingPage';
@@ -162,6 +166,13 @@ function Shell() {
             </NavLink>
           )}
 
+          {/* Machines sent out of the hospital to a vendor for repair, and when they are due back. */}
+          {may(PERMISSIONS.gatePassView) && (
+            <NavLink to="/gate-passes" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+              Gate passes
+            </NavLink>
+          )}
+
           {/* Visible to everyone, editable only by an Admin: who has been trained on what is a
               question anyone handing a machine over wants answered. */}
           {may(PERMISSIONS.trainingView) && (
@@ -211,6 +222,10 @@ function Shell() {
           <Route path="/training" element={needs(PERMISSIONS.trainingView, <TrainingPage />)} />
           <Route path="/training/:id" element={needs(PERMISSIONS.trainingView, <TrainingSessionPage />)} />
           <Route path="/training/:id/report" element={needs(PERMISSIONS.trainingView, <TrainingReportPreviewPage />)} />
+          <Route path="/gate-passes" element={needs(PERMISSIONS.gatePassView, <GatePassesPage />)} />
+          <Route path="/gate-passes/new" element={needs(PERMISSIONS.gatePassEdit, <GatePassNewPage />)} />
+          <Route path="/gate-passes/:id" element={needs(PERMISSIONS.gatePassView, <GatePassPage />)} />
+          <Route path="/gate-passes/:id/pdf" element={needs(PERMISSIONS.gatePassView, <GatePassPreviewPage />)} />
           <Route path="/work-orders" element={needs(PERMISSIONS.workOrdersView, <WorkOrdersPage />)} />
           <Route path="/service-history" element={needs(PERMISSIONS.workOrdersView, <ServiceHistoryPage />)} />
           <Route path="/work-orders/:id" element={needs(PERMISSIONS.registerView, <WorkOrderPage />)} />

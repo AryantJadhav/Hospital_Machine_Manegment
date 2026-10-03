@@ -25,6 +25,8 @@ public static class PermissionCatalog
         new(Permissions.WorkOrdersNote, "Everyday work", "Add a note or photo to a request", "Answer what the engineer asks, and show what is wrong."),
         new(Permissions.WorkOrdersWork, "Everyday work", "Work a service request", "Notes, status, parts used, photos, and marking it resolved."),
         new(Permissions.EquipmentMove, "Everyday work", "Move a machine", "Record that a machine is now somewhere else."),
+        new(Permissions.GatePassView, "Looking", "See gate passes", "Which machines are out of the hospital for repair, and with whom."),
+        new(Permissions.GatePassEdit, "Everyday work", "Send a machine out", "Write a gate pass, record that it came back, or cancel one."),
 
         new(Permissions.EquipmentEdit, "The register", "Add and change equipment", "Add, edit, condemn, and renew insurance."),
         new(Permissions.EquipmentTypesEdit, "The register", "Change kinds of machine", "Add and edit equipment types."),
