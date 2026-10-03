@@ -318,6 +318,7 @@ app.MapPmEndpoints();
 app.MapPmExecutionEndpoints();
 app.MapPmVendorEndpoints();
 app.MapWorkOrderEndpoints();
+app.MapServiceHistoryEndpoints();
 app.MapReportEndpoints();
 app.MapBackupEndpoints();
 app.MapDiagnosticsEndpoints();

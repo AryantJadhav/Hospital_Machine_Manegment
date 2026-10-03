@@ -27,6 +27,7 @@ import { ReportsPage } from './pages/ReportsPage';
 import { ExportPage } from './pages/ExportPage';
 import { AccessPage } from './pages/AccessPage';
 import { ChecklistsPage } from './pages/ChecklistsPage';
+import { ServiceHistoryPage } from './pages/ServiceHistoryPage';
 import { ServiceReportPreviewPage } from './pages/ServiceReportPreviewPage';
 import { TrainingPage } from './pages/TrainingPage';
 import { TrainingReportPreviewPage } from './pages/TrainingReportPreviewPage';
@@ -122,6 +123,14 @@ function Shell() {
             </NavLink>
           )}
 
+          {/* For a person from another department: the repairs done on their machines. Those who work
+              on the equipment have the full lists and the Reports pages instead. */}
+          {may(PERMISSIONS.workOrdersView) && !may(PERMISSIONS.registerView) && (
+            <NavLink to="/service-history" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+              Service history
+            </NavLink>
+          )}
+
           {may(PERMISSIONS.registerView, PERMISSIONS.departmentView) && (
             <NavLink to="/equipment" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
               Equipment
@@ -202,6 +211,7 @@ function Shell() {
           <Route path="/training/:id" element={needs(PERMISSIONS.trainingView, <TrainingSessionPage />)} />
           <Route path="/training/:id/report" element={needs(PERMISSIONS.trainingView, <TrainingReportPreviewPage />)} />
           <Route path="/work-orders" element={needs(PERMISSIONS.workOrdersView, <WorkOrdersPage />)} />
+          <Route path="/service-history" element={needs(PERMISSIONS.workOrdersView, <ServiceHistoryPage />)} />
           <Route path="/work-orders/:id" element={needs(PERMISSIONS.registerView, <WorkOrderPage />)} />
           <Route path="/work-orders/:id/report" element={needs(PERMISSIONS.workOrdersView, <ServiceReportPreviewPage />)} />
           <Route path="/equipment" element={needsAny([PERMISSIONS.registerView, PERMISSIONS.departmentView], <EquipmentListPage />)} />

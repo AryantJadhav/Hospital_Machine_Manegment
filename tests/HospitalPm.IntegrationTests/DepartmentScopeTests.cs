@@ -399,6 +399,92 @@ public sealed class DepartmentScopeTests(PostgresFixture fixture) : IAsyncLifeti
             "UPDATE work_order SET resolved_at_utc = {0} WHERE id = {1}", DateTime.UtcNow - ago, orderId);
     }
 
+    private async Task ResolveAsync(int id, string notes)
+    {
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await _engineer.PostAsJsonAsync($"/api/work-orders/{id}/status", new { status = 30 })).StatusCode);
+        Assert.True((await _engineer.PostAsJsonAsync($"/api/work-orders/{id}/resolve", new { resolutionNotes = notes })).IsSuccessStatusCode);
+    }
+
+    private static HashSet<int> Ids(JsonElement list) =>
+        list.GetProperty("items").EnumerateArray().Select(i => i.GetProperty("id").GetInt32()).ToHashSet();
+
+    [Fact]
+    public async Task A_ward_user_has_a_history_of_the_repairs_done_on_their_departments_machines_and_no_others()
+    {
+        await ResolveAsync(_icuOrderId, $"Replaced the ICU board {_suffix}");
+        await ResolveAsync(_otOrderId, $"Replaced the OT board {_suffix}");
+
+        var mine = await _ward.GetFromJsonAsync<JsonElement>("/api/work-orders/history?pageSize=200");
+        var ids = Ids(mine);
+        Assert.Contains(_icuOrderId, ids);
+        Assert.DoesNotContain(_otOrderId, ids);
+
+        // What was wrong, what was done and by whom, and how long the machine was down.
+        var row = mine.GetProperty("items").EnumerateArray().Single(i => i.GetProperty("id").GetInt32() == _icuOrderId);
+        Assert.Equal($"Replaced the ICU board {_suffix}", row.GetProperty("resolutionNotes").GetString());
+        Assert.Equal("ICU machine alarm is faulty", row.GetProperty("faultDescription").GetString());
+        Assert.StartsWith("ds-eng", row.GetProperty("resolvedByName").GetString());
+        Assert.StartsWith("ds-eng", row.GetProperty("reportedByName").GetString());
+        Assert.True(mine.GetProperty("done").GetInt32() >= 1);
+
+        // No money anywhere in it, and no parts: that is the biomedical department's.
+        var raw = mine.GetRawText();
+        Assert.DoesNotContain("unitCost", raw, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("partsUsed", raw, StringComparison.OrdinalIgnoreCase);
+
+        // The engineer's view of the same history is the whole hospital's.
+        var all = Ids(await _engineer.GetFromJsonAsync<JsonElement>("/api/work-orders/history?pageSize=200"));
+        Assert.Contains(_icuOrderId, all);
+        Assert.Contains(_otOrderId, all);
+    }
+
+    [Fact]
+    public async Task The_history_can_be_narrowed_to_what_they_raised_a_word_or_a_period()
+    {
+        var made = await _ward.PostAsJsonAsync("/api/work-orders",
+            new { equipmentId = _icuMachineId, faultDescription = "Raised and repaired", priority = 20 });
+        var wardId = (await made.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
+        await ResolveAsync(wardId, $"Cleaned the sensor {_suffix}");
+        await ResolveAsync(_icuOrderId, $"Replaced the ICU board {_suffix}");
+
+        // Only the ones they raised.
+        var raised = Ids(await _ward.GetFromJsonAsync<JsonElement>("/api/work-orders/history?requestedBy=me&pageSize=200"));
+        Assert.Contains(wardId, raised);
+        Assert.DoesNotContain(_icuOrderId, raised);
+
+        // By a word in what was done, and in what was wrong.
+        var byDone = Ids(await _ward.GetFromJsonAsync<JsonElement>($"/api/work-orders/history?q=Cleaned the sensor {_suffix}"));
+        Assert.Equal([wardId], byDone.ToArray());
+        var byFault = Ids(await _ward.GetFromJsonAsync<JsonElement>("/api/work-orders/history?q=alarm is faulty&pageSize=200"));
+        Assert.Contains(_icuOrderId, byFault);
+
+        // A period in the past holds none of today's repairs; a backwards one is refused.
+        var past = await _ward.GetFromJsonAsync<JsonElement>("/api/work-orders/history?from=2020-01-01&to=2020-01-31");
+        Assert.Equal(0, past.GetProperty("done").GetInt32());
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await _ward.GetAsync("/api/work-orders/history?from=2026-02-01&to=2026-01-01")).StatusCode);
+    }
+
+    [Fact]
+    public async Task The_history_can_be_downloaded_as_a_spreadsheet_with_only_their_own_repairs()
+    {
+        await ResolveAsync(_icuOrderId, $"Replaced the ICU board {_suffix}");
+        await ResolveAsync(_otOrderId, $"Replaced the OT board {_suffix}");
+
+        var res = await _ward.GetAsync("/api/work-orders/history/report.csv");
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        Assert.Equal("text/csv", res.Content.Headers.ContentType?.MediaType);
+
+        var csv = await res.Content.ReadAsStringAsync();
+        Assert.StartsWith("Request,Machine number,Machine,Where,What was wrong,What was done", csv);
+        Assert.Contains(_icuTag, csv);
+        Assert.Contains($"Replaced the ICU board {_suffix}", csv);
+        Assert.DoesNotContain(_otTag, csv);
+        Assert.DoesNotContain($"Replaced the OT board {_suffix}", csv);
+        Assert.DoesNotContain("cost", csv, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public async Task A_closed_request_follows_the_same_week()
     {

@@ -7,6 +7,7 @@ const TITLES: [prefix: string, title: string][] = [
   ['/dashboard', 'Today'],
   ['/pm', 'Preventive maintenance'],
   ['/work-orders', 'Request Service'],
+  ['/service-history', 'Service history'],
   ['/equipment', 'Equipment'],
   ['/equipment-types', 'Equipment types'],
   ['/locations', 'Locations'],
