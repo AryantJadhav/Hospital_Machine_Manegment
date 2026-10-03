@@ -115,6 +115,7 @@ public sealed class PermissionTests(PostgresFixture fixture) : IAsyncLifetime, I
             Permissions.RegisterView, Permissions.SparePartsView, Permissions.ChecklistsView, Permissions.TrainingView,
             Permissions.PmWork, Permissions.WorkOrdersView, Permissions.WorkOrdersReport, Permissions.WorkOrdersNote,
             Permissions.WorkOrdersWork, Permissions.EquipmentMove, Permissions.GatePassView, Permissions.GatePassEdit,
+            Permissions.IncidentsView, Permissions.IncidentsReport, Permissions.IncidentsManage,
         ];
         Assert.True(engineer.SetEquals(floor));
 
@@ -150,7 +151,11 @@ public sealed class PermissionTests(PostgresFixture fixture) : IAsyncLifetime, I
         Assert.True(ward.SetEquals(
         [
             Permissions.DepartmentView, Permissions.WorkOrdersView, Permissions.WorkOrdersReport, Permissions.WorkOrdersNote,
+            Permissions.IncidentsView, Permissions.IncidentsReport,
         ]));
+
+        // They write incidents up; looking into them and closing them is the biomedical team's.
+        Assert.DoesNotContain(Permissions.IncidentsManage, ward);
 
         // The whole register is what limits them to their own part of it: they must not hold it.
         Assert.DoesNotContain(Permissions.RegisterView, ward);

@@ -29,6 +29,10 @@ import { AccessPage } from './pages/AccessPage';
 import { AuditPage } from './pages/AuditPage';
 import { ChecklistsPage } from './pages/ChecklistsPage';
 import { GatePassesPage } from './pages/GatePassesPage';
+import { IncidentNewPage } from './pages/IncidentForm';
+import { IncidentPage } from './pages/IncidentPage';
+import { IncidentReportPreviewPage, IncidentsSummaryPreviewPage } from './pages/IncidentReportPreviewPages';
+import { IncidentsPage } from './pages/IncidentsPage';
 import { GatePassNewPage } from './pages/GatePassForm';
 import { GatePassPage } from './pages/GatePassPage';
 import { GatePassPreviewPage } from './pages/GatePassPreviewPage';
@@ -166,6 +170,13 @@ function Shell() {
             </NavLink>
           )}
 
+          {/* A drop, a fall or mishandling of a machine: written up by the department, looked into by Biomedical. */}
+          {may(PERMISSIONS.incidentsView) && (
+            <NavLink to="/incidents" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+              Incidents
+            </NavLink>
+          )}
+
           {/* Machines sent out of the hospital to a vendor for repair, and when they are due back. */}
           {may(PERMISSIONS.gatePassView) && (
             <NavLink to="/gate-passes" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
@@ -222,6 +233,11 @@ function Shell() {
           <Route path="/training" element={needs(PERMISSIONS.trainingView, <TrainingPage />)} />
           <Route path="/training/:id" element={needs(PERMISSIONS.trainingView, <TrainingSessionPage />)} />
           <Route path="/training/:id/report" element={needs(PERMISSIONS.trainingView, <TrainingReportPreviewPage />)} />
+          <Route path="/incidents" element={needs(PERMISSIONS.incidentsView, <IncidentsPage />)} />
+          <Route path="/incidents/new" element={needs(PERMISSIONS.incidentsReport, <IncidentNewPage />)} />
+          <Route path="/incidents/report" element={needs(PERMISSIONS.incidentsView, <IncidentsSummaryPreviewPage />)} />
+          <Route path="/incidents/:id" element={needs(PERMISSIONS.incidentsView, <IncidentPage />)} />
+          <Route path="/incidents/:id/report" element={needs(PERMISSIONS.incidentsView, <IncidentReportPreviewPage />)} />
           <Route path="/gate-passes" element={needs(PERMISSIONS.gatePassView, <GatePassesPage />)} />
           <Route path="/gate-passes/new" element={needs(PERMISSIONS.gatePassEdit, <GatePassNewPage />)} />
           <Route path="/gate-passes/:id" element={needs(PERMISSIONS.gatePassView, <GatePassPage />)} />

@@ -11,6 +11,7 @@ import { formatDate, formatDateTime, todayAtHospital } from '../time';
 import { formatRupees } from '../money';
 import { useHandoff } from '../handoff';
 import { GatePassNotice } from '../GatePassNotice';
+import { IncidentNotice } from '../IncidentNotice';
 import { HandoffNotice } from '../HandoffNotice';
 import { StatusPill } from '../StatusPill';
 import { Tile } from '../Tile';
@@ -136,6 +137,7 @@ export function EquipmentDetailPage() {
 
   const canEdit = may(PERMISSIONS.equipmentEdit);
   const canSendOut = may(PERMISSIONS.gatePassEdit);
+  const canReportIncident = may(PERMISSIONS.incidentsReport);
   const canCondemn = may(PERMISSIONS.equipmentEdit);
 
   const [data, setData] = useState<History | null>(null);
@@ -254,6 +256,15 @@ export function EquipmentDetailPage() {
           {e.status !== 40 && e.status !== 50 && !moving && (
             <button className="btn" onClick={() => { setMoving(true); setMovedNote(null); }}>Move</button>
           )}
+          {/* A drop, a fall or mishandling of this machine. */}
+          {canReportIncident && e.status !== 50 && (
+            <button
+              className="btn"
+              onClick={() => navigate(`/incidents/new?equipmentId=${e.id}`, { state: { from: `/equipment/${e.id}` } })}
+            >
+              Report an incident
+            </button>
+          )}
           {/* For a machine that cannot be repaired here and has to go to the vendor. */}
           {canSendOut && e.status !== 40 && e.status !== 50 && (
             <button
@@ -298,6 +309,7 @@ export function EquipmentDetailPage() {
 
       <HandoffNotice handoff={handoff} />
       <GatePassNotice equipmentId={e.id} from={`/equipment/${e.id}`} />
+      <IncidentNotice equipmentId={e.id} assetTag={e.assetTag} from={`/equipment/${e.id}`} />
 
       {actionError && <p className="alert alert-error" role="alert">{actionError}</p>}
 

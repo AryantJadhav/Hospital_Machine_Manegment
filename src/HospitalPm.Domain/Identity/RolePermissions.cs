@@ -28,6 +28,9 @@ public static class RolePermissions
         Permissions.EquipmentMove,
         Permissions.GatePassView,
         Permissions.GatePassEdit,
+        Permissions.IncidentsView,
+        Permissions.IncidentsReport,
+        Permissions.IncidentsManage,
     };
 
     /// <summary>
@@ -42,6 +45,8 @@ public static class RolePermissions
         Permissions.WorkOrdersView,
         Permissions.WorkOrdersReport,
         Permissions.WorkOrdersNote,
+        Permissions.IncidentsView,
+        Permissions.IncidentsReport,
     };
 
     /// <summary>Keeping the installation running, and the people who may sign in to it. Nothing about the equipment.</summary>

@@ -7,6 +7,7 @@ using HospitalPm.Domain.Maintenance;
 using HospitalPm.Domain.WorkOrders;
 using HospitalPm.Domain.Operations;
 using HospitalPm.Domain.GatePasses;
+using HospitalPm.Domain.Incidents;
 using HospitalPm.Domain.Training;
 using HospitalPm.Domain.Locations;
 using HospitalPm.Infrastructure.Identity;
@@ -76,6 +77,8 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
 
     public DbSet<GatePassItem> GatePassItems => Set<GatePassItem>();
 
+    public DbSet<Incident> Incidents => Set<Incident>();
+
     public DbSet<Location> Locations => Set<Location>();
 
     public DbSet<Equipment> Equipment => Set<Equipment>();
@@ -120,6 +123,7 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
         builder.Entity<Equipment>().HasQueryFilter(e => !_scoped || _scopeLocationIds.Contains(e.LocationId));
         builder.Entity<Location>().HasQueryFilter(l => !_scoped || _scopeLocationIds.Contains(l.Id));
         builder.Entity<WorkOrder>().HasQueryFilter(w => !_scoped || _scopeLocationIds.Contains(w.Equipment!.LocationId));
+        builder.Entity<Incident>().HasQueryFilter(i => !_scoped || _scopeLocationIds.Contains(i.Equipment!.LocationId));
 
         // What hangs off a service request goes with it, so a photo or a note cannot be fetched on its
         // own by number when the request it belongs to is not theirs.
@@ -406,6 +410,50 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
 
             e.HasIndex(x => x.GatePassId).HasDatabaseName("ix_gate_pass_item_pass");
             e.HasIndex(x => x.EquipmentId).HasDatabaseName("ix_gate_pass_item_equipment");
+        });
+
+        builder.Entity<Incident>(e =>
+        {
+            e.ToTable("incident");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.EquipmentId).HasColumnName("equipment_id");
+            e.Property(x => x.LocationId).HasColumnName("location_id");
+            e.Property(x => x.Type).HasColumnName("incident_type").HasConversion<int>();
+            e.Property(x => x.OccurredOn).HasColumnName("occurred_on");
+            e.Property(x => x.OccurredAt).HasColumnName("occurred_at");
+            e.Property(x => x.Place).HasColumnName("place").HasMaxLength(200);
+            e.Property(x => x.Description).HasColumnName("description").IsRequired();
+            e.Property(x => x.InvolvedPerson).HasColumnName("involved_person").HasMaxLength(200);
+            e.Property(x => x.ImmediateAction).HasColumnName("immediate_action");
+            e.Property(x => x.TakenOutOfUse).HasColumnName("taken_out_of_use");
+            e.Property(x => x.Damage).HasColumnName("damage_level").HasConversion<int>();
+            e.Property(x => x.Status).HasColumnName("status").HasConversion<int>();
+            e.Property(x => x.Findings).HasColumnName("findings");
+            e.Property(x => x.CorrectiveAction).HasColumnName("corrective_action");
+            e.Property(x => x.ReportedByUserId).HasColumnName("reported_by_user_id");
+            e.Property(x => x.ReportedAtUtc).HasColumnName("reported_at_utc");
+            e.Property(x => x.ClosedAtUtc).HasColumnName("closed_at_utc");
+            e.Property(x => x.ClosedByUserId).HasColumnName("closed_by_user_id");
+            e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").HasDefaultValueSql("now()");
+            e.Ignore(x => x.Reference);
+
+            e.HasOne(x => x.Equipment)
+                .WithMany()
+                .HasForeignKey(x => x.EquipmentId)
+                // Restrict: what happened to a machine is part of its record.
+                .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Location)
+                .WithMany()
+                .HasForeignKey(x => x.LocationId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasIndex(x => x.EquipmentId).HasDatabaseName("ix_incident_equipment");
+            e.HasIndex(x => x.OccurredOn).HasDatabaseName("ix_incident_occurred_on");
+            e.HasIndex(x => x.Status).HasDatabaseName("ix_incident_status");
+            e.HasIndex(x => x.ReportedByUserId).HasDatabaseName("ix_incident_reported_by");
         });
 
         builder.Entity<PmTaskAttachment>(e =>

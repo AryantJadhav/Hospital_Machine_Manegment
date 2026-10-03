@@ -29,6 +29,18 @@ public static class Permissions
 
     /// <summary>Write a gate pass to send a machine out, record that it came back, or cancel one. Passes are never deleted.</summary>
     public const string GatePassEdit = "gate-pass.edit";
+
+    /// <summary>
+    /// See the incidents with machines (a drop, a fall, mishandling): the ones in one's own departments for a
+    /// person from another department, all of them for the biomedical team.
+    /// </summary>
+    public const string IncidentsView = "incidents.view";
+
+    /// <summary>Write up an incident with a machine. Held by everyone who works with the equipment, so it is reported on the day.</summary>
+    public const string IncidentsReport = "incidents.report";
+
+    /// <summary>Look into an incident, correct it, say what caused it and close it. The biomedical team's.</summary>
+    public const string IncidentsManage = "incidents.manage";
     public const string WorkOrdersView = "work-orders.view";
 
     /// <summary>
@@ -85,7 +97,7 @@ public static class Permissions
 
     public static readonly IReadOnlyList<string> All =
     [
-        RegisterView, SparePartsView, ChecklistsView, TrainingView, PmWork, GatePassView, GatePassEdit,
+        RegisterView, SparePartsView, ChecklistsView, TrainingView, PmWork, GatePassView, GatePassEdit, IncidentsView, IncidentsReport, IncidentsManage,
         WorkOrdersView, WorkOrdersReport, WorkOrdersNote, WorkOrdersWork, EquipmentMove, DepartmentView,
         EquipmentEdit, EquipmentTypesEdit, LocationsEdit, LabelsPrint, DataImport, DataExport,
         ChecklistsEdit, PmManage, WorkOrdersAssign, WorkOrdersCancel, AttachmentsDelete,

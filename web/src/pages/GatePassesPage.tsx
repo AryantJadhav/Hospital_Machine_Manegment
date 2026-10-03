@@ -175,7 +175,7 @@ export function GatePassesPage() {
                     </div>
                   )}
                 </td>
-                <td style={{ maxWidth: '22rem' }}>
+                <td style={{ whiteSpace: 'normal', minWidth: '14rem', maxWidth: '24rem' }}>
                   {p.someItems[0]}
                   <div className="muted">
                     {p.itemCount > 1 ? `and ${p.itemCount - 1} more · ` : ''}quantity {p.totalQuantity.toLocaleString('en-IN')}
