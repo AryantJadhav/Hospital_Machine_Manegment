@@ -21,6 +21,9 @@ public sealed class DepartmentScopeMiddleware(RequestDelegate next)
     {
         if (http.User.Identity?.IsAuthenticated == true)
         {
+            // Whoever is signed in is the one making any change this request makes, and the audit log says so.
+            db.ActorUserId = PermissionService.UserIdOf(http.User);
+
             var held = await permissions.ForAsync(http.User, http.RequestAborted);
 
             if (held.Contains(Permissions.DepartmentView) && !held.Contains(Permissions.RegisterView))

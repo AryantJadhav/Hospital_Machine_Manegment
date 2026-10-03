@@ -37,6 +37,12 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
     private bool _scoped;
     private int[] _scopeLocationIds = [];
 
+    /// <summary>
+    /// The signed-in person this context is working for, so the audit log can say who made a change.
+    /// Set once the request's person is known (see AuditActorInterceptor); null for the system's own work.
+    /// </summary>
+    public int? ActorUserId { get; set; }
+
     /// <summary>True when this context hides everything outside the departments given to <see cref="RestrictTo"/>.</summary>
     public bool IsScoped => _scoped;
 

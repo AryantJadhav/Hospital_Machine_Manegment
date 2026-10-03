@@ -16,6 +16,7 @@ const ITEMS: { to: string; label: string; permission: string; feature?: keyof Fe
   { to: '/backups', label: 'Backups', permission: PERMISSIONS.systemBackups, feature: 'backups' },
   { to: '/diagnostics', label: 'Diagnostics', permission: PERMISSIONS.systemDiagnostics },
   { to: '/licence', label: 'Licence', permission: PERMISSIONS.systemLicence },
+  { to: '/audit', label: 'Audit log', permission: PERMISSIONS.auditView },
   { to: '/updates', label: 'Updates', permission: PERMISSIONS.systemUpdates, feature: 'updates' },
 ];
 

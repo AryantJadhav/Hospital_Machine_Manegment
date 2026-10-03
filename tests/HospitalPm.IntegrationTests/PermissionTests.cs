@@ -77,7 +77,7 @@ public sealed class PermissionTests(PostgresFixture fixture) : IAsyncLifetime, I
         string[] notTheirs =
         [
             Permissions.SystemBackups, Permissions.SystemRestore, Permissions.SystemUpdates,
-            Permissions.SystemDiagnostics, Permissions.SystemLicence, Permissions.AccessManage,
+            Permissions.SystemDiagnostics, Permissions.SystemLicence, Permissions.AuditView, Permissions.AccessManage,
         ];
         Assert.All(notTheirs, p => Assert.DoesNotContain(p, head));
     }
@@ -136,6 +136,7 @@ public sealed class PermissionTests(PostgresFixture fixture) : IAsyncLifetime, I
         [
             Permissions.StaffManage, Permissions.SystemBackups, Permissions.SystemRestore,
             Permissions.SystemUpdates, Permissions.SystemDiagnostics, Permissions.SystemLicence,
+            Permissions.AuditView,
         ]));
         Assert.DoesNotContain(Permissions.RegisterView, it);
         Assert.DoesNotContain(Permissions.WorkOrdersView, it);

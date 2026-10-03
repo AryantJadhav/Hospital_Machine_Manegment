@@ -61,6 +61,8 @@ builder.Services.AddOpenApi();
 
 builder.Services.AddDbContext<HospitalPmDbContext>(o =>
     o.UseNpgsql(builder.Configuration.GetConnectionString("HospitalPm"))
+        // So the audit log records who made each change (the database cannot know by itself).
+        .AddInterceptors(new HospitalPm.Infrastructure.Persistence.AuditActorInterceptor())
         // Equipment and service requests are filtered for people in other departments (see
         // HospitalPmDbContext.RestrictTo). EF warns about every required relationship to a filtered
         // table; the filters are written to match, so the warning has nothing left to say.
@@ -322,6 +324,7 @@ app.MapServiceHistoryEndpoints();
 app.MapReportEndpoints();
 app.MapBackupEndpoints();
 app.MapDiagnosticsEndpoints();
+app.MapAuditEndpoints();
 app.MapRestoreEndpoints();
 app.MapLicenceEndpoints();
 app.MapUpdateEndpoints();

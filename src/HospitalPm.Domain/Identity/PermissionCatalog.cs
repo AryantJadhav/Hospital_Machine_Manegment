@@ -47,6 +47,7 @@ public static class PermissionCatalog
         new(Permissions.SystemUpdates, "The installation", "Updates", "Check for and install an update."),
         new(Permissions.SystemDiagnostics, "The installation", "Diagnostics", "Health of the installation."),
         new(Permissions.SystemLicence, "The installation", "Licence", "See and install the licence."),
+        new(Permissions.AuditView, "The installation", "Audit log", "Read who changed what, and when."),
     ];
 
     private static readonly HashSet<string> Names = All.Select(p => p.Permission).ToHashSet(StringComparer.Ordinal);

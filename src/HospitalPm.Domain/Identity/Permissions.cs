@@ -74,6 +74,9 @@ public static class Permissions
     public const string SystemDiagnostics = "system.diagnostics";
     public const string SystemLicence = "system.licence";
 
+    /// <summary>Read the audit log: who changed what, and when. The IT team's and the Developer's.</summary>
+    public const string AuditView = "audit.view";
+
     public static readonly IReadOnlyList<string> All =
     [
         RegisterView, SparePartsView, ChecklistsView, TrainingView, PmWork,
@@ -82,5 +85,6 @@ public static class Permissions
         ChecklistsEdit, PmManage, WorkOrdersAssign, WorkOrdersCancel, AttachmentsDelete,
         SparePartsEdit, TrainingEdit, ReportsView,
         StaffManage, AccessManage, SystemBackups, SystemRestore, SystemUpdates, SystemDiagnostics, SystemLicence,
+        AuditView,
     ];
 }

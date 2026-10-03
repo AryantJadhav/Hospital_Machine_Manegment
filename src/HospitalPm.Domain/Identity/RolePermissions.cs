@@ -51,6 +51,7 @@ public static class RolePermissions
         Permissions.SystemUpdates,
         Permissions.SystemDiagnostics,
         Permissions.SystemLicence,
+        Permissions.AuditView,
     };
 
     /// <summary>

@@ -26,6 +26,7 @@ import { CompliancePage } from './pages/CompliancePage';
 import { ReportsPage } from './pages/ReportsPage';
 import { ExportPage } from './pages/ExportPage';
 import { AccessPage } from './pages/AccessPage';
+import { AuditPage } from './pages/AuditPage';
 import { ChecklistsPage } from './pages/ChecklistsPage';
 import { ServiceHistoryPage } from './pages/ServiceHistoryPage';
 import { ServiceReportPreviewPage } from './pages/ServiceReportPreviewPage';
@@ -239,6 +240,11 @@ function Shell() {
           <Route
             path="/staff"
             element={may(PERMISSIONS.staffManage) ? <StaffPage /> : <Elsewhere notice={ADMIN_ONLY} />}
+          />
+
+          <Route
+            path="/audit"
+            element={may(PERMISSIONS.auditView) ? <AuditPage /> : <Elsewhere notice={ADMIN_ONLY} />}
           />
 
           <Route
