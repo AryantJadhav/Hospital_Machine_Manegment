@@ -70,7 +70,7 @@ public sealed class WorkOrderPartTests(PostgresFixture fixture) : IAsyncLifetime
                 UserName = $"wop-{_suffix}", FullName = "Work Order Part User", IsActive = true,
             };
             await users.CreateAsync(user, Password);
-            await users.AddToRoleAsync(user, Domain.Identity.Roles.Employee);
+            await users.AddToRoleAsync(user, Domain.Identity.Roles.BmeEngineer);
         }
 
         var login = await _client.PostAsJsonAsync("/api/auth/login", new { userName = $"wop-{_suffix}", password = Password });

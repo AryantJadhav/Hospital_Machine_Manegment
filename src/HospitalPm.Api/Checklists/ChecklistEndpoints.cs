@@ -45,7 +45,7 @@ public static class ChecklistEndpoints
     {
         var group = app.MapGroup("/api/checklists")
             .WithTags("Checklists")
-            .RequireAuthorization();
+            .RequirePermission(Permissions.ChecklistsView);
 
         // Every role reads them: a technician needs to see what they will be
         // asked before they walk to the machine.

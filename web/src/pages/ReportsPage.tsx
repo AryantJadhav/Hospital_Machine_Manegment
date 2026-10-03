@@ -198,7 +198,7 @@ export function ReportsPage() {
     let cancelled = false;
     (async () => {
       try {
-        const list = await api.get<Person[]>('/api/users');
+        const list = await api.get<Person[]>('/api/people');
         if (!cancelled) setPeople(list);
       } catch {
         // The work report still lists everyone without the filter.

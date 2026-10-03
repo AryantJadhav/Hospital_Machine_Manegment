@@ -125,7 +125,7 @@ public static class EquipmentEndpoints
     {
         var group = app.MapGroup("/api/equipment")
             .WithTags("Equipment")
-            .RequireAuthorization();
+            .RequirePermission(Permissions.RegisterView);
 
         // Every role can read the register: a technician needs to look up the
         // machine in front of them.

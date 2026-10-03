@@ -7,25 +7,21 @@ export type CurrentUser = {
   roles: string[];
   /** What the server will let this person do. The screen shows what is allowed and no more. */
   permissions: string[];
+  /** The roles this person may give to an account on the Staff page. */
+  manageableRoles: string[];
+  /** The roles whose accounts this person may stop from signing in, and let back in. */
+  pausableRoles: string[];
 };
 
 export type AuthState = {
   user: CurrentUser | null;
   loading: boolean;
-  /**
-   * `expecting` is the role the login screen's chooser was set to. It changes
-   * nothing about the sign-in — it only decides whether the shell says
-   * afterwards that the account turned out to be the other kind.
-   */
-  login: (userName: string, password: string, expecting?: string) => Promise<void>;
+  login: (userName: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   /** True when the user holds any of the given roles. */
   can: (...roles: string[]) => boolean;
   /** True when the user holds any of the given permissions. Use this, not a role, to decide what to show. */
   may: (...permissions: string[]) => boolean;
-  /** Set when the chooser and the account disagreed. Shown once, then dismissed. */
-  signInNotice: string | null;
-  dismissNotice: () => void;
 };
 
 // Kept apart from the provider component so the module holding it exports
@@ -33,16 +29,35 @@ export type AuthState = {
 export const AuthContext = createContext<AuthState | null>(null);
 
 /**
- * Two roles, not four.
- *
- * An Employee records what they did; an Admin decides what gets done. The
- * server enforces the same split — everything here is presentation, so a page
- * that forgets a check hides a button rather than opening a door.
+ * The five kinds of user (HospitalPm.Domain.Identity.Roles). A screen asks what a person may do
+ * (`PERMISSIONS`), not which role they hold; the role is for naming the person and for the Staff
+ * page. The server enforces all of it - everything here is presentation.
  */
 export const ROLES = {
-  admin: 'Admin',
-  employee: 'Employee',
+  developer: 'Developer',
+  itAdmin: 'ItAdmin',
+  bmeHead: 'BmeHead',
+  bmeEngineer: 'BmeEngineer',
+  departmentUser: 'DepartmentUser',
 } as const;
+
+/** What a person reads on screen. The stored name has no spaces. */
+export const ROLE_LABEL: Record<string, string> = {
+  Developer: 'Developer',
+  ItAdmin: 'IT team',
+  BmeHead: 'Head of Biomedical',
+  BmeEngineer: 'Biomedical engineer',
+  DepartmentUser: 'Department user',
+};
+
+/** One line on what each role is for. */
+export const ROLE_HELP: Record<string, string> = {
+  Developer: 'Built and supports the software. Full access.',
+  ItAdmin: "The hospital's IT team: staff accounts, backups, updates, the licence and diagnostics.",
+  BmeHead: 'Head of Biomedical: the register, schedules, checklists, spare parts, training, reports and staff.',
+  BmeEngineer: 'Works the floor: PM rounds, faults, and reading the register. Cannot change what the department has committed to.',
+  DepartmentUser: 'Reports faults on the equipment of their own department. Cannot read anything yet: departments are set up in a later step.',
+};
 
 /**
  * What a person may do, named by the thing done. These are the server's own names
@@ -50,6 +65,15 @@ export const ROLES = {
  * so who holds what is decided in one place on the server.
  */
 export const PERMISSIONS = {
+  registerView: 'register.view',
+  sparePartsView: 'spare-parts.view',
+  checklistsView: 'checklists.view',
+  trainingView: 'training.view',
+  pmWork: 'pm.work',
+  workOrdersView: 'work-orders.view',
+  workOrdersReport: 'work-orders.report',
+  workOrdersWork: 'work-orders.work',
+  equipmentMove: 'equipment.move',
   equipmentEdit: 'equipment.edit',
   equipmentTypesEdit: 'equipment-types.edit',
   locationsEdit: 'locations.edit',
@@ -65,6 +89,7 @@ export const PERMISSIONS = {
   trainingEdit: 'training.edit',
   reportsView: 'reports.view',
   staffManage: 'staff.manage',
+  accessManage: 'access.manage',
   systemBackups: 'system.backups',
   systemRestore: 'system.restore',
   systemUpdates: 'system.updates',

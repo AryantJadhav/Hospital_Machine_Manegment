@@ -45,7 +45,7 @@ public sealed class AssetTagGenerationTests(PostgresFixture fixture) : IAsyncLif
                 UserName = $"at-{_suffix}", FullName = "Tag Admin", IsActive = true,
             };
             Assert.True((await users.CreateAsync(user, Password)).Succeeded);
-            await users.AddToRoleAsync(user, Domain.Identity.Roles.Admin);
+            await users.AddToRoleAsync(user, Domain.Identity.Roles.BmeHead);
         }
 
         var login = await _client.PostAsJsonAsync("/api/auth/login", new { userName = $"at-{_suffix}", password = Password });

@@ -37,7 +37,7 @@ public sealed class PilotMetricsTests(PostgresFixture fixture) : IAsyncLifetime,
         _client = _factory.CreateClient();
         _suffix = Guid.NewGuid().ToString("N")[..8];
 
-        await CreateUserAsync($"pilot-{_suffix}", Domain.Identity.Roles.Admin);
+        await CreateUserAsync($"pilot-{_suffix}", Domain.Identity.Roles.Developer);
 
         var login = await _client.PostAsJsonAsync(
             "/api/auth/login", new { userName = $"pilot-{_suffix}", password = Password });
@@ -176,7 +176,7 @@ public sealed class PilotMetricsTests(PostgresFixture fixture) : IAsyncLifetime,
         var before = await MetricsAsync();
         var activeBefore = before.GetProperty("users").GetProperty("activeThisWeek").GetInt32();
 
-        await CreateUserAsync($"pilot2-{_suffix}", Domain.Identity.Roles.Employee);
+        await CreateUserAsync($"pilot2-{_suffix}", Domain.Identity.Roles.BmeEngineer);
         using var second = _factory.CreateClient();
         var login = await second.PostAsJsonAsync(
             "/api/auth/login", new { userName = $"pilot2-{_suffix}", password = Password });

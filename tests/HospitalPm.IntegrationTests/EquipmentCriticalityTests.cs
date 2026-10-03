@@ -53,7 +53,7 @@ public sealed class EquipmentCriticalityTests(PostgresFixture fixture) : IAsyncL
                 UserName = $"ec-{_suffix}", FullName = "Criticality Admin", IsActive = true,
             };
             Assert.True((await users.CreateAsync(user, Password)).Succeeded);
-            await users.AddToRoleAsync(user, Domain.Identity.Roles.Admin);
+            await users.AddToRoleAsync(user, Domain.Identity.Roles.BmeHead);
         }
 
         var login = await _client.PostAsJsonAsync(

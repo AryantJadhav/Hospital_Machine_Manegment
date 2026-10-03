@@ -41,8 +41,8 @@ public sealed class EquipmentMoveTests(PostgresFixture fixture) : IAsyncLifetime
             _typeId = (await db.EquipmentTypes.FirstAsync(t => t.Code == "ventilator")).Id;
         }
 
-        _admin = await SignInAsync("mv-admin", Domain.Identity.Roles.Admin);
-        _employee = await SignInAsync("mv-emp", Domain.Identity.Roles.Employee);
+        _admin = await SignInAsync("mv-admin", Domain.Identity.Roles.BmeHead);
+        _employee = await SignInAsync("mv-emp", Domain.Identity.Roles.BmeEngineer);
     }
 
     private async Task<HttpClient> SignInAsync(string prefix, string role)

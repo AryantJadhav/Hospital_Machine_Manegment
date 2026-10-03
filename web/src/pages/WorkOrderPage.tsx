@@ -612,7 +612,7 @@ function Actions({
     if (!canAssign) return;
     void (async () => {
       try {
-        setStaff(await api.get<{ id: number; fullName: string }[]>('/api/users'));
+        setStaff(await api.get<{ id: number; fullName: string }[]>('/api/people'));
       } catch {
         // Assignment degrades to unavailable rather than breaking the page.
       }

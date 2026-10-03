@@ -28,8 +28,8 @@ public sealed class EquipmentInsuranceRenewalTests(PostgresFixture fixture) : IA
         _factory = new ApiFactory(fixture.ConnectionString);
         _suffix = Guid.NewGuid().ToString("N")[..8];
 
-        _admin = await SignInAsync("ren-admin", Domain.Identity.Roles.Admin);
-        _employee = await SignInAsync("ren-emp", Domain.Identity.Roles.Employee);
+        _admin = await SignInAsync("ren-admin", Domain.Identity.Roles.BmeHead);
+        _employee = await SignInAsync("ren-emp", Domain.Identity.Roles.BmeEngineer);
 
         await using var db = fixture.CreateContext();
 

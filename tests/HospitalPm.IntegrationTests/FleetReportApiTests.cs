@@ -45,8 +45,8 @@ public sealed class FleetReportApiTests(PostgresFixture fixture) : IAsyncLifetim
         _tagB = $"FRB-{_suffix}".ToUpperInvariant();
         _tagC = $"FRC-{_suffix}".ToUpperInvariant();
 
-        _admin = await SignInAsync("fr-admin", Domain.Identity.Roles.Admin);
-        _employee = await SignInAsync("fr-emp", Domain.Identity.Roles.Employee);
+        _admin = await SignInAsync("fr-admin", Domain.Identity.Roles.BmeHead);
+        _employee = await SignInAsync("fr-emp", Domain.Identity.Roles.BmeEngineer);
 
         await using var db = fixture.CreateContext();
 

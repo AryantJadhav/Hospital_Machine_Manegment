@@ -39,7 +39,7 @@ public static class PmVendorEndpoints
 
     public static void MapPmVendorEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/pm").WithTags("PM vendor reports").RequireAuthorization();
+        var group = app.MapGroup("/api/pm").WithTags("PM vendor reports").RequirePermission(Permissions.PmWork);
 
         // Everyone signed in: the report is part of the machine's record, and recording that a PM
         // was done is a matter of writing down what happened.

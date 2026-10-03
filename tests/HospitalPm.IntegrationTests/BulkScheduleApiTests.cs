@@ -95,7 +95,7 @@ public sealed class BulkScheduleApiTests(PostgresFixture fixture) : IAsyncLifeti
             FullName = "Bulk Schedule User",
         };
         await users.CreateAsync(user, password);
-        await users.AddToRoleAsync(user, Domain.Identity.Roles.Admin);
+        await users.AddToRoleAsync(user, Domain.Identity.Roles.BmeHead);
 
         var login = await _client.PostAsJsonAsync("/api/auth/login", new { userName, password });
         login.EnsureSuccessStatusCode();
@@ -293,7 +293,7 @@ public sealed class BulkScheduleApiTests(PostgresFixture fixture) : IAsyncLifeti
             UserName = userName, FullName = "Bulk Technician",
         };
         await users.CreateAsync(user, password);
-        await users.AddToRoleAsync(user, Domain.Identity.Roles.Employee);
+        await users.AddToRoleAsync(user, Domain.Identity.Roles.BmeEngineer);
 
         using var technician = _factory.CreateClient();
         var login = await technician.PostAsJsonAsync("/api/auth/login", new { userName, password });

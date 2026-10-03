@@ -85,11 +85,11 @@ public static class FirstRunSeed
             return;
         }
 
-        var roled = await users.AddToRoleAsync(user, Roles.Admin);
+        var roled = await users.AddToRoleAsync(user, Roles.Developer);
         if (!roled.Succeeded)
         {
             StartupLog.FirstRunAdminFailed(
-                app.Logger, "the Admin role could not be assigned");
+                app.Logger, "the role could not be assigned");
             return;
         }
 

@@ -3,6 +3,7 @@ using System;
 using HospitalPm.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace HospitalPm.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(HospitalPmDbContext))]
-    partial class HospitalPmDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261002182604_FiveRoles")]
+    partial class FiveRoles
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -574,65 +577,6 @@ namespace HospitalPm.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_equipment_type_category_category");
 
                     b.ToTable("equipment_type_category", (string)null);
-                });
-
-            modelBuilder.Entity("HospitalPm.Domain.Identity.PermissionGrant", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("Effect")
-                        .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("character varying(10)")
-                        .HasColumnName("effect");
-
-                    b.Property<DateOnly?>("ExpiresOn")
-                        .HasColumnType("date")
-                        .HasColumnName("expires_on");
-
-                    b.Property<DateTime>("GrantedAtUtc")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("granted_at_utc")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<int>("GrantedByUserId")
-                        .HasColumnType("integer")
-                        .HasColumnName("granted_by_user_id");
-
-                    b.Property<string>("Note")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)")
-                        .HasColumnName("note");
-
-                    b.Property<string>("Permission")
-                        .IsRequired()
-                        .HasMaxLength(60)
-                        .HasColumnType("character varying(60)")
-                        .HasColumnName("permission");
-
-                    b.Property<int>("TenantId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(1)
-                        .HasColumnName("tenant_id");
-
-                    b.Property<int>("UserId")
-                        .HasColumnType("integer")
-                        .HasColumnName("user_id");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId", "Permission")
-                        .IsUnique()
-                        .HasDatabaseName("ux_user_permission_user_permission");
-
-                    b.ToTable("user_permission", (string)null);
                 });
 
             modelBuilder.Entity("HospitalPm.Domain.Inventory.SparePart", b =>
@@ -2095,15 +2039,6 @@ namespace HospitalPm.Infrastructure.Persistence.Migrations
                     b.Navigation("Category");
 
                     b.Navigation("EquipmentType");
-                });
-
-            modelBuilder.Entity("HospitalPm.Domain.Identity.PermissionGrant", b =>
-                {
-                    b.HasOne("HospitalPm.Infrastructure.Identity.ApplicationUser", null)
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("HospitalPm.Domain.Inventory.SparePart", b =>

@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../api/client';
-import { formatDateTime } from '../time';
+import { useAuth } from '../auth/useAuth';
+import { ROLE_HELP, ROLE_LABEL, ROLES } from '../auth/context';
+import type { AccessView, CatalogItem } from '../accessTypes';
+import { formatDate, formatDateTime } from '../time';
 
 /**
  * The hospital's staff.
@@ -23,23 +26,17 @@ type Staff = {
   role: string;
   isActive: boolean;
   lastLoginAtUtc: string | null;
-};
-
-const ROLE_LABELS: Record<string, string> = {
-  Admin: 'Administrator',
-  Employee: 'Employee',
-};
-
-const ROLE_HELP: Record<string, string> = {
-  Admin:
-    'Full access. Edits the register, writes checklists, schedules PMs, assigns ' +
-    'work, and manages staff, backups and the licence.',
-  Employee:
-    'Works the floor. Does PM rounds, reports and resolves faults, reads the ' +
-    'register. Cannot change what the department has committed to.',
+  /** Sections given on top of the role, and taken away from it. */
+  accessGiven: number;
+  accessTakenAway: number;
 };
 
 export function StaffPage() {
+  // Nobody reaches above themselves: only the roles this person may give are offered, and the
+  // accounts of anyone above them are shown but not touched.
+  const { user } = useAuth();
+  const manageable = user?.manageableRoles ?? [];
+  const pausable = user?.pausableRoles ?? [];
   const [staff, setStaff] = useState<Staff[]>([]);
   const [showInactive, setShowInactive] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -47,6 +44,7 @@ export function StaffPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Staff | null>(null);
+  const [looking, setLooking] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -158,35 +156,55 @@ export function StaffPage() {
               <th>Username</th>
               <th>Staff code</th>
               <th>Role</th>
+              <th>Extra access</th>
               <th>Last signed in</th>
               <th />
             </tr>
           </thead>
           <tbody>
             {staff.length === 0 && (
-              <tr><td colSpan={6} className="empty">Nobody yet.</td></tr>
+              <tr><td colSpan={7} className="empty">Nobody yet.</td></tr>
             )}
 
             {staff.map((p) => (
-              <tr key={p.id} style={p.isActive ? undefined : { opacity: 0.55 }}>
+              <Fragment key={p.id}>
+              <tr style={p.isActive ? undefined : { opacity: 0.55 }}>
                 <td>
                   {p.fullName}
                   {!p.isActive && <span className="muted"> — no longer signing in</span>}
                 </td>
                 <td className="mono">{p.userName}</td>
                 <td className="mono">{p.staffCode ?? <span className="muted">—</span>}</td>
-                <td>{ROLE_LABELS[p.role] ?? p.role}</td>
+                <td>{ROLE_LABEL[p.role] ?? p.role}</td>
+                <td>
+                  {p.accessGiven === 0 && p.accessTakenAway === 0 ? (
+                    <span className="muted">—</span>
+                  ) : (
+                    <button
+                      className="btn btn-quiet"
+                      aria-expanded={looking === p.id}
+                      onClick={() => setLooking(looking === p.id ? null : p.id)}
+                    >
+                      {p.accessGiven > 0 && `+${p.accessGiven} given`}
+                      {p.accessGiven > 0 && p.accessTakenAway > 0 && ', '}
+                      {p.accessTakenAway > 0 && `−${p.accessTakenAway} taken away`}
+                    </button>
+                  )}
+                </td>
                 <td>
                   {p.lastLoginAtUtc
                     ? formatDateTime(p.lastLoginAtUtc)
                     : <span className="muted">never</span>}
                 </td>
                 <td style={{ whiteSpace: 'nowrap' }}>
+                  {!pausable.includes(p.role) && <span className="muted">Managed by {p.role === ROLES.developer ? 'the developer' : 'someone above you'}</span>}
+                  {manageable.includes(p.role) && <>
                   <button className="btn btn-quiet" onClick={() => setEditing(p)}>Edit</button>
                   <button className="btn btn-quiet" onClick={() => void resetPassword(p)}>
                     Reset password
                   </button>
-                  {p.isActive ? (
+                  </>}
+                  {pausable.includes(p.role) && (p.isActive ? (
                     <button className="btn btn-quiet" onClick={() => void deactivate(p)}>
                       Remove access
                     </button>
@@ -200,14 +218,76 @@ export function StaffPage() {
                     >
                       Let back in
                     </button>
+                  ))}
+                  {!manageable.includes(p.role) && pausable.includes(p.role) && (
+                    <div className="muted" style={{ fontSize: '0.8rem' }}>
+                      You can stop this account signing in. It stays stopped until you let it back in.
+                    </div>
                   )}
                 </td>
               </tr>
+              {looking === p.id && (
+                <tr>
+                  <td colSpan={7}><AccessDetail personId={p.id} /></td>
+                </tr>
+              )}
+              </Fragment>
             ))}
           </tbody>
         </table>
       </div>
     </div>
+  );
+}
+
+/**
+ * What one person has been given, or had taken away, on top of their role. Read-only: the hospital is
+ * never kept in the dark about extra access, and only the Developer changes it.
+ */
+function AccessDetail({ personId }: { personId: number }) {
+  const [view, setView] = useState<AccessView | null>(null);
+  const [catalog, setCatalog] = useState<CatalogItem[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [v, c] = await Promise.all([
+          api.get<AccessView>(`/api/users/${personId}/access`),
+          api.get<CatalogItem[]>('/api/access/catalog'),
+        ]);
+        if (cancelled) return;
+        setView(v);
+        setCatalog(c);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Could not load their access.');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [personId]);
+
+  if (error) return <p className="alert alert-error" role="alert">{error}</p>;
+  if (!view) return <p className="muted">Loading…</p>;
+
+  const label = (permission: string) => catalog.find((c) => c.permission === permission)?.label ?? permission;
+
+  return (
+    <ul style={{ margin: 0, paddingLeft: '1.2rem' }} aria-label="Extra access">
+      {view.grants.map((g) => (
+        <li key={g.permission}>
+          <strong>{g.effect === 'Grant' ? 'Given: ' : 'Taken away: '}</strong>
+          {label(g.permission)}
+          <span className="muted">
+            {g.expiresOn && (g.expired ? ` · ran out on ${formatDate(g.expiresOn)}` : ` · until ${formatDate(g.expiresOn)}`)}
+            {g.note && ` · ${g.note}`}
+            {g.grantedByName && ` · by ${g.grantedByName}, ${formatDateTime(g.grantedAtUtc)}`}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -222,10 +302,12 @@ function StaffForm({
   onSaved: (message: string) => void | Promise<void>;
   onError: (msg: string | null) => void;
 }) {
+  const { user } = useAuth();
+  const manageable = user?.manageableRoles ?? [];
   const [userName, setUserName] = useState(editing?.userName ?? '');
   const [fullName, setFullName] = useState(editing?.fullName ?? '');
   const [staffCode, setStaffCode] = useState(editing?.staffCode ?? '');
-  const [role, setRole] = useState(editing?.role ?? 'Employee');
+  const [role, setRole] = useState(editing?.role ?? (manageable.includes(ROLES.bmeEngineer) ? ROLES.bmeEngineer : manageable[0] ?? ''));
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -307,8 +389,8 @@ function StaffForm({
       <label className="stack">
         <span>Role</span>
         <select className="field" value={role} onChange={(e) => setRole(e.target.value)}>
-          {Object.keys(ROLE_LABELS).map((r) => (
-            <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+          {manageable.map((r) => (
+            <option key={r} value={r}>{ROLE_LABEL[r] ?? r}</option>
           ))}
         </select>
         <span className="muted">{ROLE_HELP[role]}</span>

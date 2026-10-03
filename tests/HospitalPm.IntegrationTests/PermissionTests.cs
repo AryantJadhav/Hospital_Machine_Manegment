@@ -50,10 +50,115 @@ public sealed class PermissionTests(PostgresFixture fixture) : IAsyncLifetime, I
     }
 
     [Fact]
-    public void An_admin_holds_every_permission_and_an_employee_holds_none()
+    public void A_developer_holds_every_permission()
     {
-        Assert.True(RolePermissions.For(Roles.Admin).SetEquals(Permissions.All));
-        Assert.Empty(RolePermissions.For(Roles.Employee));
+        Assert.True(RolePermissions.For(Roles.Developer).SetEquals(Permissions.All));
+    }
+
+    [Fact]
+    public void The_head_of_biomedical_decides_for_the_department_and_does_not_run_the_installation()
+    {
+        var head = RolePermissions.For(Roles.BmeHead);
+
+        // Everything the department decides, including the money, the reports and exporting its data.
+        string[] decides =
+        [
+            Permissions.EquipmentEdit, Permissions.EquipmentTypesEdit, Permissions.LocationsEdit, Permissions.LabelsPrint,
+            Permissions.DataImport, Permissions.DataExport, Permissions.ChecklistsEdit, Permissions.PmManage,
+            Permissions.WorkOrdersAssign, Permissions.WorkOrdersCancel, Permissions.AttachmentsDelete,
+            Permissions.SparePartsEdit, Permissions.TrainingEdit, Permissions.ReportsView, Permissions.StaffManage,
+        ];
+        Assert.All(decides, p => Assert.Contains(p, head));
+
+        // And everything an engineer does.
+        Assert.All(RolePermissions.For(Roles.BmeEngineer), p => Assert.Contains(p, head));
+
+        // Not how the installation is run, and not giving other people access.
+        string[] notTheirs =
+        [
+            Permissions.SystemBackups, Permissions.SystemRestore, Permissions.SystemUpdates,
+            Permissions.SystemDiagnostics, Permissions.SystemLicence, Permissions.AccessManage,
+        ];
+        Assert.All(notTheirs, p => Assert.DoesNotContain(p, head));
+    }
+
+    [Fact]
+    public void Giving_access_is_held_by_the_developer_alone()
+    {
+        foreach (var role in Roles.All.Where(r => r != Roles.Developer))
+        {
+            Assert.DoesNotContain(Permissions.AccessManage, RolePermissions.For(role));
+        }
+    }
+
+    [Fact]
+    public void The_it_team_may_stop_the_developer_account_and_nobody_else_may()
+    {
+        Assert.Contains(Roles.Developer, Roles.PausableBy([Roles.ItAdmin]));
+
+        // Everything they manage they may stop, and nothing more.
+        Assert.Equal([Roles.BmeEngineer, Roles.DepartmentUser], Roles.PausableBy([Roles.BmeHead]));
+        Assert.Empty(Roles.PausableBy([Roles.BmeEngineer]));
+        Assert.Equal(Roles.All, Roles.PausableBy([Roles.Developer]));
+
+        // But the IT team still cannot create, change, or reset a Developer.
+        Assert.DoesNotContain(Roles.Developer, Roles.ManageableBy(Roles.ItAdmin));
+    }
+
+    [Fact]
+    public void An_engineer_holds_what_an_employee_always_did_and_nothing_that_decides_for_the_department()
+    {
+        var engineer = RolePermissions.For(Roles.BmeEngineer);
+
+        string[] floor =
+        [
+            Permissions.RegisterView, Permissions.SparePartsView, Permissions.ChecklistsView, Permissions.TrainingView,
+            Permissions.PmWork, Permissions.WorkOrdersView, Permissions.WorkOrdersReport, Permissions.WorkOrdersWork,
+            Permissions.EquipmentMove,
+        ];
+        Assert.True(engineer.SetEquals(floor));
+
+        // Nothing that edits the register, commits the department, reads the money, or runs the installation.
+        Assert.DoesNotContain(Permissions.EquipmentEdit, engineer);
+        Assert.DoesNotContain(Permissions.PmManage, engineer);
+        Assert.DoesNotContain(Permissions.WorkOrdersAssign, engineer);
+        Assert.DoesNotContain(Permissions.ReportsView, engineer);
+        Assert.DoesNotContain(Permissions.StaffManage, engineer);
+        Assert.DoesNotContain(Permissions.SystemBackups, engineer);
+    }
+
+    [Fact]
+    public void The_it_team_runs_the_installation_and_cannot_see_the_equipment()
+    {
+        var it = RolePermissions.For(Roles.ItAdmin);
+
+        Assert.True(it.SetEquals(
+        [
+            Permissions.StaffManage, Permissions.SystemBackups, Permissions.SystemRestore,
+            Permissions.SystemUpdates, Permissions.SystemDiagnostics, Permissions.SystemLicence,
+        ]));
+        Assert.DoesNotContain(Permissions.RegisterView, it);
+        Assert.DoesNotContain(Permissions.WorkOrdersView, it);
+    }
+
+    [Fact]
+    public void A_department_user_holds_nothing_until_their_departments_are_set_up()
+    {
+        Assert.Empty(RolePermissions.For(Roles.DepartmentUser));
+    }
+
+    [Fact]
+    public void Nobody_may_manage_an_account_of_a_kind_above_their_own()
+    {
+        Assert.Equal(Roles.All, Roles.ManageableBy(Roles.Developer));
+        Assert.DoesNotContain(Roles.Developer, Roles.ManageableBy(Roles.ItAdmin));
+        Assert.Contains(Roles.BmeHead, Roles.ManageableBy(Roles.ItAdmin));
+
+        // The head of department looks after the department's own people, not the hospital's IT team.
+        Assert.Equal([Roles.BmeEngineer, Roles.DepartmentUser], Roles.ManageableBy(Roles.BmeHead));
+        Assert.Empty(Roles.ManageableBy(Roles.BmeEngineer));
+        Assert.Empty(Roles.ManageableBy(Roles.DepartmentUser));
+        Assert.Empty(Roles.ManageableBy("Wizard"));
     }
 
     [Fact]
@@ -68,22 +173,31 @@ public sealed class PermissionTests(PostgresFixture fixture) : IAsyncLifetime, I
     [Fact]
     public void Someone_with_two_roles_may_do_what_either_may()
     {
-        Assert.True(RolePermissions.Has([Roles.Employee, Roles.Admin], Permissions.StaffManage));
-        Assert.False(RolePermissions.Has([Roles.Employee], Permissions.StaffManage));
+        Assert.True(RolePermissions.Has([Roles.BmeEngineer, Roles.ItAdmin], Permissions.StaffManage));
+        Assert.False(RolePermissions.Has([Roles.BmeEngineer], Permissions.StaffManage));
     }
 
     [Fact]
     public async Task The_server_tells_each_person_what_they_may_do()
     {
-        var admin = await SignInAsync("perm-admin", Roles.Admin);
-        var employee = await SignInAsync("perm-emp", Roles.Employee);
+        var head = await SignInAsync("perm-head", Roles.BmeHead);
+        var engineer = await SignInAsync("perm-eng", Roles.BmeEngineer);
+        var department = await SignInAsync("perm-dept", Roles.DepartmentUser);
 
-        var adminMe = await admin.GetFromJsonAsync<JsonElement>("/api/auth/me");
-        var granted = adminMe.GetProperty("permissions").EnumerateArray().Select(p => p.GetString()).ToHashSet();
-        Assert.True(granted.SetEquals(Permissions.All));
+        var headMe = await head.GetFromJsonAsync<JsonElement>("/api/auth/me");
+        var granted = headMe.GetProperty("permissions").EnumerateArray().Select(p => p.GetString()).ToHashSet();
+        Assert.True(granted.SetEquals(RolePermissions.For(Roles.BmeHead)));
+        Assert.Equal(["BmeEngineer", "DepartmentUser"],
+            headMe.GetProperty("pausableRoles").EnumerateArray().Select(r => r.GetString()).ToArray());
+        Assert.Equal(["BmeEngineer", "DepartmentUser"],
+            headMe.GetProperty("manageableRoles").EnumerateArray().Select(r => r.GetString()).ToArray());
 
-        var employeeMe = await employee.GetFromJsonAsync<JsonElement>("/api/auth/me");
-        Assert.Equal(0, employeeMe.GetProperty("permissions").GetArrayLength());
+        var engineerMe = await engineer.GetFromJsonAsync<JsonElement>("/api/auth/me");
+        Assert.Equal(RolePermissions.For(Roles.BmeEngineer).Count, engineerMe.GetProperty("permissions").GetArrayLength());
+        Assert.Equal(0, engineerMe.GetProperty("manageableRoles").GetArrayLength());
+
+        var departmentMe = await department.GetFromJsonAsync<JsonElement>("/api/auth/me");
+        Assert.Equal(0, departmentMe.GetProperty("permissions").GetArrayLength());
     }
 
     /// <summary>

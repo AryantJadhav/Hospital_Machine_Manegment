@@ -183,7 +183,7 @@ public sealed class EquipmentHistoryApiTests(PostgresFixture fixture) : IAsyncLi
             FullName = "History API User",
         };
         await users.CreateAsync(user, password);
-        await users.AddToRoleAsync(user, Domain.Identity.Roles.Admin);
+        await users.AddToRoleAsync(user, Domain.Identity.Roles.BmeHead);
 
         var login = await _client.PostAsJsonAsync("/api/auth/login", new { userName, password });
         login.EnsureSuccessStatusCode();

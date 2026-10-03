@@ -48,7 +48,7 @@ public sealed class FailedCheckTests(PostgresFixture fixture) : IAsyncLifetime, 
                 UserName = $"fail-{_suffix}", FullName = "Failing Tech", IsActive = true,
             };
             Assert.True((await users.CreateAsync(user, Password)).Succeeded);
-            await users.AddToRoleAsync(user, Domain.Identity.Roles.Employee);
+            await users.AddToRoleAsync(user, Domain.Identity.Roles.BmeEngineer);
         }
 
         var login = await _client.PostAsJsonAsync(

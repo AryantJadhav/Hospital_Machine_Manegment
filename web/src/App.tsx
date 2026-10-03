@@ -4,7 +4,7 @@ import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation } from 're
 import { api } from './api/client';
 import { AuthProvider } from './auth/AuthContext';
 import { useAuth } from './auth/useAuth';
-import { PERMISSIONS, ROLES } from './auth/context';
+import { PERMISSIONS, ROLE_LABEL } from './auth/context';
 import { LoginPage } from './pages/LoginPage';
 import { EquipmentListPage } from './pages/EquipmentListPage';
 import { EquipmentDetailPage } from './pages/EquipmentDetailPage';
@@ -24,6 +24,7 @@ import { StaffPage } from './pages/StaffPage';
 import { CompliancePage } from './pages/CompliancePage';
 import { ReportsPage } from './pages/ReportsPage';
 import { ExportPage } from './pages/ExportPage';
+import { AccessPage } from './pages/AccessPage';
 import { ChecklistsPage } from './pages/ChecklistsPage';
 import { ServiceReportPreviewPage } from './pages/ServiceReportPreviewPage';
 import { TrainingPage } from './pages/TrainingPage';
@@ -39,24 +40,48 @@ import { useFeatures } from './features';
 import { titleForPath, usePageTitle } from './pageTitle';
 import './App.css';
 
-const ADMIN_ONLY = 'That page is for administrators.';
+const ADMIN_ONLY = 'That page is not part of your access.';
 const SWITCHED_OFF = 'That part of the system is switched off.';
 const NO_SUCH_PAGE = 'There is no page at that address.';
 
 /**
  * Where someone is sent when the page they asked for is not theirs, or not
- * there. It says so on arrival: bouncing to the dashboard with nothing said
- * looked like the link was broken.
+ * there: back to their own starting page. It says so on arrival: bouncing there
+ * with nothing said looked like the link was broken.
  */
 function Elsewhere({ notice }: { notice: string }) {
-  return <Navigate to="/dashboard" replace state={{ handoff: { notice, recorded: null, tone: 'info' } }} />;
+  return <Navigate to="/" replace state={{ handoff: { notice, recorded: null, tone: 'info' } }} />;
+}
+
+/**
+ * Where a person starts. The day's work for someone who works with the equipment; the staff
+ * list for the hospital's IT team, who keep the installation running and see none of it; and a
+ * plain word for an account that has been given nothing yet.
+ */
+function Landing() {
+  const { may } = useAuth();
+  const { state } = useLocation();
+  if (may(PERMISSIONS.registerView)) return <Navigate to="/dashboard" replace state={state} />;
+  if (may(PERMISSIONS.staffManage)) return <Navigate to="/staff" replace state={state} />;
+  return (
+    <div className="page stack">
+      <h1>Welcome</h1>
+      <p className="muted">
+        Your account is set up, but it has not been given access to anything yet. Ask the Head of
+        Biomedical, or the hospital&apos;s IT team, to give you access.
+      </p>
+    </div>
+  );
 }
 
 function Shell() {
-  const { user, logout, can, may, signInNotice, dismissNotice } = useAuth();
-  // Only for the name shown beside the account. What a page or a button offers is decided by
-  // what the person may do (`may`), never by which role they hold.
-  const isAdmin = can(ROLES.admin);
+  const { user, logout, may } = useAuth();
+  // The role is only for the name shown beside the account. What a page or a button offers is
+  // decided by what the person may do (`may`), never by which role they hold.
+  const roleName = ROLE_LABEL[user?.roles[0] ?? ''] ?? '';
+  // A page for people who may use it; anyone else is sent to their own starting page.
+  const needs = (permission: string, page: ReactNode) =>
+    may(permission) ? page : <Elsewhere notice={ADMIN_ONLY} />;
   // Import, export, backups and updates can be switched off for everyone. Null until they are known.
   const features = useFeatures();
   const gated = (permission: string, on: boolean | undefined, page: ReactNode) =>
@@ -74,45 +99,61 @@ function Shell() {
         <span className="brand">Hospital PM</span>
 
         <div className="nav-links">
-          <NavLink to="/dashboard" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-            Today
-          </NavLink>
+          {may(PERMISSIONS.registerView) && (
+            <NavLink to="/dashboard" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+              Today
+            </NavLink>
+          )}
 
-          <NavLink to="/pm" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-            PM
-          </NavLink>
+          {may(PERMISSIONS.pmWork) && (
+            <NavLink to="/pm" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+              PM
+            </NavLink>
+          )}
 
-          <NavLink to="/work-orders" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-            Request Service
-          </NavLink>
+          {may(PERMISSIONS.workOrdersView) && (
+            <NavLink to="/work-orders" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+              Request Service
+            </NavLink>
+          )}
 
-          <NavLink to="/equipment" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-            Equipment
-          </NavLink>
+          {may(PERMISSIONS.registerView) && (
+            <NavLink to="/equipment" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+              Equipment
+            </NavLink>
+          )}
 
           {/* Visible to everyone, editable only by an Admin, the same split as
               Checklists: an engineer checking the shelf before promising a
               repair date is the reason this page exists. */}
-          <NavLink to="/spare-parts" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-            Spare parts
-          </NavLink>
+          {may(PERMISSIONS.sparePartsView) && (
+            <NavLink to="/spare-parts" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+              Spare parts
+            </NavLink>
+          )}
 
-          <NavLink to="/locations" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-            Locations
-          </NavLink>
+          {may(PERMISSIONS.registerView) && (
+            <NavLink to="/locations" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+              Locations
+            </NavLink>
+          )}
 
           {/* Visible to everyone, editable only by an Admin. Someone reading
               the checklist they are about to work from is reasonable; the
               server enforces who may change it. */}
-          <NavLink to="/checklists" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-            Checklists
-          </NavLink>
+          {may(PERMISSIONS.checklistsView) && (
+            <NavLink to="/checklists" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+              Checklists
+            </NavLink>
+          )}
 
           {/* Visible to everyone, editable only by an Admin: who has been trained on what is a
               question anyone handing a machine over wants answered. */}
-          <NavLink to="/training" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-            Training
-          </NavLink>
+          {may(PERMISSIONS.trainingView) && (
+            <NavLink to="/training" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+              Training
+            </NavLink>
+          )}
         </div>
 
         <AdminMenu features={features} />
@@ -124,11 +165,11 @@ function Shell() {
             {user?.fullName ?? user?.userName}
             <span className="nav-role">
               {' · '}
-              {isAdmin ? 'Administrator' : 'Employee'}
+              {roleName}
             </span>
           </span>
-          {/* For everyone signed in, not only an Administrator: a PM is the department's work. */}
-          <NotificationBell />
+          {/* For whoever does PM work: the reminders are about the department's PMs. */}
+          {may(PERMISSIONS.pmWork) && <NotificationBell />}
           <ThemeToggle />
           <button
             className="btn btn-quiet"
@@ -146,31 +187,22 @@ function Shell() {
             succeeded by the time it is known. */}
         <LicenceBanner />
 
-        {signInNotice && (
-          <div className="page">
-            <p className="alert alert-info notice-row" role="status">
-              <span>{signInNotice}</span>
-              <button className="btn btn-quiet" onClick={dismissNotice}>Dismiss</button>
-            </p>
-          </div>
-        )}
-
         <Routes>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/pm" element={<PmTasksPage />} />
-          <Route path="/pm/:taskId/do" element={<PmDoPage />} />
-          <Route path="/training" element={<TrainingPage />} />
-          <Route path="/training/:id" element={<TrainingSessionPage />} />
-          <Route path="/training/:id/report" element={<TrainingReportPreviewPage />} />
-          <Route path="/work-orders" element={<WorkOrdersPage />} />
-          <Route path="/work-orders/:id" element={<WorkOrderPage />} />
-          <Route path="/work-orders/:id/report" element={<ServiceReportPreviewPage />} />
-          <Route path="/equipment" element={<EquipmentListPage />} />
-          <Route path="/equipment/:id" element={<EquipmentDetailPage />} />
-          <Route path="/locations" element={<LocationsPage />} />
-          <Route path="/checklists" element={<ChecklistsPage />} />
-          <Route path="/spare-parts" element={<SparePartsPage />} />
+          <Route path="/" element={<Landing />} />
+          <Route path="/dashboard" element={needs(PERMISSIONS.registerView, <DashboardPage />)} />
+          <Route path="/pm" element={needs(PERMISSIONS.pmWork, <PmTasksPage />)} />
+          <Route path="/pm/:taskId/do" element={needs(PERMISSIONS.pmWork, <PmDoPage />)} />
+          <Route path="/training" element={needs(PERMISSIONS.trainingView, <TrainingPage />)} />
+          <Route path="/training/:id" element={needs(PERMISSIONS.trainingView, <TrainingSessionPage />)} />
+          <Route path="/training/:id/report" element={needs(PERMISSIONS.trainingView, <TrainingReportPreviewPage />)} />
+          <Route path="/work-orders" element={needs(PERMISSIONS.workOrdersView, <WorkOrdersPage />)} />
+          <Route path="/work-orders/:id" element={needs(PERMISSIONS.workOrdersView, <WorkOrderPage />)} />
+          <Route path="/work-orders/:id/report" element={needs(PERMISSIONS.workOrdersView, <ServiceReportPreviewPage />)} />
+          <Route path="/equipment" element={needs(PERMISSIONS.registerView, <EquipmentListPage />)} />
+          <Route path="/equipment/:id" element={needs(PERMISSIONS.registerView, <EquipmentDetailPage />)} />
+          <Route path="/locations" element={needs(PERMISSIONS.registerView, <LocationsPage />)} />
+          <Route path="/checklists" element={needs(PERMISSIONS.checklistsView, <ChecklistsPage />)} />
+          <Route path="/spare-parts" element={needs(PERMISSIONS.sparePartsView, <SparePartsPage />)} />
           <Route
             path="/reports"
             element={may(PERMISSIONS.reportsView) ? <ReportsPage /> : <Elsewhere notice={ADMIN_ONLY} />}
@@ -188,6 +220,11 @@ function Shell() {
           <Route
             path="/staff"
             element={may(PERMISSIONS.staffManage) ? <StaffPage /> : <Elsewhere notice={ADMIN_ONLY} />}
+          />
+
+          <Route
+            path="/access"
+            element={may(PERMISSIONS.accessManage) ? <AccessPage /> : <Elsewhere notice={ADMIN_ONLY} />}
           />
 
           <Route path="/backups" element={gated(PERMISSIONS.systemBackups, features?.backups, <BackupsPage />)} />

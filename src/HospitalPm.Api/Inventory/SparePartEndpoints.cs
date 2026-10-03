@@ -71,7 +71,7 @@ public static class SparePartEndpoints
 
     public static void MapSparePartEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/spare-parts").WithTags("Spare parts").RequireAuthorization();
+        var group = app.MapGroup("/api/spare-parts").WithTags("Spare parts").RequirePermission(Permissions.SparePartsView);
 
         group.MapGet("/", SearchAsync);
         group.MapGet("/{id:int}", GetAsync);

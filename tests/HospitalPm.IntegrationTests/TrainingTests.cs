@@ -66,8 +66,8 @@ public sealed class TrainingTests(PostgresFixture fixture) : IAsyncLifetime, IDi
             _secondMachineId = second.Id;
         }
 
-        _admin = await SignInAsync("tr-admin", Domain.Identity.Roles.Admin);
-        _employee = await SignInAsync("tr-emp", Domain.Identity.Roles.Employee);
+        _admin = await SignInAsync("tr-admin", Domain.Identity.Roles.BmeHead);
+        _employee = await SignInAsync("tr-emp", Domain.Identity.Roles.BmeEngineer);
 
         // A staff account, to be listed as an attendee by account rather than by name.
         using var scope = _factory.Services.CreateScope();
@@ -79,7 +79,7 @@ public sealed class TrainingTests(PostgresFixture fixture) : IAsyncLifetime, IDi
             UserName = $"tr-staff-{_suffix}", FullName = _staffName, IsActive = true,
         };
         Assert.True((await users.CreateAsync(staff, Password)).Succeeded);
-        await users.AddToRoleAsync(staff, Domain.Identity.Roles.Employee);
+        await users.AddToRoleAsync(staff, Domain.Identity.Roles.BmeEngineer);
         _staffUserId = staff.Id;
     }
 

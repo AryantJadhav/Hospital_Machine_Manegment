@@ -52,7 +52,7 @@ public sealed class EquipmentStatusTests(PostgresFixture fixture) : IAsyncLifeti
                 UserName = $"es-{_suffix}", FullName = "Status Admin", IsActive = true,
             };
             Assert.True((await users.CreateAsync(user, Password)).Succeeded);
-            await users.AddToRoleAsync(user, Domain.Identity.Roles.Admin);
+            await users.AddToRoleAsync(user, Domain.Identity.Roles.BmeHead);
         }
 
         var login = await _client.PostAsJsonAsync(

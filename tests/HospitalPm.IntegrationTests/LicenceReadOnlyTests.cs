@@ -302,8 +302,8 @@ public sealed class LicenceReadOnlyApiTests(PostgresFixture fixture) : IAsyncLif
             _equipmentId = equipment.Id;
         }
 
-        _admin = await SignedInAsync($"ro-adm-{suffix}", Roles.Admin);
-        _employee = await SignedInAsync($"ro-emp-{suffix}", Roles.Employee);
+        _admin = await SignedInAsync($"ro-adm-{suffix}", Roles.Developer);
+        _employee = await SignedInAsync($"ro-emp-{suffix}", Roles.BmeEngineer);
     }
 
     private string Sign(Licence licence)
@@ -397,7 +397,7 @@ public sealed class LicenceReadOnlyApiTests(PostgresFixture fixture) : IAsyncLif
     public async Task Signing_in_still_works()
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];
-        var again = await SignedInAsync($"ro-late-{suffix}", Roles.Employee);
+        var again = await SignedInAsync($"ro-late-{suffix}", Roles.BmeEngineer);
 
         Assert.NotNull(again.DefaultRequestHeaders.Authorization);
     }

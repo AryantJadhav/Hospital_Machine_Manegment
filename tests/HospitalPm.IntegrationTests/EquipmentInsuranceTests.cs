@@ -53,7 +53,7 @@ public sealed class EquipmentInsuranceTests(PostgresFixture fixture) : IAsyncLif
                 UserName = $"ei-{_suffix}", FullName = "Insurance Admin", IsActive = true,
             };
             Assert.True((await users.CreateAsync(user, Password)).Succeeded);
-            await users.AddToRoleAsync(user, Domain.Identity.Roles.Admin);
+            await users.AddToRoleAsync(user, Domain.Identity.Roles.BmeHead);
         }
 
         var login = await _client.PostAsJsonAsync(

@@ -12,6 +12,7 @@ const ITEMS: { to: string; label: string; permission: string; feature?: keyof Fe
   { to: '/import', label: 'Import', permission: PERMISSIONS.dataImport, feature: 'import' },
   { to: '/export', label: 'Export data', permission: PERMISSIONS.dataExport, feature: 'export' },
   { to: '/staff', label: 'Staff', permission: PERMISSIONS.staffManage },
+  { to: '/access', label: 'Access', permission: PERMISSIONS.accessManage },
   { to: '/backups', label: 'Backups', permission: PERMISSIONS.systemBackups, feature: 'backups' },
   { to: '/diagnostics', label: 'Diagnostics', permission: PERMISSIONS.systemDiagnostics },
   { to: '/licence', label: 'Licence', permission: PERMISSIONS.systemLicence },

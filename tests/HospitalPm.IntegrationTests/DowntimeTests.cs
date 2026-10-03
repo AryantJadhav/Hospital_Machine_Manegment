@@ -111,8 +111,8 @@ public sealed class DowntimeApiTests(PostgresFixture fixture) : IAsyncLifetime, 
             _equipmentId = equipment.Id;
         }
 
-        _admin = await SignedInAsync($"dt-adm-{suffix}", Roles.Admin);
-        _employee = await SignedInAsync($"dt-emp-{suffix}", Roles.Employee);
+        _admin = await SignedInAsync($"dt-adm-{suffix}", Roles.BmeHead);
+        _employee = await SignedInAsync($"dt-emp-{suffix}", Roles.BmeEngineer);
     }
 
     private async Task<HttpClient> SignedInAsync(string userName, string role)

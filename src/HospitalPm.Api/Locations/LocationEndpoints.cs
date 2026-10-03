@@ -35,7 +35,7 @@ public static class LocationEndpoints
     {
         var group = app.MapGroup("/api/locations")
             .WithTags("Locations")
-            .RequireAuthorization();
+            .RequirePermission(Permissions.RegisterView);
 
         // Every role reads the tree: a technician filtering the register by
         // department needs it as much as an admin does.

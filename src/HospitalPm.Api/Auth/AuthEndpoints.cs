@@ -81,16 +81,18 @@ public static class AuthEndpoints
         return Results.NoContent();
     }
 
-    private static IResult Me(ClaimsPrincipal principal) => Results.Ok(new
+    private static async Task<IResult> Me(ClaimsPrincipal principal, PermissionService permissions, CancellationToken ct) => Results.Ok(new
     {
         userName = principal.Identity?.Name,
         fullName = principal.FindFirstValue("full_name"),
         tenantId = principal.FindFirstValue("tenant_id"),
         roles = principal.FindAll(ClaimTypes.Role).Select(c => c.Value).ToArray(),
         // What the person may do, so the screen shows what the server will allow and no more.
-        permissions = RolePermissions
-            .For(principal.FindAll(ClaimTypes.Role).Select(c => c.Value))
-            .Order(StringComparer.Ordinal)
-            .ToArray(),
+        // This includes any section given to this person, or taken from them, on top of their role.
+        permissions = (await permissions.ForAsync(principal, ct)).Order(StringComparer.Ordinal).ToArray(),
+        // The roles this person may give to an account, for the Staff page to offer.
+        manageableRoles = Roles.ManageableBy(principal.FindAll(ClaimTypes.Role).Select(c => c.Value)),
+        // The accounts this person may stop from signing in, and let back in: those above, plus the Developer's, for the IT team.
+        pausableRoles = Roles.PausableBy(principal.FindAll(ClaimTypes.Role).Select(c => c.Value)),
     });
 }

@@ -292,6 +292,7 @@ app.MapSetupEndpoints();
 app.MapFeatureEndpoints();
 app.MapAuthEndpoints();
 app.MapUserEndpoints();
+app.MapAccessEndpoints();
 app.MapEquipmentEndpoints();
 app.MapImportEndpoints();
 app.MapLookupEndpoints();

@@ -37,8 +37,8 @@ public sealed class RoleBoundaryTests(PostgresFixture fixture) : IAsyncLifetime,
         _factory = new ApiFactory(fixture.ConnectionString);
         var suffix = Guid.NewGuid().ToString("N")[..8];
 
-        _employee = await SignedInAsync($"rb-emp-{suffix}", Roles.Employee);
-        _admin = await SignedInAsync($"rb-adm-{suffix}", Roles.Admin);
+        _employee = await SignedInAsync($"rb-emp-{suffix}", Roles.BmeEngineer);
+        _admin = await SignedInAsync($"rb-adm-{suffix}", Roles.Developer);
     }
 
     private async Task<HttpClient> SignedInAsync(string userName, string role)

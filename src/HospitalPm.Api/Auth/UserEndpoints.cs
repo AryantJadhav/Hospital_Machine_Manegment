@@ -26,7 +26,10 @@ public sealed record UserResponse(
     string? StaffCode,
     string Role,
     bool IsActive,
-    DateTime? LastLoginAtUtc);
+    DateTime? LastLoginAtUtc,
+    // Sections given on top of the role, and taken away from it, that are still in force.
+    int AccessGiven,
+    int AccessTakenAway);
 
 /// <summary>
 /// The hospital's staff.
@@ -62,11 +65,21 @@ public static class UserEndpoints
 
         group.MapGet("/", ListAsync);
 
+        // What one person has been given or had taken away, for the hospital to read. Changing it is
+        // the Developer's, on the Access page.
+        group.MapGet("/{id:int}/access", AccessEndpoints.ViewAsync);
+
         group.MapPost("/", CreateAsync);
         group.MapPut("/{id:int}", UpdateAsync);
         group.MapPost("/{id:int}/deactivate", DeactivateAsync);
         group.MapPost("/{id:int}/activate", ActivateAsync);
         group.MapPost("/{id:int}/reset-password", ResetPasswordAsync);
+
+        // Names only, for the places that need to pick a person: who a service request is assigned to, who
+        // attended a training session, whose work a report is about. Not the staff list: no roles, no staff
+        // codes, no sign-in times. Open to whoever holds one of the permissions that needs it, so that giving
+        // someone "assign work" does not also give them the whole staff list.
+        app.MapGet("/api/people", PeopleAsync).WithTags("Staff").RequireAuthorization();
 
         // Deliberately no delete. A user is referenced by every PM they
         // signed, every work order they touched and every audit row they
@@ -74,9 +87,32 @@ public static class UserEndpoints
         // the same reasoning as condemning a machine rather than erasing it.
     }
 
-    private static async Task<IResult> ListAsync(
-        HospitalPmDbContext db, [FromQuery] bool? includeInactive, CancellationToken ct)
+    private static async Task<IResult> PeopleAsync(
+        HospitalPmDbContext db, ClaimsPrincipal caller, PermissionService permissions, CancellationToken ct)
     {
+        var allowed = await permissions.ForAsync(caller, ct);
+        if (!allowed.Contains(Permissions.WorkOrdersAssign)
+            && !allowed.Contains(Permissions.TrainingEdit)
+            && !allowed.Contains(Permissions.ReportsView)
+            && !allowed.Contains(Permissions.StaffManage))
+        {
+            return Results.Forbid();
+        }
+
+        var people = await db.Users.AsNoTracking()
+            .Where(u => u.IsActive)
+            .OrderBy(u => u.FullName)
+            .Select(u => new { u.Id, u.FullName })
+            .ToListAsync(ct);
+
+        return Results.Ok(people);
+    }
+
+    private static async Task<IResult> ListAsync(
+        HospitalPmDbContext db, HospitalPm.Infrastructure.Maintenance.HospitalClock clock,
+        [FromQuery] bool? includeInactive, CancellationToken ct)
+    {
+        var today = clock.Today();
         var query = db.Users.AsNoTracking();
 
         if (includeInactive != true)
@@ -98,6 +134,10 @@ public static class UserEndpoints
                 u.StaffCode,
                 u.IsActive,
                 u.LastLoginAtUtc,
+                Given = db.PermissionGrants.Count(g => g.UserId == u.Id && g.Effect == GrantEffect.Grant
+                    && (g.ExpiresOn == null || g.ExpiresOn >= today)),
+                TakenAway = db.PermissionGrants.Count(g => g.UserId == u.Id && g.Effect == GrantEffect.Revoke
+                    && (g.ExpiresOn == null || g.ExpiresOn >= today)),
                 Roles = db.UserRoles
                     .Where(ur => ur.UserId == u.Id)
                     .Join(db.Roles, ur => ur.RoleId, r => r.Id, (_, r) => r.Name)
@@ -112,12 +152,15 @@ public static class UserEndpoints
             u.StaffCode,
             u.Roles.FirstOrDefault() ?? string.Empty,
             u.IsActive,
-            u.LastLoginAtUtc)));
+            u.LastLoginAtUtc,
+            u.Given,
+            u.TakenAway)));
     }
 
     private static async Task<IResult> CreateAsync(
         [FromBody] CreateUserRequest request,
         UserManager<ApplicationUser> users,
+        ClaimsPrincipal caller,
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.UserName) || string.IsNullOrWhiteSpace(request.FullName))
@@ -131,6 +174,11 @@ public static class UserEndpoints
             {
                 error = $"Unknown role. Use one of: {string.Join(", ", Roles.All)}.",
             });
+        }
+
+        if (!MayManage(caller, request.Role))
+        {
+            return Forbidden($"You cannot create an account with the {Roles.Label(request.Role)} role.");
         }
 
         var user = new ApplicationUser
@@ -187,13 +235,26 @@ public static class UserEndpoints
 
         var current = (await users.GetRolesAsync(user)).FirstOrDefault();
 
-        if (current == Roles.Admin && request.Role != Roles.Admin
-            && await LastAdminAsync(db, id, ct))
+        // Nobody reaches above themselves: not to change an account of a higher kind, and not to give one.
+        if (!MayManage(caller, current) || !MayManage(caller, request.Role))
+        {
+            return Forbidden("You cannot change that account or give it that role.");
+        }
+
+        if (CallerId(caller) == id && current != request.Role)
+        {
+            return Results.BadRequest(new { error = "You cannot change your own role." });
+        }
+
+        if (current != request.Role
+            && RolePermissions.For(current).Contains(Permissions.StaffManage)
+            && !RolePermissions.For(request.Role).Contains(Permissions.StaffManage)
+            && await LastManagerAsync(db, id, ct))
         {
             return Results.BadRequest(new
             {
-                error = "This is the only administrator. Give someone else the Admin role first, "
-                        + "or this installation would have nobody who can manage it.",
+                error = "This is the only person who can manage staff. Give someone else a role that can "
+                        + "first, or this installation would have nobody who can manage it.",
             });
         }
 
@@ -241,11 +302,16 @@ public static class UserEndpoints
             return Results.BadRequest(new { error = "You cannot deactivate your own account." });
         }
 
-        if (await LastAdminAsync(db, id, ct))
+        if (!MayPause(caller, (await users.GetRolesAsync(user)).FirstOrDefault()))
+        {
+            return Forbidden("You cannot deactivate that account.");
+        }
+
+        if (await LastManagerAsync(db, id, ct))
         {
             return Results.BadRequest(new
             {
-                error = "This is the only active administrator. Nobody would be able to manage "
+                error = "This is the only active person who can manage staff. Nobody would be able to manage "
                         + "this installation afterwards.",
             });
         }
@@ -264,12 +330,17 @@ public static class UserEndpoints
     }
 
     private static async Task<IResult> ActivateAsync(
-        int id, UserManager<ApplicationUser> users, CancellationToken ct)
+        int id, UserManager<ApplicationUser> users, ClaimsPrincipal caller, CancellationToken ct)
     {
         var user = await users.FindByIdAsync(id.ToString());
         if (user is null)
         {
             return Results.NotFound();
+        }
+
+        if (!MayPause(caller, (await users.GetRolesAsync(user)).FirstOrDefault()))
+        {
+            return Forbidden("You cannot activate that account.");
         }
 
         user.IsActive = true;
@@ -290,6 +361,7 @@ public static class UserEndpoints
         [FromBody] ResetPasswordRequest request,
         UserManager<ApplicationUser> users,
         HospitalPmDbContext db,
+        ClaimsPrincipal caller,
         TimeProvider clock,
         CancellationToken ct)
     {
@@ -297,6 +369,11 @@ public static class UserEndpoints
         if (user is null)
         {
             return Results.NotFound();
+        }
+
+        if (!MayManage(caller, (await users.GetRolesAsync(user)).FirstOrDefault()))
+        {
+            return Forbidden("You cannot reset the password of that account.");
         }
 
         var token = await users.GeneratePasswordResetTokenAsync(user);
@@ -326,27 +403,45 @@ public static class UserEndpoints
     private static int? CallerId(ClaimsPrincipal caller)
         => int.TryParse(caller.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : null;
 
+    private static IEnumerable<string> RolesOf(ClaimsPrincipal caller)
+        => caller.FindAll(ClaimTypes.Role).Select(c => c.Value);
+
+    /// <summary>May the caller create, change, or look after an account of this role?</summary>
+    private static bool MayManage(ClaimsPrincipal caller, string? role)
+        => role is not null && Roles.ManageableBy(RolesOf(caller)).Contains(role, StringComparer.Ordinal);
+
+    /// <summary>May the caller stop this account signing in, or let it back in? See <see cref="Roles.PausableBy"/>.</summary>
+    private static bool MayPause(ClaimsPrincipal caller, string? role)
+        => role is not null && Roles.PausableBy(RolesOf(caller)).Contains(role, StringComparer.Ordinal);
+
+    private static IResult Forbidden(string message)
+        => Results.Json(new { error = message }, statusCode: StatusCodes.Status403Forbidden);
+
     /// <summary>
-    /// True when <paramref name="id"/> is the only active administrator left.
+    /// True when <paramref name="id"/> is the only active person left who can manage staff.
     /// </summary>
-    private static async Task<bool> LastAdminAsync(
+    private static async Task<bool> LastManagerAsync(
         HospitalPmDbContext db, int id, CancellationToken ct)
     {
-        var adminRoleId = await db.Roles
-            .Where(r => r.Name == Roles.Admin)
-            .Select(r => r.Id)
-            .SingleOrDefaultAsync(ct);
+        var managerRoleIds = await db.Roles
+            .Where(r => r.Name != null && Roles.All.Contains(r.Name))
+            .ToListAsync(ct);
 
-        if (adminRoleId == 0)
+        var ids = managerRoleIds
+            .Where(r => RolePermissions.For(r.Name).Contains(Permissions.StaffManage))
+            .Select(r => r.Id)
+            .ToList();
+
+        if (ids.Count == 0)
         {
             return false;
         }
 
-        var otherActiveAdmins = await db.UserRoles
-            .Where(ur => ur.RoleId == adminRoleId && ur.UserId != id)
+        var otherActiveManagers = await db.UserRoles
+            .Where(ur => ids.Contains(ur.RoleId) && ur.UserId != id)
             .Join(db.Users, ur => ur.UserId, u => u.Id, (_, u) => u)
             .CountAsync(u => u.IsActive, ct);
 
-        return otherActiveAdmins == 0;
+        return otherActiveManagers == 0;
     }
 }

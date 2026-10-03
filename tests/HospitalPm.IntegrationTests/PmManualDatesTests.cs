@@ -61,8 +61,8 @@ public sealed class PmManualDatesTests(PostgresFixture fixture) : IAsyncLifetime
             _otherTypeTemplateId = otherTemplate.Id;
         }
 
-        _admin = await SignedInAsync($"md-adm-{_suffix}", Roles.Admin);
-        _employee = await SignedInAsync($"md-emp-{_suffix}", Roles.Employee);
+        _admin = await SignedInAsync($"md-adm-{_suffix}", Roles.BmeHead);
+        _employee = await SignedInAsync($"md-emp-{_suffix}", Roles.BmeEngineer);
     }
 
     private async Task<HttpClient> SignedInAsync(string userName, string role)

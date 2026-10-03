@@ -51,8 +51,8 @@ public sealed class WorkOrderPhotoTests(PostgresFixture fixture) : IAsyncLifetim
             equipmentId = equipment.Id;
         }
 
-        _admin = await SignInAsync("woph-admin", Domain.Identity.Roles.Admin);
-        _employee = await SignInAsync("woph-emp", Domain.Identity.Roles.Employee);
+        _admin = await SignInAsync("woph-admin", Domain.Identity.Roles.BmeHead);
+        _employee = await SignInAsync("woph-emp", Domain.Identity.Roles.BmeEngineer);
 
         var created = await _employee.PostAsJsonAsync("/api/work-orders", new
         {

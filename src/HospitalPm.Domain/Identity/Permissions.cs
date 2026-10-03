@@ -8,14 +8,26 @@ namespace HospitalPm.Domain.Identity;
 /// giving a new kind of user access to one section is a change to a table and not a hunt through
 /// fifty endpoints for each place that says "Admin".
 ///
-/// Reading is mostly not here: anyone signed in can read the register, the work list and the
-/// training record. A permission is for changing something, or for seeing what is not for everyone.
+/// Reading is here too, because not everyone signed in may read everything: the hospital's IT team
+/// keeps the installation running and has no business in the equipment register, and a person in
+/// another department sees only what is theirs.
 ///
 /// Constants rather than an enum for the reason <see cref="Roles"/> gives: they are compared as
 /// strings, and a typo must not compile.
 /// </summary>
 public static class Permissions
 {
+    // Reading and doing the everyday work.
+    public const string RegisterView = "register.view";
+    public const string SparePartsView = "spare-parts.view";
+    public const string ChecklistsView = "checklists.view";
+    public const string TrainingView = "training.view";
+    public const string PmWork = "pm.work";
+    public const string WorkOrdersView = "work-orders.view";
+    public const string WorkOrdersReport = "work-orders.report";
+    public const string WorkOrdersWork = "work-orders.work";
+    public const string EquipmentMove = "equipment.move";
+
     // The register: what the hospital owns and where it is.
     public const string EquipmentEdit = "equipment.edit";
     public const string EquipmentTypesEdit = "equipment-types.edit";
@@ -36,6 +48,12 @@ public static class Permissions
 
     // People and the installation itself.
     public const string StaffManage = "staff.manage";
+
+    /// <summary>
+    /// Giving one person access to a section, or taking it away. Held by the Developer alone. It is
+    /// not something that can itself be granted, or the hospital could hand out the right to hand out.
+    /// </summary>
+    public const string AccessManage = "access.manage";
     public const string SystemBackups = "system.backups";
     public const string SystemRestore = "system.restore";
     public const string SystemUpdates = "system.updates";
@@ -44,9 +62,11 @@ public static class Permissions
 
     public static readonly IReadOnlyList<string> All =
     [
+        RegisterView, SparePartsView, ChecklistsView, TrainingView, PmWork,
+        WorkOrdersView, WorkOrdersReport, WorkOrdersWork, EquipmentMove,
         EquipmentEdit, EquipmentTypesEdit, LocationsEdit, LabelsPrint, DataImport, DataExport,
         ChecklistsEdit, PmManage, WorkOrdersAssign, WorkOrdersCancel, AttachmentsDelete,
         SparePartsEdit, TrainingEdit, ReportsView,
-        StaffManage, SystemBackups, SystemRestore, SystemUpdates, SystemDiagnostics, SystemLicence,
+        StaffManage, AccessManage, SystemBackups, SystemRestore, SystemUpdates, SystemDiagnostics, SystemLicence,
     ];
 }

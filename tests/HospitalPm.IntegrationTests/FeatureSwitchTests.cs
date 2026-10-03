@@ -52,7 +52,7 @@ public sealed class FeatureSwitchTests(PostgresFixture fixture) : IDisposable
                 .GetRequiredService<UserManager<Infrastructure.Identity.ApplicationUser>>();
             var user = new Infrastructure.Identity.ApplicationUser { UserName = userName, FullName = userName, IsActive = true };
             Assert.True((await users.CreateAsync(user, Password)).Succeeded);
-            Assert.True((await users.AddToRoleAsync(user, Roles.Admin)).Succeeded);
+            Assert.True((await users.AddToRoleAsync(user, Roles.Developer)).Succeeded);
         }
 
         var client = factory.CreateClient();

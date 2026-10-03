@@ -1,3 +1,5 @@
+using HospitalPm.Domain.Identity;
+using HospitalPm.Api.Auth;
 using System.Globalization;
 using System.Security.Claims;
 using HospitalPm.Domain.Assets;
@@ -21,10 +23,10 @@ public static class EquipmentMoveEndpoints
         // another room is a day-to-day act of the engineer who is standing there,
         // and the register being wrong until an admin fixes it is how a technician
         // ends up in the wrong room.
-        var group = app.MapGroup("/api/equipment/{id:int}").WithTags("Equipment").RequireAuthorization();
+        var group = app.MapGroup("/api/equipment/{id:int}").WithTags("Equipment").RequirePermission(Permissions.RegisterView);
 
         group.MapGet("/moves", MovesAsync);
-        group.MapPost("/move", MoveAsync);
+        group.MapPost("/move", MoveAsync).RequirePermission(Permissions.EquipmentMove);
     }
 
     /// <summary>Notes a change of place. Shared with the edit form, which can change the place too.</summary>

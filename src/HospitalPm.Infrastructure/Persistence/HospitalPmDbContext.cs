@@ -1,6 +1,7 @@
 using HospitalPm.Domain.Assets;
 using HospitalPm.Domain.Checklists;
 using HospitalPm.Domain.Equipment;
+using HospitalPm.Domain.Identity;
 using HospitalPm.Domain.Inventory;
 using HospitalPm.Domain.Maintenance;
 using HospitalPm.Domain.WorkOrders;
@@ -32,6 +33,8 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
     public DbSet<EquipmentTypeCategory> EquipmentTypeCategories => Set<EquipmentTypeCategory>();
 
     public DbSet<SparePart> SpareParts => Set<SparePart>();
+
+    public DbSet<PermissionGrant> PermissionGrants => Set<PermissionGrant>();
 
     public DbSet<TrainingSession> TrainingSessions => Set<TrainingSession>();
 
@@ -172,6 +175,31 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
             // The low-stock list on the register page: active parts at or below
             // their reorder level, which is exactly this ordering.
             e.HasIndex(x => new { x.IsActive, x.QuantityOnHand }).HasDatabaseName("ix_spare_part_active_quantity");
+        });
+
+        builder.Entity<PermissionGrant>(e =>
+        {
+            e.ToTable("user_permission");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.UserId).HasColumnName("user_id");
+            e.Property(x => x.Permission).HasColumnName("permission").HasMaxLength(60).IsRequired();
+            e.Property(x => x.Effect).HasColumnName("effect").HasMaxLength(10).IsRequired();
+            e.Property(x => x.ExpiresOn).HasColumnName("expires_on");
+            e.Property(x => x.Note).HasColumnName("note").HasMaxLength(500);
+            e.Property(x => x.GrantedByUserId).HasColumnName("granted_by_user_id");
+            e.Property(x => x.GrantedAtUtc).HasColumnName("granted_at_utc").HasDefaultValueSql("now()");
+
+            // A person's grants go if the person does. People are deactivated rather than deleted, so
+            // this is a tidy-up and not a way records disappear; the audit log keeps what was there.
+            e.HasOne<ApplicationUser>()
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // One row for each person and permission: the Access page replaces them as a set.
+            e.HasIndex(x => new { x.UserId, x.Permission }).IsUnique().HasDatabaseName("ux_user_permission_user_permission");
         });
 
         builder.Entity<TrainingSession>(e =>

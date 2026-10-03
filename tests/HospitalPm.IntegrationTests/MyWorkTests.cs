@@ -58,9 +58,9 @@ public sealed class MyWorkTests(PostgresFixture fixture) : IAsyncLifetime, IDisp
             _equipmentId = equipment.Id;
         }
 
-        _admin = await SignedInAsync($"mw-adm-{suffix}", "Admin User", Roles.Admin);
-        _alice = await SignedInAsync($"mw-ali-{suffix}", "Alice Engineer", Roles.Employee);
-        _bob = await SignedInAsync($"mw-bob-{suffix}", "Bob Engineer", Roles.Employee);
+        _admin = await SignedInAsync($"mw-adm-{suffix}", "Admin User", Roles.BmeHead);
+        _alice = await SignedInAsync($"mw-ali-{suffix}", "Alice Engineer", Roles.BmeEngineer);
+        _bob = await SignedInAsync($"mw-bob-{suffix}", "Bob Engineer", Roles.BmeEngineer);
 
         await using (var db = fixture.CreateContext())
         {
@@ -195,7 +195,7 @@ public sealed class MyWorkTests(PostgresFixture fixture) : IAsyncLifetime, IDisp
     public async Task Someone_with_nothing_assigned_gets_an_empty_list_not_everyone_elses()
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];
-        var idle = await SignedInAsync($"mw-idle-{suffix}", "Idle Engineer", Roles.Employee);
+        var idle = await SignedInAsync($"mw-idle-{suffix}", "Idle Engineer", Roles.BmeEngineer);
 
         Assert.Empty(await ListAsync(idle, "assignee=me"));
     }

@@ -84,8 +84,8 @@ public sealed class StockReportApiTests(PostgresFixture fixture) : IAsyncLifetim
     {
         _factory = new ApiFactory(fixture.ConnectionString);
         _suffix = Guid.NewGuid().ToString("N")[..8];
-        _admin = await SignInAsync("st-admin", Domain.Identity.Roles.Admin);
-        _employee = await SignInAsync("st-emp", Domain.Identity.Roles.Employee);
+        _admin = await SignInAsync("st-admin", Domain.Identity.Roles.BmeHead);
+        _employee = await SignInAsync("st-emp", Domain.Identity.Roles.BmeEngineer);
     }
 
     private async Task<HttpClient> SignInAsync(string prefix, string role)

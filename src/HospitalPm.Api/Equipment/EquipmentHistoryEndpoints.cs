@@ -1,3 +1,5 @@
+using HospitalPm.Domain.Identity;
+using HospitalPm.Api.Auth;
 using HospitalPm.Domain.Maintenance;
 using HospitalPm.Domain.WorkOrders;
 using HospitalPm.Infrastructure.Persistence;
@@ -28,7 +30,7 @@ public static class EquipmentHistoryEndpoints
             .WithTags("Equipment")
             // Every role: a technician standing at the machine is exactly who
             // needs to know what was last done to it.
-            .RequireAuthorization();
+            .RequirePermission(Permissions.RegisterView);
     }
 
     private static async Task<IResult> HistoryAsync(

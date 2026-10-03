@@ -47,7 +47,7 @@ public sealed class DashboardApiTests(PostgresFixture fixture) : IAsyncLifetime,
             UserName = userName, FullName = "Dashboard User",
         };
         await users.CreateAsync(user, password);
-        await users.AddToRoleAsync(user, Domain.Identity.Roles.Admin);
+        await users.AddToRoleAsync(user, Domain.Identity.Roles.Developer);
 
         var login = await _client.PostAsJsonAsync("/api/auth/login", new { userName, password });
         login.EnsureSuccessStatusCode();
@@ -246,7 +246,7 @@ public sealed class DashboardApiTests(PostgresFixture fixture) : IAsyncLifetime,
                 UserName = userName, FullName = "Dashboard Employee", IsActive = true,
             };
             Assert.True((await users.CreateAsync(employee, password)).Succeeded);
-            await users.AddToRoleAsync(employee, Domain.Identity.Roles.Employee);
+            await users.AddToRoleAsync(employee, Domain.Identity.Roles.BmeEngineer);
         }
 
         using var client = _factory.CreateClient();

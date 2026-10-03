@@ -83,7 +83,8 @@ public static class AuthenticationSetup
             });
 
         services.AddAuthorization();
-        services.AddSingleton<IAuthorizationHandler, PermissionHandler>();
+        services.AddScoped<PermissionService>();
+        services.AddScoped<IAuthorizationHandler, PermissionHandler>();
 
         return services;
     }

@@ -37,8 +37,8 @@ public sealed class SparePartTests(PostgresFixture fixture) : IAsyncLifetime, ID
             _otherTypeId = other.Id;
         }
 
-        _admin = await SignInAsync("sp-admin", Domain.Identity.Roles.Admin);
-        _employee = await SignInAsync("sp-emp", Domain.Identity.Roles.Employee);
+        _admin = await SignInAsync("sp-admin", Domain.Identity.Roles.BmeHead);
+        _employee = await SignInAsync("sp-emp", Domain.Identity.Roles.BmeEngineer);
     }
 
     private async Task<HttpClient> SignInAsync(string prefix, string role)

@@ -54,8 +54,8 @@ public sealed class PmWithoutChecklistTests(PostgresFixture fixture) : IAsyncLif
             _typeId = (await db.EquipmentTypes.FirstAsync(t => t.Code == "ventilator")).Id;
         }
 
-        _admin = await SignedInAsync($"pn-adm-{_suffix}", Roles.Admin);
-        _employee = await SignedInAsync($"pn-emp-{_suffix}", Roles.Employee);
+        _admin = await SignedInAsync($"pn-adm-{_suffix}", Roles.BmeHead);
+        _employee = await SignedInAsync($"pn-emp-{_suffix}", Roles.BmeEngineer);
     }
 
     private async Task<HttpClient> SignedInAsync(string userName, string role)

@@ -1,3 +1,5 @@
+using HospitalPm.Domain.Identity;
+using HospitalPm.Api.Auth;
 using HospitalPm.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -15,7 +17,7 @@ public static class LookupEndpoints
     {
         var group = app.MapGroup("/api/lookups")
             .WithTags("Lookups")
-            .RequireAuthorization();
+            .RequirePermission(Permissions.RegisterView);
 
         group.MapGet("/equipment-types", async (HospitalPmDbContext db, CancellationToken ct) =>
             Results.Ok(await db.EquipmentTypes

@@ -40,8 +40,8 @@ public sealed class PmComplianceReportTests(PostgresFixture fixture) : IAsyncLif
         _factory = new ApiFactory(fixture.ConnectionString);
         _suffix = Guid.NewGuid().ToString("N")[..8];
 
-        _admin = await SignedInAsync($"cr-adm-{_suffix}", "Head Of Biomedical", Roles.Admin);
-        _employee = await SignedInAsync($"cr-emp-{_suffix}", "Ward Technician", Roles.Employee);
+        _admin = await SignedInAsync($"cr-adm-{_suffix}", "Head Of Biomedical", Roles.BmeHead);
+        _employee = await SignedInAsync($"cr-emp-{_suffix}", "Ward Technician", Roles.BmeEngineer);
 
         await SeedAsync();
     }

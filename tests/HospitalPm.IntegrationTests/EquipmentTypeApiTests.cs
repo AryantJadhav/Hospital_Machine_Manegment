@@ -43,8 +43,8 @@ public sealed class EquipmentTypeApiTests(PostgresFixture fixture) : IAsyncLifet
             _monitoring = (await db.Categories.SingleAsync(c => c.Code == "monitoring")).Id;
         }
 
-        _admin = await SignedInAsync($"et-adm-{_suffix}", Roles.Admin);
-        _employee = await SignedInAsync($"et-emp-{_suffix}", Roles.Employee);
+        _admin = await SignedInAsync($"et-adm-{_suffix}", Roles.BmeHead);
+        _employee = await SignedInAsync($"et-emp-{_suffix}", Roles.BmeEngineer);
     }
 
     private async Task<HttpClient> SignedInAsync(string userName, string role)

@@ -34,7 +34,7 @@ public sealed class UserApiTests(PostgresFixture fixture) : IAsyncLifetime, IDis
         _admin = _factory.CreateClient();
         _suffix = Guid.NewGuid().ToString("N")[..8];
 
-        (_adminId, _) = await NewUserAsync($"ua-admin-{_suffix}", Domain.Identity.Roles.Admin);
+        (_adminId, _) = await NewUserAsync($"ua-admin-{_suffix}", Domain.Identity.Roles.Developer);
         await SignInAsync(_admin, $"ua-admin-{_suffix}");
     }
 
@@ -88,7 +88,7 @@ public sealed class UserApiTests(PostgresFixture fixture) : IAsyncLifetime, IDis
             userName = $"tech-{_suffix}",
             fullName = "R Patil",
             staffCode = "BME-07",
-            role = Domain.Identity.Roles.Employee,
+            role = Domain.Identity.Roles.BmeEngineer,
             password = Password,
         });
 
@@ -105,7 +105,7 @@ public sealed class UserApiTests(PostgresFixture fixture) : IAsyncLifetime, IDis
     [Fact]
     public async Task An_employee_cannot_create_accounts()
     {
-        await NewUserAsync($"tech-noadmin-{_suffix}", Domain.Identity.Roles.Employee);
+        await NewUserAsync($"tech-noadmin-{_suffix}", Domain.Identity.Roles.BmeEngineer);
         using var technician = _factory.CreateClient();
         await SignInAsync(technician, $"tech-noadmin-{_suffix}");
 
@@ -114,7 +114,7 @@ public sealed class UserApiTests(PostgresFixture fixture) : IAsyncLifetime, IDis
             userName = $"sneaky-{_suffix}",
             fullName = "Sneaky",
             staffCode = (string?)null,
-            role = Domain.Identity.Roles.Admin,
+            role = Domain.Identity.Roles.Developer,
             password = Password,
         });
 
@@ -146,7 +146,7 @@ public sealed class UserApiTests(PostgresFixture fixture) : IAsyncLifetime, IDis
     {
         // A second admin who will do the removing, so "cannot deactivate
         // yourself" is not what is being tested here.
-        await NewUserAsync($"ua-admin2-{_suffix}", Domain.Identity.Roles.Admin);
+        await NewUserAsync($"ua-admin2-{_suffix}", Domain.Identity.Roles.Developer);
         using var second = _factory.CreateClient();
         await SignInAsync(second, $"ua-admin2-{_suffix}");
 
@@ -154,7 +154,7 @@ public sealed class UserApiTests(PostgresFixture fixture) : IAsyncLifetime, IDis
         await using (var db = fixture.CreateContext())
         {
             var adminRoleId = await db.Roles
-                .Where(r => r.Name == Domain.Identity.Roles.Admin)
+                .Where(r => r.Name == Domain.Identity.Roles.Developer)
                 .Select(r => r.Id).SingleAsync();
 
             var adminIds = await db.UserRoles
@@ -175,11 +175,13 @@ public sealed class UserApiTests(PostgresFixture fixture) : IAsyncLifetime, IDis
             {
                 fullName = "Still Admin",
                 staffCode = (string?)null,
-                role = Domain.Identity.Roles.Employee,
+                role = Domain.Identity.Roles.BmeEngineer,
             });
 
+            // Refused. Only people who can manage staff can do the demoting, and nobody changes their
+            // own role, so the last of them can never be the one removed.
             Assert.Equal(HttpStatusCode.BadRequest, demote.StatusCode);
-            Assert.Contains("only administrator", await demote.Content.ReadAsStringAsync(),
+            Assert.Contains("own role", await demote.Content.ReadAsStringAsync(),
                 StringComparison.OrdinalIgnoreCase);
         }
     }
@@ -191,7 +193,7 @@ public sealed class UserApiTests(PostgresFixture fixture) : IAsyncLifetime, IDis
     [Fact]
     public async Task Deactivating_someone_ends_their_session_immediately()
     {
-        await NewUserAsync($"leaver-{_suffix}", Domain.Identity.Roles.Employee);
+        await NewUserAsync($"leaver-{_suffix}", Domain.Identity.Roles.BmeEngineer);
 
         using var leaver = _factory.CreateClient();
         var login = await leaver.PostAsJsonAsync("/api/auth/login",
@@ -217,7 +219,7 @@ public sealed class UserApiTests(PostgresFixture fixture) : IAsyncLifetime, IDis
     [Fact]
     public async Task A_password_reset_ends_every_existing_session()
     {
-        await NewUserAsync($"forgot-{_suffix}", Domain.Identity.Roles.Admin);
+        await NewUserAsync($"forgot-{_suffix}", Domain.Identity.Roles.Developer);
 
         using var person = _factory.CreateClient();
         var login = await person.PostAsJsonAsync("/api/auth/login",
@@ -245,7 +247,7 @@ public sealed class UserApiTests(PostgresFixture fixture) : IAsyncLifetime, IDis
     [Fact]
     public async Task A_deactivated_person_is_hidden_from_the_staff_list_but_not_erased()
     {
-        await NewUserAsync($"gone-{_suffix}", Domain.Identity.Roles.Employee);
+        await NewUserAsync($"gone-{_suffix}", Domain.Identity.Roles.BmeEngineer);
         var id = await IdOfAsync($"gone-{_suffix}");
         (await _admin.PostAsJsonAsync($"/api/users/{id}/deactivate", new { })).EnsureSuccessStatusCode();
 

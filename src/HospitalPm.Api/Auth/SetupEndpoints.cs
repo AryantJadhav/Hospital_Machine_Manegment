@@ -10,7 +10,7 @@ namespace HospitalPm.Api.Auth;
 public sealed record CreateFirstAdminRequest(string UserName, string FullName, string Password);
 
 /// <summary>
-/// First-run bootstrap: creates the initial Admin account.
+/// First-run bootstrap: creates the first account, a Developer.
 ///
 /// Anonymous, but only while the user table is empty. The moment one
 /// account exists this returns 409 forever, so the window is the seconds
@@ -85,13 +85,13 @@ public static class SetupEndpoints
             });
         }
 
-        var roled = await users.AddToRoleAsync(user, Roles.Admin);
+        var roled = await users.AddToRoleAsync(user, Roles.Developer);
         if (!roled.Succeeded)
         {
             // An admin with no role can sign in but do nothing, and the
             // endpoint that would fix it is now closed. Fail the whole thing
             // instead and let setup be retried.
-            return Results.Problem("The account was created but the Admin role could not be assigned.");
+            return Results.Problem("The account was created but its role could not be assigned.");
         }
 
         await tx.CommitAsync(ct);

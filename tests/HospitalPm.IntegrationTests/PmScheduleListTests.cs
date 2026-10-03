@@ -40,7 +40,7 @@ public sealed class PmScheduleListTests(PostgresFixture fixture) : IAsyncLifetim
                 UserName = $"sl-{_suffix}", FullName = "Schedule Lister", IsActive = true,
             };
             Assert.True((await users.CreateAsync(user, Password)).Succeeded);
-            await users.AddToRoleAsync(user, Domain.Identity.Roles.Employee);
+            await users.AddToRoleAsync(user, Domain.Identity.Roles.BmeEngineer);
         }
 
         var login = await _client.PostAsJsonAsync(

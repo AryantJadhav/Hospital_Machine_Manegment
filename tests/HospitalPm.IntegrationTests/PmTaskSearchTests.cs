@@ -47,7 +47,7 @@ public sealed class PmTaskSearchTests(PostgresFixture fixture) : IAsyncLifetime,
                 UserName = $"srch-{suffix}", FullName = "Searching Tech", IsActive = true,
             };
             Assert.True((await users.CreateAsync(user, Password)).Succeeded);
-            await users.AddToRoleAsync(user, Domain.Identity.Roles.Employee);
+            await users.AddToRoleAsync(user, Domain.Identity.Roles.BmeEngineer);
         }
 
         var login = await _client.PostAsJsonAsync(

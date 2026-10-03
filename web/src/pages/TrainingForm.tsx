@@ -68,7 +68,7 @@ export function TrainingForm({
     let cancelled = false;
     (async () => {
       try {
-        const s = await api.get<Staff[]>('/api/users');
+        const s = await api.get<Staff[]>('/api/people');
         if (cancelled) return;
         setStaff(s);
       } catch {

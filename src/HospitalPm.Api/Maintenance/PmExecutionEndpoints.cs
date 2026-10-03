@@ -32,7 +32,7 @@ public static class PmExecutionEndpoints
 
     public static void MapPmExecutionEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/pm/tasks").WithTags("PM execution").RequireAuthorization();
+        var group = app.MapGroup("/api/pm/tasks").WithTags("PM execution").RequirePermission(Permissions.PmWork);
 
         // Everything a device needs to render the checklist for one task.
         group.MapGet("/{id:int}/form", FormAsync);

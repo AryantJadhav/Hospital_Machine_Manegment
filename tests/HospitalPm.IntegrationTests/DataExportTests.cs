@@ -44,8 +44,8 @@ public sealed class DataExportTests(PostgresFixture fixture) : IAsyncLifetime, I
         _suffix = Guid.NewGuid().ToString("N")[..8];
         _tag = $"EXP-{_suffix}".ToUpperInvariant();
 
-        _admin = await SignedInAsync($"ex-adm-{_suffix}", "Head, Biomedical", Roles.Admin);
-        _employee = await SignedInAsync($"ex-emp-{_suffix}", "Ward Technician", Roles.Employee);
+        _admin = await SignedInAsync($"ex-adm-{_suffix}", "Head, Biomedical", Roles.BmeHead);
+        _employee = await SignedInAsync($"ex-emp-{_suffix}", "Ward Technician", Roles.BmeEngineer);
 
         await SeedAsync();
     }
@@ -481,7 +481,7 @@ public sealed class DataExportTests(PostgresFixture fixture) : IAsyncLifetime, I
 
         var staff = export.Csv("staff.csv");
         var person = Find(staff, "User Name", $"ex-emp-{_suffix}");
-        Assert.Equal("Employee", Cell(staff, person, "Role"));
+        Assert.Equal("BmeEngineer", Cell(staff, person, "Role"));
         Assert.Equal("Yes", Cell(staff, person, "Active"));
     }
 

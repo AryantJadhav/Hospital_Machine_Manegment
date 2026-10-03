@@ -74,7 +74,7 @@ public sealed class PmScheduleUpdateTests(PostgresFixture fixture) : IAsyncLifet
                 UserName = $"pu-{_suffix}", FullName = "PM Update Admin", IsActive = true,
             };
             Assert.True((await users.CreateAsync(user, Password)).Succeeded);
-            await users.AddToRoleAsync(user, Domain.Identity.Roles.Admin);
+            await users.AddToRoleAsync(user, Domain.Identity.Roles.BmeHead);
         }
 
         var login = await _client.PostAsJsonAsync(

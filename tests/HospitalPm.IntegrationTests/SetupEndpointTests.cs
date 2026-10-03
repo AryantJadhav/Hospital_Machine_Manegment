@@ -33,17 +33,17 @@ public sealed class SetupEndpointTests(PostgresFixture fixture)
     }
 
     [Fact]
-    public async Task Admin_role_exists_for_the_bootstrap_to_assign()
+    public async Task Developer_role_exists_for_the_bootstrap_to_assign()
     {
         await using var db = fixture.CreateContext();
 
         // The bootstrap fails the whole request if the role is missing,
         // because an admin with no role can sign in but do nothing, and by
         // then the endpoint that would fix it is closed.
-        var admin = await db.Roles.SingleOrDefaultAsync(r => r.Name == Roles.Admin);
+        var admin = await db.Roles.SingleOrDefaultAsync(r => r.Name == Roles.Developer);
 
         Assert.NotNull(admin);
-        Assert.Equal("ADMIN", admin!.NormalizedName);
+        Assert.Equal("DEVELOPER", admin!.NormalizedName);
     }
 
     [Fact]
@@ -59,7 +59,7 @@ public sealed class SetupEndpointTests(PostgresFixture fixture)
         db.Users.Add(user);
         await db.SaveChangesAsync();
 
-        var adminRole = await db.Roles.SingleAsync(r => r.Name == Roles.Admin);
+        var adminRole = await db.Roles.SingleAsync(r => r.Name == Roles.Developer);
 
         await db.Database.ExecuteSqlRawAsync(
             "INSERT INTO app_user_role (tenant_id, user_id, role_id) VALUES (1, {0}, {1})",
@@ -70,6 +70,6 @@ public sealed class SetupEndpointTests(PostgresFixture fixture)
             .Join(db.Roles, ur => ur.RoleId, r => r.Id, (_, r) => r.Name)
             .ToListAsync();
 
-        Assert.Contains(Roles.Admin, roleNames);
+        Assert.Contains(Roles.Developer, roleNames);
     }
 }

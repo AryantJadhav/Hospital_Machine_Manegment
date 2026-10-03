@@ -154,10 +154,10 @@ public sealed class WorkDoneReportApiTests(PostgresFixture fixture) : IAsyncLife
         _suffix = Guid.NewGuid().ToString("N")[..8];
 
         int adminId;
-        (_admin, adminId) = await SignInAsync("wd-admin", Domain.Identity.Roles.Admin);
-        (_employee, _) = await SignInAsync("wd-emp", Domain.Identity.Roles.Employee);
-        (_, _asha) = await SignInAsync("wd-asha", Domain.Identity.Roles.Employee);
-        (_, _ravi) = await SignInAsync("wd-ravi", Domain.Identity.Roles.Employee);
+        (_admin, adminId) = await SignInAsync("wd-admin", Domain.Identity.Roles.BmeHead);
+        (_employee, _) = await SignInAsync("wd-emp", Domain.Identity.Roles.BmeEngineer);
+        (_, _asha) = await SignInAsync("wd-asha", Domain.Identity.Roles.BmeEngineer);
+        (_, _ravi) = await SignInAsync("wd-ravi", Domain.Identity.Roles.BmeEngineer);
 
         await using var db = fixture.CreateContext();
 

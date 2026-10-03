@@ -38,7 +38,7 @@ public static class WorkOrderEndpoints
 
     public static void MapWorkOrderEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/work-orders").WithTags("Work orders").RequireAuthorization();
+        var group = app.MapGroup("/api/work-orders").WithTags("Work orders").RequirePermission(Permissions.WorkOrdersView);
 
         group.MapGet("/", ListAsync);
         group.MapGet("/{id:int}", GetAsync);
@@ -47,22 +47,22 @@ public static class WorkOrderEndpoints
         // Anyone who works the floor can report a fault. A ward that cannot
         // raise a ticket phones the biomedical department instead, and the
         // fault never enters the record at all.
-        group.MapPost("/", ReportAsync);
-        group.MapPost("/{id:int}/notes", AddNoteAsync);
-        group.MapPost("/{id:int}/status", ChangeStatusAsync);
-        group.MapPost("/{id:int}/resolve", ResolveAsync);
+        group.MapPost("/", ReportAsync).RequirePermission(Permissions.WorkOrdersReport);
+        group.MapPost("/{id:int}/notes", AddNoteAsync).RequirePermission(Permissions.WorkOrdersWork);
+        group.MapPost("/{id:int}/status", ChangeStatusAsync).RequirePermission(Permissions.WorkOrdersWork);
+        group.MapPost("/{id:int}/resolve", ResolveAsync).RequirePermission(Permissions.WorkOrdersWork);
 
         // Drawing a part off the shelf is part of doing the repair, the same
         // authority as adding a note or changing status - not a supervisory
         // decision like assignment.
-        group.MapPost("/{id:int}/parts", UsePartAsync);
-        group.MapDelete("/{id:int}/parts/{partUsageId:int}", RemovePartAsync);
+        group.MapPost("/{id:int}/parts", UsePartAsync).RequirePermission(Permissions.WorkOrdersWork);
+        group.MapDelete("/{id:int}/parts/{partUsageId:int}", RemovePartAsync).RequirePermission(Permissions.WorkOrdersWork);
 
         // A photo of the fault or the repair is part of the ticket, the same
         // authority as a note. Removing one is an Administrator's, the same
         // as a PM's report file: it is evidence, not for whoever holds the
         // list, but a photo that should never have been taken has to go.
-        group.MapPost("/{id:int}/photos", AddPhotosAsync).DisableAntiforgery();
+        group.MapPost("/{id:int}/photos", AddPhotosAsync).DisableAntiforgery().RequirePermission(Permissions.WorkOrdersWork);
         group.MapGet("/photos/{attachmentId:int}", DownloadPhotoAsync);
         group.MapDelete("/photos/{attachmentId:int}", DeletePhotoAsync)
             .RequirePermission(Permissions.AttachmentsDelete);
@@ -195,8 +195,10 @@ public static class WorkOrderEndpoints
     }
 
     private static async Task<IResult> GetAsync(
-        int id, HospitalPmDbContext db, ClaimsPrincipal principal, TimeProvider clock, CancellationToken ct)
+        int id, HospitalPmDbContext db, ClaimsPrincipal principal, PermissionService permissions, TimeProvider clock, CancellationToken ct)
     {
+        var mayCancel = await permissions.CanAsync(principal, Permissions.WorkOrdersCancel, ct);
+
         var order = await db.WorkOrders.AsNoTracking()
             .Include(w => w.Equipment)!.ThenInclude(e => e!.EquipmentType)
             .Include(w => w.Equipment)!.ThenInclude(e => e!.Location)
@@ -295,7 +297,7 @@ public static class WorkOrderEndpoints
             // for this caller. Cancelling is left out for anyone but an
             // administrator, so the button is not offered only to be refused.
             allowedTransitions = WorkOrderTransitions.From(order.Status)
-                .Where(s => s != WorkOrderStatus.Cancelled || CanCancel(principal))
+                .Where(s => s != WorkOrderStatus.Cancelled || mayCancel)
                 .ToList(),
             notes,
             partsUsed,
@@ -415,13 +417,13 @@ public static class WorkOrderEndpoints
         return Results.NoContent();
     }
 
-    private static bool CanCancel(ClaimsPrincipal principal) => principal.Can(Permissions.WorkOrdersCancel);
 
     private static async Task<IResult> ChangeStatusAsync(
         int id,
         [FromBody] StatusRequest request,
         HospitalPmDbContext db,
         ClaimsPrincipal principal,
+        PermissionService permissions,
         TimeProvider clock,
         CancellationToken ct)
     {
@@ -444,7 +446,8 @@ public static class WorkOrderEndpoints
         // gets done, the same kind as assigning the work or skipping a PM, and
         // those are an administrator's. An Employee could cancel a Critical
         // fault assigned to someone else and the server said yes.
-        if (request.Status == WorkOrderStatus.Cancelled && !CanCancel(principal))
+        if (request.Status == WorkOrderStatus.Cancelled
+            && !await permissions.CanAsync(principal, Permissions.WorkOrdersCancel, ct))
         {
             return Results.Json(
                 new { error = "Only an administrator can cancel a service request. Add a note and ask one to." },

@@ -138,7 +138,7 @@ public static class PmEndpoints
 
     public static void MapPmEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/pm").WithTags("Preventive maintenance").RequireAuthorization();
+        var group = app.MapGroup("/api/pm").WithTags("Preventive maintenance").RequirePermission(Permissions.PmWork);
 
         // Every role reads the work list: it is what a technician works from.
         group.MapGet("/tasks", TasksAsync);

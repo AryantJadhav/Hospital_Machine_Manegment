@@ -19,12 +19,14 @@ public static class ReportEndpoints
     {
         var group = app.MapGroup("/api/reports").WithTags("Reports").RequireAuthorization();
 
-        // Every role can print: a technician handing a machine back to a
+        // Anyone who works on the thing can print it: a technician handing a machine back to a
         // ward is the person who needs the paperwork in their hand.
-        group.MapGet("/pm/{taskId:int}/certificate.pdf", CertificateAsync);
-        group.MapGet("/work-orders/{id:int}/report.pdf", ServiceReportAsync);
+        group.MapGet("/pm/{taskId:int}/certificate.pdf", CertificateAsync)
+            .RequirePermission(Permissions.PmWork);
+        group.MapGet("/work-orders/{id:int}/report.pdf", ServiceReportAsync)
+            .RequirePermission(Permissions.WorkOrdersView);
 
-        app.MapGet("/api/dashboard", DashboardAsync).WithTags("Dashboard").RequireAuthorization();
+        app.MapGet("/api/dashboard", DashboardAsync).WithTags("Dashboard").RequirePermission(Permissions.RegisterView);
     }
 
     private static async Task<IResult> CertificateAsync(
@@ -201,6 +203,7 @@ public static class ReportEndpoints
         HospitalPmDbContext db,
         HospitalPm.Infrastructure.Maintenance.HospitalClock clock,
         ClaimsPrincipal user,
+        PermissionService permissions,
         CancellationToken ct)
     {
         var today = clock.Today();
@@ -243,7 +246,7 @@ public static class ReportEndpoints
 
         // Admin only, like the Backups page it points at. An employee cannot act
         // on it, and a red tile they cannot fix is just noise on their morning.
-        var backup = user.Can(Permissions.SystemBackups) ? await BackupStatusAsync(db, clock, ct) : null;
+        var backup = await permissions.CanAsync(user, Permissions.SystemBackups, ct) ? await BackupStatusAsync(db, clock, ct) : null;
 
         return Results.Ok(new
         {

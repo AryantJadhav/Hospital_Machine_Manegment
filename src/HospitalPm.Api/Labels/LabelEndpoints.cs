@@ -27,7 +27,7 @@ public static class LabelEndpoints
     {
         var group = app.MapGroup("/api/labels")
             .WithTags("Labels")
-            .RequireAuthorization();
+            .RequirePermission(Permissions.RegisterView);
 
         // A technician standing at a machine with an unreadable label needs to
         // reprint it, so reading a QR is open to every role.

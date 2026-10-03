@@ -72,7 +72,7 @@ public sealed class EquipmentApiTests(PostgresFixture fixture) : IAsyncLifetime,
             FullName = "API Test User",
         };
         await users.CreateAsync(user, password);
-        await users.AddToRoleAsync(user, Domain.Identity.Roles.Admin);
+        await users.AddToRoleAsync(user, Domain.Identity.Roles.BmeHead);
 
         var login = await _client.PostAsJsonAsync("/api/auth/login", new { userName, password });
         login.EnsureSuccessStatusCode();

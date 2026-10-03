@@ -54,8 +54,8 @@ public sealed class WorkOrderCancelTests(PostgresFixture fixture) : IAsyncLifeti
             _equipmentId = equipment.Id;
         }
 
-        _admin = await SignedInAsync($"woc-adm-{suffix}", Roles.Admin);
-        _employee = await SignedInAsync($"woc-emp-{suffix}", Roles.Employee);
+        _admin = await SignedInAsync($"woc-adm-{suffix}", Roles.BmeHead);
+        _employee = await SignedInAsync($"woc-emp-{suffix}", Roles.BmeEngineer);
     }
 
     private async Task<HttpClient> SignedInAsync(string userName, string role)

@@ -97,8 +97,8 @@ public sealed class PmRemindersTests(PostgresFixture fixture) : IAsyncLifetime, 
         }
 
         _factory = new ApiFactory(_connection);
-        _admin = await SignedInAsync("rm-admin", Roles.Admin);
-        _employee = await SignedInAsync("rm-employee", Roles.Employee);
+        _admin = await SignedInAsync("rm-admin", Roles.BmeHead);
+        _employee = await SignedInAsync("rm-employee", Roles.BmeEngineer);
     }
 
     private PmTask Task(int daysFromToday, PmTaskStatus status) => new()

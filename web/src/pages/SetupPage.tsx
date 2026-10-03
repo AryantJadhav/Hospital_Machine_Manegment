@@ -71,7 +71,9 @@ export function SetupPage({ onDone }: { onDone: () => void }) {
       <form className="card login-card" onSubmit={onSubmit}>
         <h1 className="login-title">Set up Hospital PM</h1>
         <p className="login-sub">
-          Create the administrator account for this installation. This screen appears once.
+          Create the first account for this installation: the support account of whoever is setting it up.
+          The hospital&apos;s own people, such as the IT team and the Head of Biomedical, are added from the
+          Staff page next. This screen appears once.
         </p>
 
         <label className="field">
@@ -117,7 +119,7 @@ export function SetupPage({ onDone }: { onDone: () => void }) {
         {error && <p className="alert alert-error" role="alert">{error}</p>}
 
         <button className="btn btn-primary" type="submit" disabled={busy}>
-          {busy ? 'Creating…' : 'Create administrator'}
+          {busy ? 'Creating…' : 'Create the first account'}
         </button>
       </form>
     </div>

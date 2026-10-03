@@ -1,3 +1,5 @@
+using HospitalPm.Domain.Identity;
+using HospitalPm.Api.Auth;
 using HospitalPm.Api.Reports;
 using HospitalPm.Infrastructure.Persistence;
 using HospitalPm.Infrastructure.Reports;
@@ -17,7 +19,7 @@ public static class EquipmentSpendEndpoints
     {
         app.MapGet("/api/equipment/{id:int}/spend", SpendAsync)
             .WithTags("Equipment")
-            .RequireAuthorization();
+            .RequirePermission(Permissions.RegisterView);
     }
 
     private static async Task<IResult> SpendAsync(int id, HospitalPmDbContext db, CancellationToken ct)

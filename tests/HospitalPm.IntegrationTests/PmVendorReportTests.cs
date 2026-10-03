@@ -118,8 +118,8 @@ public sealed class PmVendorReportTests(PostgresFixture fixture) : IAsyncLifetim
             _inHouseTaskId = houseTask.Id;
         }
 
-        _admin = await SignedInAsync($"pv-adm-{_suffix}", Roles.Admin);
-        _employee = await SignedInAsync($"pv-emp-{_suffix}", Roles.Employee);
+        _admin = await SignedInAsync($"pv-adm-{_suffix}", Roles.BmeHead);
+        _employee = await SignedInAsync($"pv-emp-{_suffix}", Roles.BmeEngineer);
     }
 
     private async Task<HttpClient> SignedInAsync(string userName, string role)

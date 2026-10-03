@@ -40,8 +40,12 @@ public static class LicenceEndpoints
     /// </summary>
     private const int WarnAdministratorsDays = 14;
 
-    private static IResult Banner(LicenceService licences, TimeProvider clock, System.Security.Claims.ClaimsPrincipal user)
+    private static async Task<IResult> Banner(
+        LicenceService licences, TimeProvider clock, System.Security.Claims.ClaimsPrincipal user,
+        HospitalPm.Api.Auth.PermissionService permissions, CancellationToken ct)
     {
+        var mayManageLicence = await permissions.CanAsync(user, HospitalPm.Domain.Identity.Permissions.SystemLicence, ct);
+
         var status = licences.Current();
         var today = DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
 
@@ -51,7 +55,7 @@ public static class LicenceEndpoints
         {
             LicenceState.ReadOnly or LicenceState.Expired => true,
             LicenceState.Valid => daysLeft is <= WarnAdministratorsDays
-                                  && user.Can(HospitalPm.Domain.Identity.Permissions.SystemLicence),
+                                  && mayManageLicence,
             _ => false,
         };
 

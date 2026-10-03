@@ -55,7 +55,7 @@ public static class TrainingEndpoints
 
     public static void MapTrainingEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/training").WithTags("Training").RequireAuthorization();
+        var group = app.MapGroup("/api/training").WithTags("Training").RequirePermission(Permissions.TrainingView);
 
         group.MapGet("/", ListAsync);
         group.MapGet("/people", PeopleAsync);
