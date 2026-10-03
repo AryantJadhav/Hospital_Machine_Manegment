@@ -3,11 +3,11 @@ import type { ReactNode } from 'react';
 import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom';
 import { api } from './api/client';
 import { AuthProvider } from './auth/AuthContext';
+import { ToastProvider } from './toast';
 import { useAuth } from './auth/useAuth';
 import { PERMISSIONS, ROLE_LABEL } from './auth/context';
 import { LoginPage } from './pages/LoginPage';
 import { EquipmentListPage } from './pages/EquipmentListPage';
-import { DepartmentMachinePage } from './pages/DepartmentMachinePage';
 import { EquipmentDetailPage } from './pages/EquipmentDetailPage';
 import { EquipmentTypesPage } from './pages/EquipmentTypesPage';
 import { SparePartsPage } from './pages/SparePartsPage';
@@ -202,18 +202,13 @@ function Shell() {
           <Route path="/training/:id" element={needs(PERMISSIONS.trainingView, <TrainingSessionPage />)} />
           <Route path="/training/:id/report" element={needs(PERMISSIONS.trainingView, <TrainingReportPreviewPage />)} />
           <Route path="/work-orders" element={needs(PERMISSIONS.workOrdersView, <WorkOrdersPage />)} />
-          <Route path="/work-orders/:id" element={needs(PERMISSIONS.workOrdersView, <WorkOrderPage />)} />
+          <Route path="/work-orders/:id" element={needs(PERMISSIONS.registerView, <WorkOrderPage />)} />
           <Route path="/work-orders/:id/report" element={needs(PERMISSIONS.workOrdersView, <ServiceReportPreviewPage />)} />
           <Route path="/equipment" element={needsAny([PERMISSIONS.registerView, PERMISSIONS.departmentView], <EquipmentListPage />)} />
-          <Route
-            path="/equipment/:id"
-            element={needsAny(
-              [PERMISSIONS.registerView, PERMISSIONS.departmentView],
-              // The whole record for those who may see the whole register; the part that is theirs for a
-              // person from another department.
-              may(PERMISSIONS.registerView) ? <EquipmentDetailPage /> : <DepartmentMachinePage />,
-            )}
-          />
+          {/* The pages of one machine and of one request are for those who work on them. A person from
+              another department sees them as rows in a list and opens nothing: they hold no
+              register.view, which is what is asked for here. */}
+          <Route path="/equipment/:id" element={needs(PERMISSIONS.registerView, <EquipmentDetailPage />)} />
           <Route path="/locations" element={needs(PERMISSIONS.registerView, <LocationsPage />)} />
           <Route path="/checklists" element={needs(PERMISSIONS.checklistsView, <ChecklistsPage />)} />
           <Route path="/spare-parts" element={needs(PERMISSIONS.sparePartsView, <SparePartsPage />)} />
@@ -294,9 +289,11 @@ function Gate() {
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <Gate />
-      </BrowserRouter>
+      <ToastProvider>
+        <BrowserRouter>
+          <Gate />
+        </BrowserRouter>
+      </ToastProvider>
     </AuthProvider>
   );
 }

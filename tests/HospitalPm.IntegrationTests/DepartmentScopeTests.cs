@@ -335,9 +335,116 @@ public sealed class DepartmentScopeTests(PostgresFixture fixture) : IAsyncLifeti
         Assert.True(theirs.GetProperty("allowedTransitions").GetArrayLength() > 0);
         Assert.Equal(250m, theirs.GetProperty("partsUsed")[0].GetProperty("unitCostAtUse").GetDecimal());
 
-        // The printed report carries the money, so it is not handed to a ward user.
-        Assert.Equal(HttpStatusCode.Forbidden, (await _ward.GetAsync($"/api/reports/work-orders/{_icuOrderId}/report.pdf")).StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await _engineer.GetAsync($"/api/reports/work-orders/{_icuOrderId}/report.pdf")).StatusCode);
+        // The printed report is theirs too, without the money.
+        var wardPdf = await _ward.GetAsync($"/api/reports/work-orders/{_icuOrderId}/report.pdf");
+        Assert.Equal(HttpStatusCode.OK, wardPdf.StatusCode);
+        Assert.Equal("application/pdf", wardPdf.Content.Headers.ContentType?.MediaType);
+        var wardBytes = await wardPdf.Content.ReadAsByteArrayAsync();
+        Assert.Equal("%PDF", Encoding.ASCII.GetString(wardBytes[..4]));
+
+        var engineerPdf = await _engineer.GetAsync($"/api/reports/work-orders/{_icuOrderId}/report.pdf");
+        Assert.Equal(HttpStatusCode.OK, engineerPdf.StatusCode);
+
+        // Another department's report is not there to print.
+        Assert.Equal(HttpStatusCode.NotFound, (await _ward.GetAsync($"/api/reports/work-orders/{_otOrderId}/report.pdf")).StatusCode);
+
+    }
+
+    [Fact]
+    public async Task A_request_whose_repair_is_done_stays_on_the_departments_list_for_a_week_and_then_leaves_it()
+    {
+        var wardOrder = await _ward.PostAsJsonAsync("/api/work-orders",
+            new { equipmentId = _icuMachineId, faultDescription = "Will be repaired", priority = 20 });
+        var id = (await wardOrder.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
+
+        async Task<HashSet<int>> DefaultListAsync(HttpClient client)
+        {
+            var list = await client.GetFromJsonAsync<JsonElement>("/api/work-orders?pageSize=200");
+            return list.GetProperty("items").EnumerateArray().Select(i => i.GetProperty("id").GetInt32()).ToHashSet();
+        }
+
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await _engineer.PostAsJsonAsync($"/api/work-orders/{id}/status", new { status = 30 })).StatusCode);
+        Assert.True((await _engineer.PostAsJsonAsync($"/api/work-orders/{id}/resolve", new { resolutionNotes = "Replaced the board" })).IsSuccessStatusCode);
+
+        // Repair done: gone from the team's own queue, still on the department's list.
+        Assert.DoesNotContain(id, await DefaultListAsync(_engineer));
+        Assert.Contains(id, await DefaultListAsync(_ward));
+
+        var row = (await _ward.GetFromJsonAsync<JsonElement>("/api/work-orders?pageSize=200"))
+            .GetProperty("items").EnumerateArray().Single(i => i.GetProperty("id").GetInt32() == id);
+        Assert.NotEqual(JsonValueKind.Null, row.GetProperty("resolvedAtUtc").ValueKind);
+
+        // Six days later it is still there; eight days later it has left the default list, though it is
+        // not lost: asking for resolved ones finds it.
+        await SetResolvedAgoAsync(id, TimeSpan.FromDays(6));
+        Assert.Contains(id, await DefaultListAsync(_ward));
+
+        await SetResolvedAgoAsync(id, TimeSpan.FromDays(8));
+        Assert.DoesNotContain(id, await DefaultListAsync(_ward));
+
+        var resolved = await _ward.GetFromJsonAsync<JsonElement>("/api/work-orders?status=50&pageSize=200");
+        Assert.Contains(id, resolved.GetProperty("items").EnumerateArray().Select(i => i.GetProperty("id").GetInt32()));
+
+        // Another department's repaired request is never on their list, however recent.
+        await _engineer.PostAsJsonAsync($"/api/work-orders/{_otOrderId}/status", new { status = 30 });
+        Assert.True((await _engineer.PostAsJsonAsync($"/api/work-orders/{_otOrderId}/resolve", new { resolutionNotes = "Done" })).IsSuccessStatusCode);
+        Assert.DoesNotContain(_otOrderId, await DefaultListAsync(_ward));
+    }
+
+    private async Task SetResolvedAgoAsync(int orderId, TimeSpan ago)
+    {
+        await using var db = fixture.CreateContext();
+        await db.Database.ExecuteSqlRawAsync(
+            "UPDATE work_order SET resolved_at_utc = {0} WHERE id = {1}", DateTime.UtcNow - ago, orderId);
+    }
+
+    [Fact]
+    public async Task A_closed_request_follows_the_same_week()
+    {
+        var made = await _ward.PostAsJsonAsync("/api/work-orders",
+            new { equipmentId = _icuMachineId, faultDescription = "Will be closed", priority = 20 });
+        var id = (await made.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
+
+        await _engineer.PostAsJsonAsync($"/api/work-orders/{id}/status", new { status = 30 });
+        await _engineer.PostAsJsonAsync($"/api/work-orders/{id}/resolve", new { resolutionNotes = "Done" });
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await _head.PostAsJsonAsync($"/api/work-orders/{id}/status", new { status = 60 })).StatusCode);
+
+        var list = await _ward.GetFromJsonAsync<JsonElement>("/api/work-orders?pageSize=200");
+        Assert.Contains(id, list.GetProperty("items").EnumerateArray().Select(i => i.GetProperty("id").GetInt32()));
+    }
+
+    [Fact]
+    public async Task A_ward_user_can_list_just_the_requests_they_raised_and_sees_who_raised_each()
+    {
+        var mineRes = await _ward.PostAsJsonAsync("/api/work-orders",
+            new { equipmentId = _icuMachineId, faultDescription = "Raised by the ward user", priority = 20 });
+        Assert.Equal(HttpStatusCode.Created, mineRes.StatusCode);
+        var mineId = (await mineRes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
+
+        // Everything in their department: the engineer's request on the ICU machine, and theirs.
+        var all = await _ward.GetFromJsonAsync<JsonElement>("/api/work-orders?pageSize=200");
+        var allIds = all.GetProperty("items").EnumerateArray().Select(i => i.GetProperty("id").GetInt32()).ToHashSet();
+        Assert.Contains(_icuOrderId, allIds);
+        Assert.Contains(mineId, allIds);
+
+        // Only the ones they raised.
+        var mine = await _ward.GetFromJsonAsync<JsonElement>("/api/work-orders?requestedBy=me&pageSize=200");
+        var rows = mine.GetProperty("items").EnumerateArray().ToList();
+        Assert.Equal([mineId], rows.Select(r => r.GetProperty("id").GetInt32()).ToArray());
+        Assert.StartsWith("ds-ward", rows[0].GetProperty("reportedByName").GetString());
+
+        // Each row says who raised it, whoever is reading.
+        var engineerRow = all.GetProperty("items").EnumerateArray().Single(i => i.GetProperty("id").GetInt32() == _icuOrderId);
+        Assert.StartsWith("ds-eng", engineerRow.GetProperty("reportedByName").GetString());
+
+        // The same filter works for the engineer: what they raised, across the whole hospital.
+        var engineers = await _engineer.GetFromJsonAsync<JsonElement>("/api/work-orders?requestedBy=me&pageSize=200");
+        var engineerIds = engineers.GetProperty("items").EnumerateArray().Select(i => i.GetProperty("id").GetInt32()).ToHashSet();
+        Assert.Contains(_icuOrderId, engineerIds);
+        Assert.Contains(_otOrderId, engineerIds);
+        Assert.DoesNotContain(mineId, engineerIds);
     }
 
     [Fact]

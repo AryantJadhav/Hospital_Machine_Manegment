@@ -2,9 +2,12 @@ import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent, MouseEvent } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
+import { PERMISSIONS } from '../auth/context';
+import { useAuth } from '../auth/useAuth';
 import { EquipmentPicker } from '../EquipmentPicker';
 import { HandoffNotice } from '../HandoffNotice';
 import { useHandoff } from '../handoff';
+import { useToast } from '../toast';
 import { StatusPill } from '../StatusPill';
 import { PRIORITY_LABEL, PRIORITY_LOOK, WORK_ORDER_LABEL, WORK_ORDER_LOOK } from '../statusTones';
 import { formatAge, formatDateTime } from '../time';
@@ -29,6 +32,14 @@ export function WorkOrdersPage() {
   const page = Math.max(1, Number(params.get('page')) || 1);
   // "me" is worked out by the server from who is signed in.
   const mine = params.get('assignee') === 'me';
+
+  // A person from another department starts on the requests they raised, which is what they come
+  // here for; "all in my departments" is one choice away. Everyone else starts on everyone's.
+  const { may } = useAuth();
+  const toast = useToast();
+  const fromAnotherDepartment = !may(PERMISSIONS.registerView);
+  const by = params.get('by');
+  const requestedByMe = fromAnotherDepartment ? by !== 'all' : by === 'me';
 
   const [data, setData] = useState<Paged<WorkOrderRow> | null>(null);
   const [search, setSearch] = useState(q);
@@ -71,13 +82,14 @@ export function WorkOrdersPage() {
       if (q) query.set('q', q);
       if (down) query.set('down', 'true');
       if (mine) query.set('assignee', 'me');
+      if (requestedByMe) query.set('requestedBy', 'me');
       setData(await api.get<Paged<WorkOrderRow>>(`/api/work-orders?${query}`));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load service requests.');
     } finally {
       setLoading(false);
     }
-  }, [page, status, priority, q, down, mine]);
+  }, [page, status, priority, q, down, mine, requestedByMe]);
 
   useEffect(() => {
     void load();
@@ -137,9 +149,13 @@ export function WorkOrdersPage() {
     open(id);
   }
 
+  // A person from another department reads the row and opens nothing: the page of a request is the
+  // biomedical team's to work. What they are given is the printed report, from the row itself.
+  const opens = !fromAnotherDepartment;
+
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
-  const hasFilters = Boolean(status || priority || q || down);
-  const columns = mine ? 6 : 7;
+  const hasFilters = Boolean(status || priority || q || down || (requestedByMe && !fromAnotherDepartment));
+  const columns = (mine ? 7 : 8) + (opens ? 0 : 1);
 
   return (
     <div className="page">
@@ -172,6 +188,20 @@ export function WorkOrdersPage() {
           initial={reportFor}
           onCancel={() => (from ? navigate(from) : closeReport())}
           onDone={async (created) => {
+            // A person from another department has nothing to do on the request's own page: it is
+            // the biomedical team's to work. They are told it went in, in a message at the side, and
+            // left where they were: on their list, with the new request on it, or back at the machine.
+            if (fromAnotherDepartment) {
+              toast.show(`Request submitted successfully. Your request number is ${created.number}.`);
+              if (from) {
+                navigate(from, { replace: true });
+              } else {
+                closeReport();
+                await load();
+              }
+              return;
+            }
+
             // Back where they were standing, with the fault said there. From the list, straight
             // into the new work order, which is where the next thing to do is.
             if (from) {
@@ -196,16 +226,39 @@ export function WorkOrdersPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <select
-          aria-label="Whose service requests"
-          value={mine ? 'me' : ''}
-          onChange={(e) => setParam('assignee', e.target.value)}
-        >
-          <option value="">Everyone's</option>
-          <option value="me">Assigned to me</option>
-        </select>
+        {fromAnotherDepartment ? (
+          <select
+            aria-label="Whose service requests"
+            value={requestedByMe ? 'me' : 'all'}
+            onChange={(e) => setParam('by', e.target.value === 'all' ? 'all' : '')}
+          >
+            <option value="me">Requested by me</option>
+            <option value="all">All in my departments</option>
+          </select>
+        ) : (
+          <select
+            aria-label="Whose service requests"
+            value={mine ? 'me' : requestedByMe ? 'requested' : ''}
+            onChange={(e) => {
+              const v = e.target.value;
+              const next = new URLSearchParams(params);
+              next.delete('page');
+              next.delete('assignee');
+              next.delete('by');
+              if (v === 'me') next.set('assignee', 'me');
+              if (v === 'requested') next.set('by', 'me');
+              setParams(next, { replace: true });
+            }}
+          >
+            <option value="">Everyone&apos;s</option>
+            <option value="me">Assigned to me</option>
+            <option value="requested">Requested by me</option>
+          </select>
+        )}
         <select aria-label="Filter by status" value={status} onChange={(e) => setParam('status', e.target.value)}>
-          <option value="">{mine ? 'Still to do' : 'Open only'}</option>
+          <option value="">
+            {mine ? 'Still to do' : fromAnotherDepartment ? 'Open, and done this week' : 'Open only'}
+          </option>
           {Object.entries(WORK_ORDER_LABEL).map(([v, label]) => (
             <option key={v} value={v}>{label}</option>
           ))}
@@ -228,7 +281,9 @@ export function WorkOrdersPage() {
               <th>Fault</th>
               <th>Status</th>
               <th>Reported</th>
-              {!mine && <th>Assigned to</th>}
+              <th>Requested by</th>
+              {!mine && <th>{fromAnotherDepartment ? 'Looked after by' : 'Assigned to'}</th>}
+              {!opens && <th>Report</th>}
             </tr>
           </thead>
           <tbody>
@@ -237,25 +292,51 @@ export function WorkOrdersPage() {
             {data && data.items.length === 0 && (
               <tr>
                 <td colSpan={columns} className="empty">
-                  {mine && !hasFilters ? 'Nothing is assigned to you right now.' : 'No service requests match.'}
+                  {mine && !hasFilters
+                    ? 'Nothing is assigned to you right now.'
+                    : fromAnotherDepartment && requestedByMe && !hasFilters
+                      ? 'You have not requested any service yet. Open one of your machines and press Report a fault.'
+                      : 'No service requests match.'}
                 </td>
               </tr>
             )}
 
             {data?.items.map((w) => (
-              <tr key={w.id} className="row-clickable" onClick={(e) => rowClick(e, w.id)}>
+              <tr
+                key={w.id}
+                className={opens ? 'row-clickable' : undefined}
+                onClick={opens ? (e) => rowClick(e, w.id) : undefined}
+              >
                 <td className="mono">
-                  <Link to={`/work-orders/${w.id}`} state={{ from: here }}>{w.number}</Link>
+                  {opens
+                    ? <Link to={`/work-orders/${w.id}`} state={{ from: here }}>{w.number}</Link>
+                    : w.number}
                 </td>
                 <td><StatusPill look={PRIORITY_LOOK[w.priority]}>{PRIORITY_LABEL[w.priority]}</StatusPill></td>
                 <td className="mono">
-                  <Link to={`/equipment/${w.equipmentId}`} state={{ from: here }}>{w.assetTag}</Link>
+                  {opens
+                    ? <Link to={`/equipment/${w.equipmentId}`} state={{ from: here }}>{w.assetTag}</Link>
+                    : w.assetTag}
                 </td>
                 <td className="truncate">{w.faultDescription}</td>
-                <td><StatusPill look={WORK_ORDER_LOOK[w.status]}>{WORK_ORDER_LABEL[w.status]}</StatusPill></td>
+                <td>
+                  <StatusPill look={WORK_ORDER_LOOK[w.status]}>{WORK_ORDER_LABEL[w.status]}</StatusPill>
+                  {/* For the department that asked: when the repair was done, so the answer is easy to find. */}
+                  {!opens && w.resolvedAtUtc && (
+                    <div className="muted" style={{ fontSize: '0.8rem' }} title={formatDateTime(w.resolvedAtUtc)}>
+                      Repair done {formatAge(w.resolvedAtUtc)}
+                    </div>
+                  )}
+                </td>
                 <td title={formatDateTime(w.reportedAtUtc)}>{formatAge(w.reportedAtUtc)}</td>
+                <td>{w.reportedByName ?? <span className="muted">—</span>}</td>
                 {/* On "my work" every row is the reader's own: a column saying so is noise. */}
                 {!mine && <td>{w.assignedToName ?? <span className="muted">Unassigned</span>}</td>}
+                {!opens && (
+                  <td>
+                    <a href={`/work-orders/${w.id}/report`} target="_blank" rel="noopener">View report</a>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

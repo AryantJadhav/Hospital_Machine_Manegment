@@ -76,13 +76,11 @@ public sealed partial class RouteAccessMatrixTests(PostgresFixture fixture, ITes
         || path.StartsWith("/api/admin/update", StringComparison.Ordinal);
 
     /// <summary>
-    /// Where a person who is allowed in is still told no by the route itself: the staff names list
-    /// (for someone who picks nobody), and the printed service report, which carries the prices a
-    /// person from another department is not shown.
+    /// Where a person who is allowed in is still told no by the route itself: the staff names list,
+    /// for someone who has no reason to pick a person.
     /// </summary>
     private static bool RefusesAllowedPeopleByDesign(string method, string pattern, string role) =>
-        (pattern == "/api/people" && role is Roles.BmeEngineer or Roles.DepartmentUser)
-        || (method == "GET" && pattern == "/api/reports/work-orders/{id:int}/report.pdf" && role == Roles.DepartmentUser);
+        method == "GET" && pattern == "/api/people" && role is Roles.BmeEngineer or Roles.DepartmentUser;
 
     private sealed record Route(string Method, string Pattern, string Path, List<PermissionRequirement> Requirements, bool Upload);
 

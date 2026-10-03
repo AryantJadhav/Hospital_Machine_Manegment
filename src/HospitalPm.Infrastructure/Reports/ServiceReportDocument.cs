@@ -187,8 +187,11 @@ public sealed class ServiceReportDocument(
                     c.RelativeColumn(2.2f);   // part number
                     c.RelativeColumn(3.5f);   // name
                     c.RelativeColumn(1);      // qty
-                    c.RelativeColumn(1.6f);   // unit cost
-                    c.RelativeColumn(1.6f);   // line total
+                    if (data.ShowCosts)
+                    {
+                        c.RelativeColumn(1.6f);   // unit cost
+                        c.RelativeColumn(1.6f);   // line total
+                    }
                 });
 
                 table.Header(h =>
@@ -196,8 +199,11 @@ public sealed class ServiceReportDocument(
                     ReportHeaderCell(h.Cell(), "Part");
                     ReportHeaderCell(h.Cell(), "Name");
                     ReportHeaderCell(h.Cell().AlignRight(), "Qty");
-                    ReportHeaderCell(h.Cell().AlignRight(), "Unit cost");
-                    ReportHeaderCell(h.Cell().AlignRight(), "Total");
+                    if (data.ShowCosts)
+                    {
+                        ReportHeaderCell(h.Cell().AlignRight(), "Unit cost");
+                        ReportHeaderCell(h.Cell().AlignRight(), "Total");
+                    }
                 });
 
                 foreach (var p in data.PartsUsed)
@@ -206,12 +212,15 @@ public sealed class ServiceReportDocument(
                     table.Cell().Element(ReportCell).Text(p.Name);
                     table.Cell().Element(ReportCell).AlignRight()
                         .Text(p.QuantityUsed.ToString(CultureInfo.InvariantCulture));
-                    table.Cell().Element(ReportCell).AlignRight().Text(Rupees(p.UnitCostAtUse));
-                    table.Cell().Element(ReportCell).AlignRight().Text(Rupees(p.LineTotal));
+                    if (data.ShowCosts)
+                    {
+                        table.Cell().Element(ReportCell).AlignRight().Text(Rupees(p.UnitCostAtUse));
+                        table.Cell().Element(ReportCell).AlignRight().Text(Rupees(p.LineTotal));
+                    }
                 }
             });
 
-            if (data.PartsTotal is { } total)
+            if (data.ShowCosts && data.PartsTotal is { } total)
             {
                 col.Item().PaddingTop(3).AlignRight()
                     .Text($"Parts total: {Rupees(total)}").FontSize(9).Bold();

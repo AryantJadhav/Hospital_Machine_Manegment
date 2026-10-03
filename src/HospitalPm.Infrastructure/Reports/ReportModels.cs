@@ -126,7 +126,9 @@ public sealed record ServiceReportData(
     int? DowntimeMinutes,
     IReadOnlyList<(DateTime At, string Author, string Body)> Timeline,
     IReadOnlyList<ServiceReportPart> PartsUsed,
-    IReadOnlyList<ServiceReportPhoto> Photos)
+    IReadOnlyList<ServiceReportPhoto> Photos,
+    // False for a person from another department: which parts were used is printed, what they cost is not.
+    bool ShowCosts = true)
 {
     public decimal? PartsTotal => PartsUsed.Count == 0
         ? null

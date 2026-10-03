@@ -34,6 +34,9 @@ export function EquipmentListPage() {
   const features = useFeatures();
   const { may } = useAuth();
   const canPrint = may(PERMISSIONS.labelsPrint);
+  // The page of one machine is for those who work on it. A person from another department reads the
+  // list, and opens nothing.
+  const canOpen = may(PERMISSIONS.registerView);
   const canEdit = may(PERMISSIONS.equipmentEdit);
   const [adding, setAdding] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -307,7 +310,7 @@ export function EquipmentListPage() {
                   </td>
                 )}
                 <td className="mono">
-                  <Link to={`/equipment/${e.id}`}>{e.assetTag}</Link>
+                  {canOpen ? <Link to={`/equipment/${e.id}`}>{e.assetTag}</Link> : e.assetTag}
                 </td>
                 <td>{e.equipmentTypeName}</td>
                 <td>{e.locationName}</td>

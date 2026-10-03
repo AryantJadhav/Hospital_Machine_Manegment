@@ -82,14 +82,24 @@ public static class WorkOrderEndpoints
     public static readonly WorkOrderStatus[] OnTheAssigneesPlate =
         [WorkOrderStatus.Assigned, WorkOrderStatus.InProgress, WorkOrderStatus.OnHold];
 
+    /// <summary>
+    /// How long a request whose repair is done stays on a department's list. The team that did the work
+    /// takes it off its queue the moment it is resolved; the department that asked is told the answer, and
+    /// should be able to see it for long enough to notice, so it stays for a week.
+    /// </summary>
+    public static readonly TimeSpan DoneStaysOnTheDepartmentsList = TimeSpan.FromDays(7);
+
     private static async Task<IResult> ListAsync(
         HospitalPmDbContext db,
+        TimeProvider clock,
         ClaimsPrincipal principal,
         [FromQuery] WorkOrderStatus? status,
         [FromQuery] WorkOrderPriority? priority,
         [FromQuery] int? equipmentId,
         [FromQuery] int? assignedToUserId,
         [FromQuery] string? assignee,
+        // "me": only the requests this person raised. Worked out here, from the token, like assignee.
+        [FromQuery] string? requestedBy,
         [FromQuery] string? q,
         [FromQuery] bool? down,
         [FromQuery] bool openOnly = true,
@@ -110,6 +120,12 @@ public static class WorkOrderEndpoints
             assignedToUserId = UserId(principal);
         }
 
+        if (string.Equals(requestedBy, "me", StringComparison.OrdinalIgnoreCase))
+        {
+            var me = UserId(principal);
+            query = query.Where(w => w.ReportedByUserId == me);
+        }
+
         if (status is not null)
         {
             query = query.Where(w => w.Status == status);
@@ -122,9 +138,21 @@ public static class WorkOrderEndpoints
         {
             // Once the fault is fixed it has left the queue: Resolved is waiting on paperwork, not on
             // an engineer. It is still there under the Resolved filter, and in the machine's history.
-            query = query.Where(w => w.Status != WorkOrderStatus.Resolved
-                                  && w.Status != WorkOrderStatus.Closed
-                                  && w.Status != WorkOrderStatus.Cancelled);
+            if (db.IsScoped)
+            {
+                // A person from another department also sees the requests whose repair was done in the
+                // last week, so the answer to what they asked does not vanish before they have seen it.
+                var since = clock.GetUtcNow().UtcDateTime - DoneStaysOnTheDepartmentsList;
+                query = query.Where(w => w.Status != WorkOrderStatus.Cancelled
+                    && (w.Status != WorkOrderStatus.Resolved && w.Status != WorkOrderStatus.Closed
+                        || (w.ResolvedAtUtc ?? w.ClosedAtUtc) >= since));
+            }
+            else
+            {
+                query = query.Where(w => w.Status != WorkOrderStatus.Resolved
+                                      && w.Status != WorkOrderStatus.Closed
+                                      && w.Status != WorkOrderStatus.Cancelled);
+            }
         }
 
         // The faults behind the dashboard's "Machines down": a machine taken out of service that
@@ -182,6 +210,9 @@ public static class WorkOrderEndpoints
                 EquipmentTypeName = w.Equipment!.EquipmentType!.Name,
                 LocationName = w.Equipment!.Location!.Name,
                 w.ReportedAtUtc,
+                w.ResolvedAtUtc,
+                w.ReportedByUserId,
+                ReportedByName = db.Users.Where(u => u.Id == w.ReportedByUserId).Select(u => u.FullName).FirstOrDefault(),
                 w.AssignedToUserId,
                 AssignedToName = w.AssignedToUserId == null
                     ? null

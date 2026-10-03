@@ -130,12 +130,9 @@ public static class ReportEndpoints
         HospitalPm.Infrastructure.Maintenance.HospitalClock clock,
         CancellationToken ct)
     {
-        // The printed report carries what the parts cost. A person in another department sees the
-        // request on screen, without the money, and is not handed the paper that has it.
-        if (db.IsScoped)
-        {
-            return Results.Forbid();
-        }
+        // A person in another department is given the report for their own requests, without the money:
+        // which parts were used is printed, what they cost is not.
+        var showCosts = !db.IsScoped;
 
         var order = await db.WorkOrders.AsNoTracking()
             .Include(w => w.Equipment)!.ThenInclude(e => e!.EquipmentType)
@@ -161,7 +158,7 @@ public static class ReportEndpoints
             .Where(p => p.WorkOrderId == id)
             .OrderBy(p => p.UsedAtUtc)
             .Select(p => new ServiceReportPart(
-                p.SparePart!.PartNumber, p.SparePart.Name, p.QuantityUsed, p.UnitCostAtUse))
+                p.SparePart!.PartNumber, p.SparePart.Name, p.QuantityUsed, showCosts ? p.UnitCostAtUse : null))
             .ToListAsync(ct);
 
         var photos = await db.WorkOrderAttachments.AsNoTracking()
@@ -192,7 +189,8 @@ public static class ReportEndpoints
             order.DowntimeMinutes,
             notes.Select(n => (n.CreatedAtUtc, Name(names, n.AuthorUserId), n.Body)).ToList(),
             partsUsed,
-            photos);
+            photos,
+            showCosts);
 
         var pdf = new ServiceReportDocument(data, options.Value, clock.Offset).GeneratePdf();
 

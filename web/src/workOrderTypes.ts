@@ -11,6 +11,10 @@ export type WorkOrderRow = {
   equipmentTypeName: string;
   locationName: string;
   reportedAtUtc: string;
+  /** When the repair was done, once it has been. */
+  resolvedAtUtc: string | null;
+  reportedByUserId: number;
+  reportedByName: string | null;
   assignedToUserId: number | null;
   assignedToName: string | null;
   outOfServiceAtUtc: string | null;
