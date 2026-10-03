@@ -14,6 +14,7 @@ type Row = {
   equipmentTypeName: string;
   locationName: string;
   faultDescription: string;
+  breakdownTypeLabel: string | null;
   resolutionNotes: string | null;
   reportedAtUtc: string;
   reportedByName: string | null;
@@ -245,6 +246,7 @@ export function ServiceHistoryPage() {
                     <StatusPill look={PRIORITY_LOOK[r.priority]}>{PRIORITY_LABEL[r.priority]}</StatusPill>{' '}
                     Reported {formatDate(r.reportedAtUtc)}{r.reportedByName && ` by ${r.reportedByName}`}
                   </div>
+                  {r.breakdownTypeLabel && <div className="muted">Breakdown: {r.breakdownTypeLabel}</div>}
                 </td>
                 <td>{r.resolutionNotes ?? <span className="muted">—</span>}</td>
                 <td>{r.resolvedByName ?? <span className="muted">—</span>}</td>

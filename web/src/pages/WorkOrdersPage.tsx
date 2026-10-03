@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import { api } from '../api/client';
 import { PERMISSIONS } from '../auth/context';
 import { useAuth } from '../auth/useAuth';
+import { BREAKDOWN_TYPES, breakdownLabel } from '../breakdownTypes';
 import { EquipmentPicker } from '../EquipmentPicker';
 import { HandoffNotice } from '../HandoffNotice';
 import { useHandoff } from '../handoff';
@@ -26,6 +27,7 @@ export function WorkOrdersPage() {
   const [params, setParams] = useSearchParams();
   const status = params.get('status') ?? '';
   const priority = params.get('priority') ?? '';
+  const breakdownType = params.get('breakdownType') ?? '';
   const q = params.get('q') ?? '';
   // Only the faults that have a machine out of service: what the dashboard's "Machines down" counts.
   const down = params.get('down') === '1';
@@ -79,6 +81,7 @@ export function WorkOrdersPage() {
       const query = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
       if (status) query.set('status', status);
       if (priority) query.set('priority', priority);
+      if (breakdownType) query.set('breakdownType', breakdownType);
       if (q) query.set('q', q);
       if (down) query.set('down', 'true');
       if (mine) query.set('assignee', 'me');
@@ -89,7 +92,7 @@ export function WorkOrdersPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, status, priority, q, down, mine, requestedByMe]);
+  }, [page, status, priority, breakdownType, q, down, mine, requestedByMe]);
 
   useEffect(() => {
     void load();
@@ -154,8 +157,8 @@ export function WorkOrdersPage() {
   const opens = !fromAnotherDepartment;
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
-  const hasFilters = Boolean(status || priority || q || down || (requestedByMe && !fromAnotherDepartment));
-  const columns = (mine ? 7 : 8) + (opens ? 0 : 1);
+  const hasFilters = Boolean(status || priority || breakdownType || q || down || (requestedByMe && !fromAnotherDepartment));
+  const columns = (mine ? 8 : 9) + (opens ? 0 : 1);
 
   return (
     <div className="page">
@@ -269,6 +272,12 @@ export function WorkOrdersPage() {
             <option key={v} value={v}>{label}</option>
           ))}
         </select>
+        <select aria-label="Filter by breakdown type" value={breakdownType} onChange={(e) => setParam('breakdownType', e.target.value)}>
+          <option value="">Any breakdown type</option>
+          {BREAKDOWN_TYPES.map((t) => (
+            <option key={t.value} value={t.value}>{t.label}</option>
+          ))}
+        </select>
       </div>
 
       <div className="card table-wrap">
@@ -279,6 +288,7 @@ export function WorkOrdersPage() {
               <th>Priority</th>
               <th>Asset</th>
               <th>Fault</th>
+              <th>Breakdown</th>
               <th>Status</th>
               <th>Reported</th>
               <th>Requested by</th>
@@ -319,6 +329,7 @@ export function WorkOrdersPage() {
                     : w.assetTag}
                 </td>
                 <td className="truncate">{w.faultDescription}</td>
+                <td>{breakdownLabel(w.breakdownType) ?? <span className="muted">—</span>}</td>
                 <td>
                   <StatusPill look={WORK_ORDER_LOOK[w.status]}>{WORK_ORDER_LABEL[w.status]}</StatusPill>
                   {/* For the department that asked: when the repair was done, so the answer is easy to find. */}
@@ -372,6 +383,7 @@ function ReportForm({
 }) {
   const [equipmentId, setEquipmentId] = useState<number | null>(initial?.id ?? null);
   const [fault, setFault] = useState('');
+  const [breakdown, setBreakdown] = useState('');
   const [busy, setBusy] = useState(false);
 
   async function submit(e: FormEvent) {
@@ -383,6 +395,8 @@ function ReportForm({
       const created = await api.post<{ id: number; number: string }>('/api/work-orders', {
         equipmentId,
         faultDescription: fault,
+        // Only if the reporter knows; the engineer can say once they have looked.
+        breakdownType: breakdown ? Number(breakdown) : null,
       });
       await onDone(created);
     } catch (err) {
@@ -409,6 +423,15 @@ function ReportForm({
           placeholder="Describe the fault as the ward reported it"
           required
         />
+      </label>
+
+      <label className="field">
+        <span>Breakdown type (optional)</span>
+        <select value={breakdown} onChange={(e) => setBreakdown(e.target.value)}>
+          <option value="">Not sure yet</option>
+          {BREAKDOWN_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+        </select>
+        <span className="muted">If you are not sure, leave it. The engineer will say once they have looked at the machine.</span>
       </label>
 
       {/* Reporting a fault is saying the machine is not working: its downtime is counted from this

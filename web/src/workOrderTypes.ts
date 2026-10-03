@@ -6,6 +6,8 @@ export type WorkOrderRow = {
   status: number;
   priority: number;
   faultDescription: string;
+  /** Hardware, software, both, an accessory or consumable, or improper usage. Null until someone says. */
+  breakdownType: number | null;
   equipmentId: number;
   assetTag: string;
   equipmentTypeName: string;

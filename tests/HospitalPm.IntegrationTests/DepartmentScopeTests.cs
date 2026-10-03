@@ -477,7 +477,7 @@ public sealed class DepartmentScopeTests(PostgresFixture fixture) : IAsyncLifeti
         Assert.Equal("text/csv", res.Content.Headers.ContentType?.MediaType);
 
         var csv = await res.Content.ReadAsStringAsync();
-        Assert.StartsWith("Request,Machine number,Machine,Where,What was wrong,What was done", csv);
+        Assert.StartsWith("Request,Machine number,Machine,Where,What was wrong,Breakdown type,What was done", csv);
         Assert.Contains(_icuTag, csv);
         Assert.Contains($"Replaced the ICU board {_suffix}", csv);
         Assert.DoesNotContain(_otTag, csv);

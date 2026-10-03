@@ -4,6 +4,7 @@ import { api, ApiError } from '../api/client';
 import { useAuth } from '../auth/useAuth';
 import { PERMISSIONS } from '../auth/context';
 import { GatePassNotice } from '../GatePassNotice';
+import { BREAKDOWN_TYPES, breakdownLabel } from '../breakdownTypes';
 import { HandoffNotice } from '../HandoffNotice';
 import { useHandoff } from '../handoff';
 import { StatusPill } from '../StatusPill';
@@ -195,6 +196,7 @@ export function WorkOrderPage() {
               Reported {formatDateTime(order.reportedAtUtc)}
               {order.reportedByName && ` by ${order.reportedByName}`}
             </p>
+            <BreakdownType order={order} editable={canWork && !isTerminal} act={act} />
           </section>
 
           <Solution order={order} isTerminal={isTerminal} canWork={canWork} />
@@ -210,6 +212,38 @@ export function WorkOrderPage() {
           <Facts order={order} />
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * What kind of breakdown it was. Said by the reporter when they know; the engineer who works the request can say or
+ * correct it once they have looked at the machine, until it is closed. Everyone else reads it.
+ */
+function BreakdownType({ order, editable, act }: { order: WorkOrderDetail; editable: boolean; act: Act }) {
+  const label = breakdownLabel(order.breakdownType);
+
+  return (
+    <div className="row" style={{ alignItems: 'center' }}>
+      <span className="muted">Breakdown type</span>
+      {editable ? (
+        <select
+          aria-label="Breakdown type"
+          value={order.breakdownType ?? ''}
+          onChange={(e) =>
+            void act(() =>
+              api.put(`/api/work-orders/${order.id}/breakdown-type`, {
+                breakdownType: e.target.value ? Number(e.target.value) : null,
+              }),
+            )
+          }
+        >
+          <option value="">Not recorded</option>
+          {BREAKDOWN_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+        </select>
+      ) : (
+        <strong>{label ?? <span className="muted">Not recorded</span>}</strong>
+      )}
     </div>
   );
 }

@@ -128,6 +128,12 @@ public sealed class ServiceReportDocument(
             col.Item().PaddingTop(3).Background(Colors.Grey.Lighten4).Padding(6)
                 .Text(data.FaultDescription);
 
+            col.Item().PaddingTop(4).Text(t =>
+            {
+                t.Span("Breakdown type: ").FontColor(Colors.Grey.Darken1);
+                t.Span(string.IsNullOrWhiteSpace(data.BreakdownType) ? "Not recorded" : data.BreakdownType).Bold();
+            });
+
             col.Item().PaddingTop(8).Text("Work carried out").FontSize(11).Bold();
             col.Item().PaddingTop(3).Background(Colors.Grey.Lighten4).Padding(6)
                 .Text(string.IsNullOrWhiteSpace(data.ResolutionNotes)

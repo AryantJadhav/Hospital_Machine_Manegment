@@ -140,6 +140,7 @@ public static class ServiceHistoryEndpoints
                 EquipmentTypeName = w.Equipment!.EquipmentType!.Name,
                 LocationName = w.Equipment!.Location!.Name,
                 w.FaultDescription,
+                BreakdownType = (int?)w.BreakdownType,
                 w.ResolutionNotes,
                 w.ReportedAtUtc,
                 ReportedByName = db.Users.Where(u => u.Id == w.ReportedByUserId).Select(u => u.FullName).FirstOrDefault(),
@@ -161,6 +162,8 @@ public static class ServiceHistoryEndpoints
             r.EquipmentTypeName,
             r.LocationName,
             r.FaultDescription,
+            r.BreakdownType,
+            BreakdownTypeLabel = HospitalPm.Domain.WorkOrders.BreakdownTypeWords.Label(r.BreakdownType),
             r.ResolutionNotes,
             r.ReportedAtUtc,
             r.ReportedByName,
@@ -210,6 +213,7 @@ public static class ServiceHistoryEndpoints
                 EquipmentTypeName = w.Equipment!.EquipmentType!.Name,
                 LocationName = w.Equipment!.Location!.Name,
                 w.FaultDescription,
+                BreakdownType = (int?)w.BreakdownType,
                 w.ResolutionNotes,
                 w.ReportedAtUtc,
                 ReportedByName = db.Users.Where(u => u.Id == w.ReportedByUserId).Select(u => u.FullName).FirstOrDefault(),
@@ -226,7 +230,7 @@ public static class ServiceHistoryEndpoints
         var csv = new StringBuilder();
         csv.AppendLine(Csv.Line(
         [
-            "Request", "Machine number", "Machine", "Where", "What was wrong", "What was done",
+            "Request", "Machine number", "Machine", "Where", "What was wrong", "Breakdown type", "What was done",
             "Reported", "Requested by", "Repaired", "Repaired by", "Machine down (hours)",
         ]));
 
@@ -234,7 +238,8 @@ public static class ServiceHistoryEndpoints
         {
             csv.AppendLine(Csv.Line(
             [
-                r.Number, r.AssetTag, r.EquipmentTypeName, r.LocationName, r.FaultDescription, r.ResolutionNotes,
+                r.Number, r.AssetTag, r.EquipmentTypeName, r.LocationName, r.FaultDescription,
+                HospitalPm.Domain.WorkOrders.BreakdownTypeWords.Label(r.BreakdownType), r.ResolutionNotes,
                 Local(r.ReportedAtUtc), r.ReportedByName, Local(r.ResolvedAtUtc), r.ResolvedByName,
                 DownMinutes(r.OutOfServiceAtUtc, r.BackInServiceAtUtc) is { } m ? (m / 60.0).ToString("0.0", CultureInfo.InvariantCulture) : string.Empty,
             ]));

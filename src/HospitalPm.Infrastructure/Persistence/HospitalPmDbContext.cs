@@ -710,6 +710,7 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
             e.Property(x => x.Status).HasColumnName("status").HasConversion<int>();
             e.Property(x => x.Priority).HasColumnName("priority").HasConversion<int>();
             e.Property(x => x.FaultDescription).HasColumnName("fault_description").IsRequired();
+            e.Property(x => x.BreakdownType).HasColumnName("breakdown_type").HasConversion<int?>();
             e.Property(x => x.ReportedByUserId).HasColumnName("reported_by_user_id");
             e.Property(x => x.ReportedAtUtc).HasColumnName("reported_at_utc");
             e.Property(x => x.AssignedToUserId).HasColumnName("assigned_to_user_id");

@@ -22,7 +22,12 @@ public sealed record WorkOrderPhotoResponse(
 public sealed record ReportRequest(
     int EquipmentId,
     string FaultDescription,
-    WorkOrderPriority Priority);
+    WorkOrderPriority Priority,
+    // Hardware, software, both, an accessory or consumable, or improper usage. Left out when it is not known yet.
+    int? BreakdownType = null);
+
+/// <summary>What kind of breakdown it was, or null to take it off.</summary>
+public sealed record BreakdownTypeRequest(int? BreakdownType);
 
 public sealed record AssignRequest(int? AssignedToUserId, string? Note);
 
@@ -51,6 +56,9 @@ public static class WorkOrderEndpoints
         group.MapPost("/{id:int}/notes", AddNoteAsync).RequirePermission(Permissions.WorkOrdersNote);
         group.MapPost("/{id:int}/status", ChangeStatusAsync).RequirePermission(Permissions.WorkOrdersWork);
         group.MapPost("/{id:int}/resolve", ResolveAsync).RequirePermission(Permissions.WorkOrdersWork);
+
+        // What kind of breakdown it was is the engineer's to say, once they have looked at the machine.
+        group.MapPut("/{id:int}/breakdown-type", SetBreakdownTypeAsync).RequirePermission(Permissions.WorkOrdersWork);
 
         // Drawing a part off the shelf is part of doing the repair, the same
         // authority as adding a note or changing status - not a supervisory
@@ -95,6 +103,7 @@ public static class WorkOrderEndpoints
         ClaimsPrincipal principal,
         [FromQuery] WorkOrderStatus? status,
         [FromQuery] WorkOrderPriority? priority,
+        [FromQuery] int? breakdownType,
         [FromQuery] int? equipmentId,
         [FromQuery] int? assignedToUserId,
         [FromQuery] string? assignee,
@@ -162,6 +171,16 @@ public static class WorkOrderEndpoints
             query = query.Where(w => w.OutOfServiceAtUtc != null && w.BackInServiceAtUtc == null);
         }
 
+        if (breakdownType is { } kind)
+        {
+            if (!Enum.IsDefined((BreakdownType)kind))
+            {
+                return Results.BadRequest(new { error = "Unknown breakdown type." });
+            }
+
+            query = query.Where(w => (int?)w.BreakdownType == kind);
+        }
+
         if (priority is not null)
         {
             query = query.Where(w => w.Priority == priority);
@@ -205,6 +224,7 @@ public static class WorkOrderEndpoints
                 w.Status,
                 w.Priority,
                 w.FaultDescription,
+                BreakdownType = (int?)w.BreakdownType,
                 w.EquipmentId,
                 w.Equipment!.AssetTag,
                 EquipmentTypeName = w.Equipment!.EquipmentType!.Name,
@@ -300,6 +320,7 @@ public static class WorkOrderEndpoints
             order.Status,
             order.Priority,
             order.FaultDescription,
+            breakdownType = (int?)order.BreakdownType,
             order.EquipmentId,
             assetTag = order.Equipment?.AssetTag,
             // The list endpoint returns these and the detail panel shows the
@@ -379,12 +400,18 @@ public static class WorkOrderEndpoints
             return Results.BadRequest(new { error = "Unknown equipment." });
         }
 
+        if (request.BreakdownType is { } kind && !Enum.IsDefined((BreakdownType)kind))
+        {
+            return Results.BadRequest(new { error = "Choose one of the breakdown types, or leave it out." });
+        }
+
         var now = clock.GetUtcNow().UtcDateTime;
 
         var order = new WorkOrder
         {
             EquipmentId = request.EquipmentId,
             FaultDescription = request.FaultDescription.Trim(),
+            BreakdownType = (BreakdownType?)request.BreakdownType,
             Priority = Enum.IsDefined(request.Priority) ? request.Priority : WorkOrderPriority.Medium,
             Status = WorkOrderStatus.Reported,
             ReportedByUserId = UserId(principal),
@@ -400,6 +427,56 @@ public static class WorkOrderEndpoints
         await db.Entry(order).ReloadAsync(ct);
 
         return Results.Created($"/api/work-orders/{order.Id}", new { order.Id, order.Number });
+    }
+
+    /// <summary>
+    /// Says what kind of breakdown a request was, or takes it off. For a request that is still open: once it is
+    /// closed or cancelled it is a record. The change goes on the request's timeline with who made it.
+    /// </summary>
+    private static async Task<IResult> SetBreakdownTypeAsync(
+        int id,
+        [FromBody] BreakdownTypeRequest request,
+        HospitalPmDbContext db,
+        ClaimsPrincipal principal,
+        TimeProvider clock,
+        CancellationToken ct)
+    {
+        var order = await db.WorkOrders.SingleOrDefaultAsync(w => w.Id == id, ct);
+        if (order is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (WorkOrderTransitions.IsTerminal(order.Status))
+        {
+            return Results.Conflict(new { error = "A closed or cancelled request can no longer be changed." });
+        }
+
+        if (request.BreakdownType is { } kind && !Enum.IsDefined((BreakdownType)kind))
+        {
+            return Results.BadRequest(new { error = "Choose one of the breakdown types, or leave it blank." });
+        }
+
+        var next = (BreakdownType?)request.BreakdownType;
+        if (next == order.BreakdownType)
+        {
+            return Results.NoContent();
+        }
+
+        order.BreakdownType = next;
+        order.UpdatedAtUtc = clock.GetUtcNow().UtcDateTime;
+
+        db.WorkOrderNotes.Add(new WorkOrderNote
+        {
+            WorkOrderId = order.Id,
+            Body = next is { } set ? $"Breakdown type: {BreakdownTypeWords.Label(set)}." : "Breakdown type taken off.",
+            AuthorUserId = UserId(principal),
+            CreatedAtUtc = order.UpdatedAtUtc,
+        });
+
+        await db.SaveChangesAsync(ct);
+
+        return Results.NoContent();
     }
 
     private static async Task<IResult> AssignAsync(

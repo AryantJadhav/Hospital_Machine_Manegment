@@ -74,6 +74,12 @@ public sealed class WorkOrder
     /// <summary>What the ward reported. Their words, not a diagnosis.</summary>
     public required string FaultDescription { get; set; }
 
+    /// <summary>
+    /// What kind of breakdown it was: hardware, software, both, an accessory or consumable, or improper usage.
+    /// Blank until someone knows; the reporter may say, and the engineer who looks at the machine can.
+    /// </summary>
+    public BreakdownType? BreakdownType { get; set; }
+
     public int ReportedByUserId { get; set; }
 
     public DateTime ReportedAtUtc { get; set; }

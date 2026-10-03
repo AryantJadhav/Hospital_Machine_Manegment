@@ -128,7 +128,9 @@ public sealed record ServiceReportData(
     IReadOnlyList<ServiceReportPart> PartsUsed,
     IReadOnlyList<ServiceReportPhoto> Photos,
     // False for a person from another department: which parts were used is printed, what they cost is not.
-    bool ShowCosts = true)
+    bool ShowCosts = true,
+    // Hardware, Software, and so on, once it is known.
+    string? BreakdownType = null)
 {
     public decimal? PartsTotal => PartsUsed.Count == 0
         ? null

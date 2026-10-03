@@ -190,7 +190,8 @@ public static class ReportEndpoints
             notes.Select(n => (n.CreatedAtUtc, Name(names, n.AuthorUserId), n.Body)).ToList(),
             partsUsed,
             photos,
-            showCosts);
+            showCosts,
+            HospitalPm.Domain.WorkOrders.BreakdownTypeWords.Label((int?)order.BreakdownType));
 
         var pdf = new ServiceReportDocument(data, options.Value, clock.Offset).GeneratePdf();
 
