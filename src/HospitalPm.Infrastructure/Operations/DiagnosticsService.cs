@@ -70,6 +70,7 @@ public sealed class DiagnosticsService(
             await BackupAsync(ct),
             BackupTool(),
             Disk(),
+            DriveEncrypted(),
             Clock(),
             Licence(),
         };
@@ -276,6 +277,27 @@ public sealed class DiagnosticsService(
             return new Check("Disk space", CheckState.Warning,
                 $"Could not be read for {directory}.");
         }
+    }
+
+    /// <summary>
+    /// Whether the drive holding the data is encrypted. PostgreSQL cannot encrypt its own files, so this is the only
+    /// protection the database has on disk. It asks the operating system and says what it was told: when it cannot
+    /// tell (a container, no permission to ask) it says so and does not pass the drive as fine.
+    /// </summary>
+    private Check DriveEncrypted()
+    {
+        var folder = Environment.GetEnvironmentVariable("HOSPITALPM_DATA");
+        var result = DriveEncryption.Check(string.IsNullOrWhiteSpace(folder) ? backups.ResolveDirectory() : folder);
+
+        return result.Encrypted switch
+        {
+            true => new Check("Drive encryption", CheckState.Ok, result.Detail),
+            false => new Check("Drive encryption", CheckState.Warning, result.Detail,
+                "PostgreSQL does not encrypt its own files, so anyone who takes this drive can read the database. "
+                + "Turn on BitLocker (Windows) or LUKS (Linux) for it. Backups are encrypted whatever the drive does."),
+            _ => new Check("Drive encryption", CheckState.Ok, result.Detail,
+                "Check yourself that the drive holding the data is encrypted: BitLocker on Windows, LUKS on Linux."),
+        };
     }
 
     /// <summary>

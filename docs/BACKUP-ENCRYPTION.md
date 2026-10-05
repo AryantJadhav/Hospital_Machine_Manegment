@@ -95,7 +95,9 @@ whole data folder, takes the key with it. For the best protection:
 - **BitLocker** (Windows) or **LUKS** (Linux) on the data drive, which also protects the database itself,
   because PostgreSQL has no encryption of its own files.
 
-The database is not encrypted by this. Only backups are.
+The database is not encrypted by this. Only backups are. The **Diagnostics** page has a *Drive encryption* check that
+asks the operating system (BitLocker on Windows, LUKS on Linux) whether the drive holding the data is encrypted, and
+says "could not tell" when it cannot (a container, no permission to ask) instead of guessing.
 
 ## Backups made before encryption was switched on
 
