@@ -272,10 +272,21 @@ public static class BackupEndpoints
     /// would mean building a progress channel to answer the same question.
     /// A failed backup is still a 200 — the run happened, and its outcome is
     /// in the body.
+    ///
+    /// A backup that succeeds is also sent to Google Drive when that is switched on, the same as the nightly one, and
+    /// the answer says how that went. The upload never changes whether the backup succeeded: the backup is already
+    /// written and checked by then, and a failed upload only means the file is still waiting to go.
     /// </summary>
-    private static async Task<IResult> RunAsync(BackupService service, CancellationToken ct)
+    private static async Task<IResult> RunAsync(BackupService service, DriveSync drive, CancellationToken ct)
     {
         var run = await service.RunAsync(BackupTrigger.Manual, ct);
+
+        object? sent = null;
+        if (run.Status == BackupStatus.Succeeded && drive.Status().Enabled)
+        {
+            var result = await drive.SyncAsync(ct);
+            sent = new { enabled = true, result.Ran, result.Sent, result.Error, result.Skipped };
+        }
 
         return Results.Ok(new
         {
@@ -285,6 +296,7 @@ public static class BackupEndpoints
             run.SizeBytes,
             run.Error,
             run.DurationMs,
+            drive = sent,
         });
     }
 }

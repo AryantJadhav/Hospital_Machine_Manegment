@@ -706,3 +706,127 @@ public sealed class DriveSyncEndpointTests(PostgresFixture fixture) : IAsyncLife
         Assert.Equal(HttpStatusCode.Forbidden, (await _it.PostAsync("/api/admin/backups/drive/sync", null)).StatusCode);
     }
 }
+
+/// <summary>
+/// "Back up now" sends the backup to the drive too, the same as the nightly one, and says how that went. A plain folder
+/// stands in for the drive, through the real rclone, so the whole path is real except Google.
+/// </summary>
+[Collection(nameof(PostgresCollection))]
+public sealed class ManualBackupDriveTests(PostgresFixture fixture) : IDisposable
+{
+    private readonly string _folder = Path.Combine(Path.GetTempPath(), "hospitalpm-manual-drive-tests", Guid.NewGuid().ToString("N"));
+    private ApiFactory? _factory;
+
+    public void Dispose()
+    {
+        _factory?.Dispose();
+        try
+        {
+            if (Directory.Exists(_folder)) Directory.Delete(_folder, recursive: true);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // A leftover temp folder is not worth failing a test run.
+        }
+    }
+
+    private static string? RealRclone()
+    {
+        var name = OperatingSystem.IsWindows() ? "rclone.exe" : "rclone";
+        return (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .Select(d => Path.Combine(d, name))
+            .FirstOrDefault(File.Exists);
+    }
+
+    private async Task<HttpClient> DeveloperAsync(Dictionary<string, string?> settings)
+    {
+        _factory = new ApiFactory(fixture.ConnectionString, settings);
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var users = scope.ServiceProvider.GetRequiredService<Microsoft.AspNetCore.Identity.UserManager<Infrastructure.Identity.ApplicationUser>>();
+            var user = new Infrastructure.Identity.ApplicationUser { UserName = $"mb-{suffix}", FullName = "Manual Backup", IsActive = true };
+            Assert.True((await users.CreateAsync(user, "ManualBackup2026!")).Succeeded);
+            await users.AddToRoleAsync(user, Roles.Developer);
+        }
+
+        var client = _factory.CreateClient();
+        var login = await client.PostAsJsonAsync("/api/auth/login", new { userName = $"mb-{suffix}", password = "ManualBackup2026!" });
+        login.EnsureSuccessStatusCode();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", (await login.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("accessToken").GetString());
+        return client;
+    }
+
+    [Fact]
+    public async Task Back_up_now_also_sends_the_backup_to_the_drive_and_says_so()
+    {
+        var rclone = RealRclone();
+        if (rclone is null) return;
+
+        var remote = Path.Combine(_folder, "drive").Replace(Path.DirectorySeparatorChar, '/');
+        using var client = await DeveloperAsync(new Dictionary<string, string?>
+        {
+            ["Backup:Directory"] = Path.Combine(_folder, "backups"),
+            ["Backup:Drive:Enabled"] = "true",
+            ["Backup:Drive:RclonePath"] = rclone,
+            ["Backup:Drive:Folder"] = remote,
+            ["Backup:Drive:Remote:type"] = "local",
+        });
+
+        var run = await client.PostAsync("/api/admin/backups/run", null);
+        Assert.Equal(HttpStatusCode.OK, run.StatusCode);
+        var body = await run.Content.ReadFromJsonAsync<JsonElement>();
+        if (body.GetProperty("status").GetInt32() != (int)HospitalPm.Domain.Operations.BackupStatus.Succeeded)
+        {
+            // No usable pg_dump here: nothing was backed up, so nothing is sent.
+            Assert.Equal(JsonValueKind.Null, body.GetProperty("drive").ValueKind);
+            return;
+        }
+
+        var drive = body.GetProperty("drive");
+        Assert.True(drive.GetProperty("enabled").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, drive.GetProperty("error").ValueKind);
+        Assert.True(drive.GetProperty("sent").GetInt32() >= 1);
+
+        // The file really is on the "drive", byte for byte, and encrypted.
+        var name = body.GetProperty("fileName").GetString()!;
+        var there = Path.Combine(remote, name);
+        Assert.True(File.Exists(there), $"{name} did not reach the drive");
+        Assert.Equal(await File.ReadAllBytesAsync(Path.Combine(_folder, "backups", name)), await File.ReadAllBytesAsync(there));
+        Assert.True(BackupVault.LooksEncrypted(there));
+    }
+
+    [Fact]
+    public async Task With_the_drive_switched_off_back_up_now_says_nothing_about_it()
+    {
+        using var client = await DeveloperAsync(new Dictionary<string, string?> { ["Backup:Directory"] = Path.Combine(_folder, "backups") });
+
+        var body = await (await client.PostAsync("/api/admin/backups/run", null)).Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(JsonValueKind.Null, body.GetProperty("drive").ValueKind);
+    }
+
+    [Fact]
+    public async Task A_drive_that_cannot_be_reached_never_fails_the_backup_and_the_answer_says_why()
+    {
+        using var client = await DeveloperAsync(new Dictionary<string, string?>
+        {
+            ["Backup:Directory"] = Path.Combine(_folder, "backups"),
+            ["Backup:Drive:Enabled"] = "true",
+            ["Backup:Drive:RclonePath"] = Path.Combine(_folder, "no-such-rclone"),
+            ["Backup:Drive:Folder"] = "somewhere",
+            ["Backup:Drive:Remote:type"] = "local",
+        });
+
+        var body = await (await client.PostAsync("/api/admin/backups/run", null)).Content.ReadFromJsonAsync<JsonElement>();
+        if (body.GetProperty("status").GetInt32() != (int)HospitalPm.Domain.Operations.BackupStatus.Succeeded) return;
+
+        // The backup stands. The drive is the part that did not happen, and it says why.
+        var drive = body.GetProperty("drive");
+        Assert.True(drive.GetProperty("enabled").GetBoolean());
+        Assert.Equal(0, drive.GetProperty("sent").GetInt32());
+        Assert.Contains("rclone was not found", drive.GetProperty("skipped").GetString(), StringComparison.Ordinal);
+    }
+}

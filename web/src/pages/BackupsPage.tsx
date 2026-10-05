@@ -7,6 +7,8 @@ type RunResult = {
   fileName: string | null;
   sizeBytes: number | null;
   error: string | null;
+  /** How sending it to Google Drive went. Null when Drive is switched off. */
+  drive: { ran: boolean; sent: number; error: string | null; skipped: string | null } | null;
 };
 
 const SUCCEEDED = 20;
@@ -48,6 +50,20 @@ export function BackupsPage() {
           Backup finished{result.fileName ? `: ${result.fileName}` : ''}
           {result.sizeBytes !== null ? ` (${formatBytes(result.sizeBytes)})` : ''}.
         </p>
+      )}
+
+      {result && result.status === SUCCEEDED && result.drive && (
+        result.drive.error || result.drive.skipped ? (
+          <p className="alert alert-error" role="alert">
+            Not sent to Google Drive: {result.drive.error ?? result.drive.skipped}
+          </p>
+        ) : (
+          <p className="alert alert-ok" role="status">
+            {result.drive.sent > 0
+              ? 'Sent to Google Drive.'
+              : 'Already on Google Drive.'}
+          </p>
+        )
       )}
 
       {result && result.status !== SUCCEEDED && (

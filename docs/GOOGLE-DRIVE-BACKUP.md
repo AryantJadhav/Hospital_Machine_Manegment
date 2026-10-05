@@ -7,11 +7,12 @@ Only the **encrypted** files are ever sent (a plain dump is refused by the code,
 drive is useless without the keys: the machine key never leaves the machine, and the recovery key is written down
 elsewhere.
 
-Only the Developer sees the Drive card on the Backups page and can press **Upload now**.
+Only the Developer can use the Backups page. There is no Drive card on it: **Back up now** takes the backup and sends it.
 
 ## How it works
 
-1. A backup succeeds. The nightly job (not "Back up now") asks the uploader to send what has not gone yet.
+1. A backup succeeds. The nightly job, and the **Back up now** button, ask the uploader to send what has not gone yet. The button
+   says on the page how that went ("Sent to Google Drive", or why not); a failed upload never fails the backup.
 2. It sends the newest files first with `rclone copyto --checksum`, one at a time, into a folder named after the
    licence's id, under the shared root folder. It stops at the first failure and records the reason.
 3. Then it lists that folder and removes the oldest beyond the number to keep (`KeepCount`, 14). It only ever touches
