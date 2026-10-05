@@ -99,6 +99,8 @@ builder.Services.AddSingleton(sp => new HospitalPm.Infrastructure.Operations.Bac
     sp.GetService<ILogger<HospitalPm.Infrastructure.Operations.BackupVault>>()));
 builder.Services.AddScoped<HospitalPm.Infrastructure.Operations.BackupService>();
 builder.Services.AddSingleton<HospitalPm.Api.Operations.DownloadTickets>();
+builder.Services.AddSingleton<HospitalPm.Infrastructure.Operations.IRcloneRunner, HospitalPm.Infrastructure.Operations.ProcessRcloneRunner>();
+builder.Services.AddSingleton<HospitalPm.Infrastructure.Operations.DriveSync>();
 builder.Services.AddScoped<HospitalPm.Infrastructure.Operations.DiagnosticsService>();
 builder.Services.Configure<HospitalPm.Infrastructure.Licensing.LicenceOptions>(
     builder.Configuration.GetSection(HospitalPm.Infrastructure.Licensing.LicenceOptions.Section));

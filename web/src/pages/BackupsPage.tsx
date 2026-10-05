@@ -26,11 +26,26 @@ type Encryption = {
   recoveryKeySaved: boolean;
 };
 
+type Drive = {
+  enabled: boolean;
+  /** Everything needed to send is in place. */
+  ready: boolean;
+  /** Why it is not, in words. */
+  problem: string | null;
+  folder: string | null;
+  lastUploadAtUtc: string | null;
+  lastAttemptAtUtc: string | null;
+  lastError: string | null;
+  uploaded: number;
+  pending: number;
+};
+
 type Status = {
   runs: Run[];
   directory: string;
   retainCount: number;
   encryption: Encryption;
+  drive: Drive;
   tool: { found: boolean; path: string | null; version: string | null; problem: string | null };
   lastSuccessAtUtc: string | null;
 };
@@ -58,6 +73,7 @@ export function BackupsPage() {
   const [needsKey, setNeedsKey] = useState(false);
   const [bringing, setBringing] = useState(false);
   const [downloading, setDownloading] = useState<number | null>(null);
+  const [sendingToDrive, setSendingToDrive] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -136,6 +152,25 @@ export function BackupsPage() {
       }
     } finally {
       setRestoring(null);
+    }
+  }
+
+  /** Sends the backups that have not gone to the drive yet, and says what happened. */
+  async function sendToDrive() {
+    setSendingToDrive(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await api.post<{ ran: boolean; sent: number; error: string | null; skipped: string | null }>(
+        '/api/admin/backups/drive/sync', {});
+      if (res.error) setError(`The upload to Google Drive did not finish: ${res.error}`);
+      else if (res.skipped) setNotice(res.skipped);
+      else setNotice(res.sent === 0 ? 'Everything is already on Google Drive.' : `Sent ${res.sent} backup${res.sent === 1 ? '' : 's'} to Google Drive.`);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not send to Google Drive.');
+    } finally {
+      setSendingToDrive(false);
     }
   }
 
@@ -329,6 +364,8 @@ export function BackupsPage() {
         onCopied={() => setNotice('Copied. Paste it somewhere safe, away from this machine.')}
       />
 
+      <DriveCard drive={data.drive} busy={sendingToDrive} onSend={() => void sendToDrive()} />
+
       <div className="card">
         <h2 className="section-h">Where backups are kept</h2>
         <dl className="detail">
@@ -455,6 +492,57 @@ export function BackupsPage() {
             ))}
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Copies of the backups on Google Drive. Off unless it has been switched on, and always optional: a hospital with no
+ * internet simply never sees a problem here. Only the encrypted files are sent, so what is on the drive is useless
+ * without the keys; the page says what has gone, what is waiting and what the last error was.
+ */
+function DriveCard({ drive, busy, onSend }: { drive: Drive; busy: boolean; onSend: () => void }) {
+  if (!drive.enabled) {
+    return (
+      <div className="card">
+        <h2 className="section-h">Google Drive</h2>
+        <p className="muted" style={{ margin: 0 }}>
+          Off. Backups stay on this machine. Switch it on with <span className="mono">Backup:Drive:Enabled</span> and an
+          internet connection, and the encrypted backups are copied to Google Drive each night.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card stack">
+      <h2 className="section-h" style={{ marginBottom: 0 }}>Google Drive</h2>
+
+      {!drive.ready && drive.problem && <p className="alert alert-error" role="alert">{drive.problem}</p>}
+      {drive.lastError && (
+        <p className="alert alert-error" role="alert">
+          The last upload did not finish: {drive.lastError} It tries again after the next backup, or press Upload now.
+        </p>
+      )}
+
+      <dl className="detail">
+        <dt>Sent</dt>
+        <dd>{drive.uploaded} of the backups kept here{drive.pending > 0 ? `, ${drive.pending} waiting` : ''}</dd>
+        <dt>Last upload</dt>
+        <dd>{drive.lastUploadAtUtc ? formatDateTime(drive.lastUploadAtUtc) : <span className="muted">None yet</span>}</dd>
+        {drive.folder && (
+          <>
+            <dt>Folder</dt>
+            <dd className="mono">{drive.folder}</dd>
+          </>
+        )}
+      </dl>
+
+      <div className="row">
+        <button className="btn btn-primary" disabled={!drive.ready || busy} onClick={onSend}>
+          {busy ? 'Uploading…' : 'Upload now'}
+        </button>
       </div>
     </div>
   );

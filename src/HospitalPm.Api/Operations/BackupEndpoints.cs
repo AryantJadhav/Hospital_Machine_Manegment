@@ -29,6 +29,9 @@ public static class BackupEndpoints
         group.MapGet("/", StatusAsync);
         group.MapPost("/run", RunAsync);
 
+        // Sending the encrypted backups to the drive: what has gone and what has not, and a button to send now.
+        group.MapPost("/drive/sync", DriveSyncAsync);
+
         // Taking a backup away, and bringing one in. The file stays encrypted both ways.
         group.MapPost("/{id:int}/download-link", DownloadLinkAsync);
         group.MapPost("/upload", UploadAsync)
@@ -51,6 +54,7 @@ public static class BackupEndpoints
         BackupVault vault,
         PgToolLocator locator,
         IOptions<BackupOptions> options,
+        DriveSync drive,
         CancellationToken ct)
     {
         var runs = await db.BackupRuns.AsNoTracking()
@@ -82,6 +86,7 @@ public static class BackupEndpoints
             retainCount = options.Value.RetainCount,
             // Whether backups are kept private, and whether the recovery key has been written down. Nothing here is a key.
             encryption = EncryptionStatus(vault, options.Value),
+            drive = drive.Status(),
             tool = new
             {
                 found = pgDump.Path is not null,
@@ -199,6 +204,13 @@ public static class BackupEndpoints
         {
             return Results.BadRequest(new { error = e.Message, needsRecoveryKey = e.NeedsRecoveryKey });
         }
+    }
+
+    /// <summary>Sends what has not gone yet and says what happened. Waits, so the person pressing it sees the result.</summary>
+    private static async Task<IResult> DriveSyncAsync(DriveSync drive, CancellationToken ct)
+    {
+        var result = await drive.SyncAsync(ct);
+        return Results.Ok(new { result.Ran, result.Sent, result.Error, result.Skipped, status = drive.Status() });
     }
 
     private static object EncryptionStatus(BackupVault vault, BackupOptions options)

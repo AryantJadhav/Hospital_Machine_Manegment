@@ -33,7 +33,8 @@ public sealed partial class BackupService(
     IOptions<BackupOptions> options,
     TimeProvider clock,
     HospitalPm.Infrastructure.Maintenance.HospitalClock hospital,
-    ILogger<BackupService> logger)
+    ILogger<BackupService> logger,
+    DriveSync? drive = null)
 {
     private readonly BackupOptions _options = options.Value;
 
@@ -76,6 +77,21 @@ public sealed partial class BackupService(
             run.FinishedAtUtc = clock.GetUtcNow().UtcDateTime;
             run.DurationMs = (int)stopwatch.ElapsedMilliseconds;
             await db.SaveChangesAsync(CancellationToken.None);
+        }
+
+        // The night's backup goes off the machine too, when that is switched on. Only the nightly one: "Back up now"
+        // answers a person who is waiting, and has "Upload now" for the drive. Never fails the backup that has
+        // just succeeded, whatever happens to the upload.
+        if (run.Status == BackupStatus.Succeeded && trigger == BackupTrigger.Scheduled && drive is not null)
+        {
+            try
+            {
+                await drive.SyncAsync(ct);
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                Log.DriveFailed(logger, e);
+            }
         }
 
         return run;
@@ -791,6 +807,9 @@ public sealed partial class BackupService(
     /// </summary>
     private static partial class Log
     {
+        [LoggerMessage(Level = LogLevel.Warning, Message = "Sending the backup to the drive failed")]
+        public static partial void DriveFailed(ILogger logger, Exception e);
+
         [LoggerMessage(Level = LogLevel.Error, Message = "Backup failed")]
         public static partial void Failed(ILogger logger, Exception e);
 

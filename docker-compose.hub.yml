@@ -1,0 +1,82 @@
+# Hospital PM - the two Docker Hub images, joined for good
+#
+#   aryant050/hospitalpm-postgres   the database
+#   aryant050/hospitalpm            the backend (API)
+#
+# One command starts both on a network of their own, and they stay connected: each restarts if it stops, and
+# comes back by itself when Docker or the PC restarts. The backend finds the database by the name "db", so there is
+# no address to go stale.
+#
+#   docker compose -f docker-compose.hub.yml --env-file .env up -d
+#
+# Settings go in a file called .env beside this one (it is ignored by git, so the password is never committed):
+#
+#   POSTGRES_PASSWORD=...          required. The one the database volume was first created with.
+#   HOSPITAL_NAME=...              printed on every report
+#   HOSPITALPM_TAG=b3a08e7         which image version to run
+#
+# For pgAdmin on this PC: host localhost, port 5435 (DB_PORT), database hospitalpm, user hospitalpm.
+# The port is open to this PC only, not to the network.
+#
+# The data lives on two named volumes, so removing the containers does not remove the data.
+
+services:
+  db:
+    image: aryant050/hospitalpm-postgres:${DB_TAG:-18.6}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: hospitalpm
+      POSTGRES_USER: hospitalpm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the .env file}
+    ports:
+      - "127.0.0.1:${DB_PORT:-5435}:5432"
+    volumes:
+      # PostgreSQL 18 keeps its data in a versioned folder under here.
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hospitalpm -d hospitalpm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - hospitalpm
+
+  backend:
+    image: aryant050/hospitalpm:${HOSPITALPM_TAG:-b3a08e7}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      # 5001 on this PC: 5000 belongs to the app installed on Windows.
+      - "${APP_PORT:-5001}:5000"
+    environment:
+      ConnectionStrings__HospitalPm: "Host=db;Port=5432;Database=hospitalpm;Username=hospitalpm;Password=${POSTGRES_PASSWORD}"
+      Reports__HospitalName: ${HOSPITAL_NAME:-Hospital PM}
+      Mdns__Enabled: "false"
+      Features__Import: ${FEATURE_IMPORT:-false}
+      Features__Export: ${FEATURE_EXPORT:-false}
+      Features__Backups: ${FEATURE_BACKUPS:-false}
+      Features__Updates: ${FEATURE_UPDATES:-false}
+    volumes:
+      - appdata:/var/lib/hospitalpm
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - hospitalpm
+
+volumes:
+  pgdata:
+    # The volume the database container already uses, so its data carries over.
+    name: hospitalpm-pgdata
+  appdata:
+    name: hospitalpm-appdata
+
+networks:
+  hospitalpm:
+    name: hospitalpm

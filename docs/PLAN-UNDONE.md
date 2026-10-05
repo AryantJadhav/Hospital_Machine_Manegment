@@ -10,7 +10,7 @@ Written 5 October 2026, after the encrypted-backup slice. It replaces the open p
 | 0. Commit the encryption slice | **Done and pushed** (37ceba0) |
 | 1. Download, restore from a file, photos survive a restore | **Done**, committed locally (3e45852), not pushed |
 | 1b. Backups are the Developer's alone | **Done**, committed locally (094de16), not pushed |
-| 2. Google Drive with rclone | **Not started.** Needs the Google account and its service-account key from you |
+| 2. Google Drive with rclone | **Built and tested** with a fake rclone and the real rclone on a local folder (docs/GOOGLE-DRIVE-BACKUP.md). **Not tried against Google**: needs the Workspace account and service-account key from you. rclone not yet packaged in the installer or Docker image |
 | 3. Licence: equipment cap | **Done** (add and import), committed locally (530e1da) |
 | 3. Licence: modules | **Not done.** Needs you to say which sections are modules |
 | 3. Licence: public key in the Docker builds | **Done in the files** (build fails without it). Images not rebuilt or pushed |
