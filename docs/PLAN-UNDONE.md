@@ -15,7 +15,7 @@ Written 5 October 2026, after the encrypted-backup slice. It replaces the open p
 | 3. Licence: modules | **Waiting on you**: which sections are modules |
 | 3. Licence: public key in the Docker builds | **Done in the files**; the images are not rebuilt (deferred to the end) |
 | 3b. Developer licence section, lock and unlock | **Done**; the screens are built but not yet looked at in a browser |
-| 4. Encrypt photos and PM files at rest | **Held back**: needs your yes on the design (key travels in the backup, wrapped with the recovery key) |
+| 4. Encrypt photos and PM files at rest | **Dropped by you, 5 October** (backup encryption is off, so this no longer applies) |
 | 4. Data-drive encryption check | **Done** (Diagnostics page) |
 | 4. PDFs | **Waiting on you**: a password, or nothing |
 | Nightly backup at 3:00 AM | **Done** (`Backup:DailyAt`) |
