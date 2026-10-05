@@ -50,6 +50,8 @@ public sealed class DriveSyncTests : IDisposable
 
         public string FailMessage { get; set; } = "Failed to copy: googleapi: Error 403: storage quota exceeded";
 
+        public bool FailCheck { get; set; }
+
         public Exception? Throws { get; set; }
 
         public Task<RcloneResult> RunAsync(string exe, IReadOnlyList<string> arguments, IReadOnlyDictionary<string, string> environment, TimeSpan timeout, CancellationToken ct)
@@ -66,6 +68,10 @@ public sealed class DriveSyncTests : IDisposable
                         return Task.FromResult(new RcloneResult(1, string.Empty, FailMessage));
                     Remote.Add(target[(target.IndexOf(':') + 1)..]);
                     return Task.FromResult(new RcloneResult(0, string.Empty, string.Empty));
+                case "check":
+                    return Task.FromResult(FailCheck
+                        ? new RcloneResult(1, string.Empty, "1 differences found")
+                        : new RcloneResult(0, string.Empty, string.Empty));
                 case "lsf":
                     var folder = target[(target.IndexOf(':') + 1)..] + "/";
                     return Task.FromResult(new RcloneResult(0, string.Join('\n', Remote.Where(r => r.StartsWith(folder, StringComparison.Ordinal)).Select(r => r[folder.Length..])), string.Empty));
@@ -246,6 +252,56 @@ public sealed class DriveSyncTests : IDisposable
 
         // And no configuration file is read or written for it.
         Assert.False(File.Exists(call.Env["RCLONE_CONFIG"]));
+    }
+
+    [Fact]
+    public async Task Every_upload_is_checked_against_the_drive_and_one_that_does_not_match_is_not_counted_as_sent()
+    {
+        var licences = Licensed(out _);
+        var name = await BackupAsync("20261001-020000");
+        var rclone = new FakeRclone { FailCheck = true };
+        var sync = Sync(licences, rclone);
+
+        var result = await sync.SyncAsync();
+
+        var check = rclone.Calls.First(c => c.Args[0] == "check").Args;
+        Assert.Contains("--one-way", check);
+        Assert.Equal(name, check[check.ToList().IndexOf("--include") + 1]);
+        Assert.Equal(0, result.Sent);
+        Assert.Contains("did not match", result.Error, StringComparison.Ordinal);
+        Assert.Equal(1, sync.Status().Pending);
+
+        // Matching on the next try, and then it counts.
+        rclone.FailCheck = false;
+        Assert.Equal(1, (await sync.SyncAsync()).Sent);
+    }
+
+    [Fact]
+    public async Task An_existing_rclone_conf_and_remote_can_be_used_instead_of_building_one()
+    {
+        var licences = Licensed(out var id);
+        await BackupAsync("20261001-020000");
+        var conf = Path.Combine(_folder, "rclone.conf");
+        await File.WriteAllTextAsync(conf, "[gdrive]\ntype = drive\n");
+        var rclone = new FakeRclone();
+
+        await Sync(licences, rclone, d =>
+        {
+            d.ServiceAccountJson = null;
+            d.RcloneConfigFile = conf;
+            d.RemoteName = "gdrive";
+        }).SyncAsync();
+
+        var call = rclone.Calls.First(c => c.Args[0] == "copyto");
+        Assert.StartsWith($"gdrive:{id:N}/", call.Args[2], StringComparison.Ordinal);
+        Assert.Equal(conf, call.Env["RCLONE_CONFIG"]);
+        Assert.DoesNotContain(call.Env.Keys, k => k.StartsWith("RCLONE_CONFIG_", StringComparison.Ordinal));
+
+        // A file that is not there, and a remote with no name, are said plainly.
+        var missing = await Sync(licences, new FakeRclone(), d => { d.RcloneConfigFile = Path.Combine(_folder, "nope.conf"); d.RemoteName = "gdrive"; }).SyncAsync();
+        Assert.Contains("no rclone configuration file", missing.Skipped, StringComparison.Ordinal);
+        var unnamed = await Sync(licences, new FakeRclone(), d => { d.RcloneConfigFile = conf; d.RemoteName = null; }).SyncAsync();
+        Assert.Contains("RemoteName", unnamed.Skipped, StringComparison.Ordinal);
     }
 
     private const string Token = """{"access_token":"ya29.ACCESSSECRET","token_type":"Bearer","refresh_token":"1//REFRESHSECRET","expiry":"2026-10-05T10:00:00Z"}""";
@@ -445,6 +501,34 @@ public sealed class DriveSyncTests : IDisposable
         Assert.Equal([names[2], fourth], Directory.GetFiles(remote).Select(Path.GetFileName).Order(StringComparer.Ordinal).ToArray());
         Assert.Equal(0, (await sync.SyncAsync()).Sent);
         Assert.Null(sync.Status().LastError);
+    }
+
+    [Fact]
+    public async Task The_real_rclone_works_through_an_existing_rclone_conf_and_its_check_passes()
+    {
+        var rclone = RealRclone();
+        if (rclone is null) return;
+
+        var licences = Licensed(out _);
+        var remote = Path.Combine(_folder, "remote2").Replace('\\', '/');
+        var conf = Path.Combine(_folder, "rclone.conf");
+        await File.WriteAllTextAsync(conf, "[testremote]\ntype = local\n");
+        var name = await BackupAsync("20261001-020000");
+
+        var sync = new DriveSync(
+            Options.Create(new BackupOptions
+            {
+                Directory = Backups,
+                Drive = new DriveOptions { Enabled = true, RclonePath = rclone, RcloneConfigFile = conf, RemoteName = "testremote", Folder = remote },
+            }),
+            licences, new ProcessRcloneRunner(), TimeProvider.System, NullLogger<DriveSync>.Instance);
+
+        var result = await sync.SyncAsync();
+
+        Assert.True(result.Ran, result.Skipped);
+        Assert.Null(result.Error);
+        Assert.Equal(1, result.Sent);
+        Assert.Equal(await File.ReadAllBytesAsync(Path.Combine(Backups, name)), await File.ReadAllBytesAsync(Path.Combine(remote, name)));
     }
 
     [Fact]

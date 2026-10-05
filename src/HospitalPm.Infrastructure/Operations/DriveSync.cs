@@ -122,13 +122,19 @@ public sealed class DriveSync(
     TimeProvider clock,
     ILogger<DriveSync> logger)
 {
-    private const string RemoteName = "HPDRIVE";
+    /// <summary>The remote built from the settings. Its name only matters inside the environment passed to rclone.</summary>
+    private const string BuiltRemoteName = "HPDRIVE";
 
     private static readonly SemaphoreSlim OneAtATime = new(1, 1);
 
     private readonly BackupOptions _options = options.Value;
 
     private DriveOptions Drive => _options.Drive;
+
+    private bool UsesConfigFile => !string.IsNullOrWhiteSpace(Drive.RcloneConfigFile);
+
+    /// <summary>The remote rclone is told to use: one from the person's own rclone.conf, or the one built here.</summary>
+    private string RemoteLabel => UsesConfigFile ? Drive.RemoteName!.Trim() : BuiltRemoteName;
 
     private string StatePath => Path.Combine(_options.ResolveDirectory(), ".drive-state.json");
 
@@ -160,7 +166,19 @@ public sealed class DriveSync(
         }
 
         var credentials = ReadSecret(Drive.TokenJson, Drive.TokenFile) ?? ReadSecret(Drive.ServiceAccountJson, Drive.ServiceAccountFile);
-        if (credentials is null && !Drive.Remote.ContainsKey("type"))
+        if (UsesConfigFile)
+        {
+            if (!File.Exists(Drive.RcloneConfigFile))
+            {
+                return (rclone, null, null, $"There is no rclone configuration file at {Drive.RcloneConfigFile}.");
+            }
+
+            if (string.IsNullOrWhiteSpace(Drive.RemoteName))
+            {
+                return (rclone, null, null, "Backup:Drive:RemoteName is not set: the name of the remote in that rclone.conf, e.g. gdrive.");
+            }
+        }
+        else if (credentials is null && !Drive.Remote.ContainsKey("type"))
         {
             return (rclone, null, null,
                 "Google Drive is not signed in. Set Backup:Drive:TokenJson (a personal account) or Backup:Drive:ServiceAccountJson.");
@@ -216,6 +234,12 @@ public sealed class DriveSync(
     /// <summary>The remote, as rclone's own environment settings, so nothing about it is written down anywhere.</summary>
     private Dictionary<string, string> RemoteEnvironment(string? credentials)
     {
+        // The person's own rclone.conf holds the remote: nothing is built, and nothing is put in the environment.
+        if (UsesConfigFile)
+        {
+            return new Dictionary<string, string>(StringComparer.Ordinal) { ["RCLONE_CONFIG"] = Drive.RcloneConfigFile!.Trim() };
+        }
+
         var settings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         if (credentials is not null)
@@ -252,7 +276,7 @@ public sealed class DriveSync(
         };
         foreach (var (key, value) in settings)
         {
-            env[$"RCLONE_CONFIG_{RemoteName}_{key.ToUpperInvariant()}"] = value;
+            env[$"RCLONE_CONFIG_{BuiltRemoteName}_{key.ToUpperInvariant()}"] = value;
         }
 
         return env;
@@ -385,12 +409,24 @@ public sealed class DriveSync(
                 }
 
                 var result = await runner.RunAsync(
-                    rclone, ["copyto", path, $"{RemoteName}:{folder}/{name}", "--checksum", "--retries", "2", "--low-level-retries", "5"],
+                    rclone, ["copyto", path, $"{RemoteLabel}:{folder}/{name}", "--checksum", "--retries", "2", "--low-level-retries", "5"],
                     env, timeout, ct);
 
                 if (result.Exit != 0)
                 {
                     error = Describe(result, credentials);
+                    break;
+                }
+
+                // Checked, not trusted. "rclone exited zero" is good evidence and this is the proof: every byte's size and
+                // hash on the drive is compared with the file here, and only a match counts as sent.
+                var verified = await runner.RunAsync(
+                    rclone, ["check", Path.GetDirectoryName(path)!, $"{RemoteLabel}:{folder}", "--one-way", "--include", name],
+                    env, timeout, ct);
+
+                if (verified.Exit != 0)
+                {
+                    error = "It was uploaded but did not match when checked, so it is not counted as sent. " + Describe(verified, credentials);
                     break;
                 }
 
@@ -439,7 +475,7 @@ public sealed class DriveSync(
     {
         try
         {
-            var listing = await runner.RunAsync(rclone, ["lsf", $"{RemoteName}:{folder}", "--files-only"], env, timeout, ct);
+            var listing = await runner.RunAsync(rclone, ["lsf", $"{RemoteLabel}:{folder}", "--files-only"], env, timeout, ct);
             if (listing.Exit != 0)
             {
                 return;
@@ -453,7 +489,7 @@ public sealed class DriveSync(
 
             foreach (var name in surplus)
             {
-                await runner.RunAsync(rclone, ["deletefile", $"{RemoteName}:{folder}/{name}"], env, timeout, ct);
+                await runner.RunAsync(rclone, ["deletefile", $"{RemoteLabel}:{folder}/{name}"], env, timeout, ct);
             }
         }
         catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception)

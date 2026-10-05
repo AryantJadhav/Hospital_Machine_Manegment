@@ -32,6 +32,7 @@ All under `Backup:Drive` in `appsettings.json`, or as environment variables (`Ba
 |---|---|---|
 | `Enabled` | `false` | Switch it on |
 | `RclonePath` | beside the program, then the PATH | Where rclone is |
+| `RcloneConfigFile` + `RemoteName` | | Use a remote from an existing rclone.conf (e.g. `gdrive`) instead of building one |
 | `TokenJson` / `TokenFile` | | A personal Google account's sign-in token (the JSON from `rclone config show`), as text or a file. Used with the narrow `drive.file` scope. Takes precedence over a service account |
 | `ServiceAccountJson` / `ServiceAccountFile` | | A Workspace service account's key, as the JSON file's text or a file |
 | `RootFolderId` | | The Drive folder shared with the service account |
@@ -42,27 +43,36 @@ All under `Backup:Drive` in `appsettings.json`, or as environment variables (`Ba
 
 ## Setting up with a personal Google account (what you chose)
 
-A service account cannot be used with a personal Gmail: Google gives service accounts no storage in a personal Drive,
-so every upload fails with a quota error. A personal account signs in as itself instead, with a token that rclone
-makes once.
+A service account cannot be used with a personal Gmail: Google gives service accounts no storage in a personal Drive, so
+uploads fail with a quota error. A personal account signs in as itself with a token that rclone makes once. Nothing here
+costs anything, and no Google Cloud project is needed: rclone's own built-in sign-in is used (the same way as any
+`rclone config` for Drive).
 
-0. **Make a Google sign-in client of your own (once).** rclone's built-in shared client has been disabled by Google, and
-   signing in with it fails with *"The OAuth client was not found" (401 invalid_client)*, so one of your own is required.
-   In console.cloud.google.com: create a project; enable the **Google Drive API**; open the **OAuth consent screen**
-   (External), add the `drive.file` scope and yourself as a test user, then **Publish app** (to "In production"). In
-   "Testing" mode Google ends the sign-in after 7 days and the backups would stop; with the narrow `drive.file` scope,
-   publishing needs no review, and you accept an "unverified app" warning once. Then **Credentials ▸ Create credentials ▸
-   OAuth client ID ▸ Desktop app** gives a client id and a client secret.
-1. On any PC with rclone and a browser, run `rclone config`. Choose **New remote**, name it `hp`, type `drive`.
-   Paste your **client id** and **client secret**. For *scope* choose **3** (`drive.file`): the program can then see
-   only the files it created itself, never the rest of your Drive, and a leaked token cannot read your photos or
-   documents. Leave the service account file empty, say **no** to advanced config, and **yes** to the browser sign-in.
-2. Run `rclone config show hp`. The `token = {...}` line is the sign-in. Copy that JSON only.
-3. Save it as `drive-token.json` somewhere private. Set `Backup:Drive:TokenFile` to it, and
-   `Backup:Drive:Remote:client_id` and `Backup:Drive:Remote:client_secret` to the two from step 0. **The token alone is
-   not enough:** rclone needs the client id and secret to renew it every hour. The program sets the `drive.file` scope
-   itself.
+**The quickest way, on a machine where rclone is already signed in to Drive** (for example `gdrive`):
+
+```
+Backup__Drive__Enabled         = true
+Backup__Drive__RcloneConfigFile = C:\Users\<you>\AppData\Roaming\rclone\rclone.conf
+Backup__Drive__RemoteName      = gdrive
+```
+
+The program uses that remote, and rclone keeps its own sign-in renewed in that file. Use this on your own PC. A remote made
+with the default `drive` scope can see **all** of your Drive, so do not copy its token into a program that is handed to
+hospitals.
+
+**For anything that leaves your machine, make a narrow sign-in:**
+
+1. Run `rclone config create hp drive scope=drive.file` (no client id, no secret). A browser opens: sign in with the
+   personal account, and accept the "unverified app" warning once. With `drive.file` the program can see only the files
+   it created itself, never the rest of your Drive, so a leaked token cannot read your photos or documents.
+2. Run `rclone config show hp` and copy only the `{...}` after `token = `.
+3. Save it as `drive-token.json` somewhere private, and set `Backup:Drive:TokenFile` to it (or the text in
+   `Backup:Drive:TokenJson`). The program sets the `drive.file` scope itself.
 4. Set `Backup:Drive:Enabled` to `true`, and restart.
+
+If you ever see *"Access blocked: Authorisation error / The OAuth client was not found" (401 invalid_client)* while signing
+in, the remote has a **client id of its own that is wrong** (a typo or a half-pasted value). Delete that remote and make it
+again without one. A real Google client id is about 70 characters long and ends in `.apps.googleusercontent.com`.
 
 Things to know about a personal account:
 

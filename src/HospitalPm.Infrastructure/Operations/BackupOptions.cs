@@ -101,6 +101,17 @@ public sealed class DriveOptions
     /// <summary>The same, as a file.</summary>
     public string? TokenFile { get; set; }
 
+    /// <summary>
+    /// Use a remote that rclone already knows, from an existing rclone.conf (the file <c>rclone config</c> writes,
+    /// usually <c>%APPDATA%/rclone/rclone.conf</c>), instead of one built from the settings below. Quickest on a
+    /// machine where rclone is already signed in to Drive. Needs <see cref="RemoteName"/>. rclone may write a renewed
+    /// sign-in back to that file, which is what it is meant to do.
+    /// </summary>
+    public string? RcloneConfigFile { get; set; }
+
+    /// <summary>The remote's name in that file, e.g. "gdrive".</summary>
+    public string? RemoteName { get; set; }
+
     /// <summary>The Drive folder shared with the service account, in which every hospital's folder is made.</summary>
     public string? RootFolderId { get; set; }
 
