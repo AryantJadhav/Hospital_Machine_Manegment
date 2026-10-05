@@ -425,7 +425,7 @@ public sealed class DriveSync(
                 // Checked, not trusted. "rclone exited zero" is good evidence and this is the proof: every byte's size and
                 // hash on the drive is compared with the file here, and only a match counts as sent.
                 var verified = await runner.RunAsync(
-                    rclone, ["check", Path.GetDirectoryName(path)!, $"{RemoteLabel}:{folder}", "--one-way", "--include", name],
+                    rclone, ["check", Path.GetDirectoryName(path)!, $"{RemoteLabel}:{folder}", "--one-way", "--include", name, "--retries", "3", "--low-level-retries", "10"],
                     env, timeout, ct);
 
                 if (verified.Exit != 0)
@@ -505,6 +505,25 @@ public sealed class DriveSync(
     private static string Describe(RcloneResult result, string? credentials)
     {
         var text = string.IsNullOrWhiteSpace(result.Error) ? result.Output : result.Error;
+
+        // What Google says, in words a person can act on. Matched on Google's own error names, which are stable.
+        if (text.Contains("rateLimitExceeded", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Google is limiting this sign-in (rateLimitExceeded). rclone's shared Google sign-in is overused and is being "
+                   + "retired: make a Google client id of your own and set it on the rclone remote. It also clears by itself after a while.";
+        }
+
+        if (text.Contains("storageQuotaExceeded", StringComparison.OrdinalIgnoreCase))
+        {
+            return "The Google Drive is full (storageQuotaExceeded). Free some space, or use a drive with more.";
+        }
+
+        if (text.Contains("invalid_grant", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Google has ended this sign-in (invalid_grant): the password changed, access was removed, or the token went unused "
+                   + "too long. Sign in again with rclone config.";
+        }
+
         var line = text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).LastOrDefault()
                    ?? "rclone failed with no message.";
         return Redact(line, credentials);

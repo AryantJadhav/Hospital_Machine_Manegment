@@ -398,6 +398,21 @@ public sealed class DriveSyncTests : IDisposable
         Assert.Contains(older, rclone.Remote.Select(r => r[(r.LastIndexOf('/') + 1)..]));
     }
 
+    [Theory]
+    [InlineData("Failed to copy: googleapi: Error 403: Rate Limit Exceeded, rateLimitExceeded", "limiting this sign-in")]
+    [InlineData("googleapi: Error 403: The user's Drive storage quota has been exceeded., storageQuotaExceeded", "Drive is full")]
+    [InlineData("oauth2: cannot fetch token: 400 Bad Request Response: invalid_grant", "ended this sign-in")]
+    public async Task What_google_says_is_turned_into_what_to_do_about_it(string said, string expected)
+    {
+        var licences = Licensed(out _);
+        var name = await BackupAsync("20261001-020000");
+        var rclone = new FakeRclone { FailCopyOf = name, FailMessage = said };
+
+        var result = await Sync(licences, rclone).SyncAsync();
+
+        Assert.Contains(expected, result.Error, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Rclone_going_missing_or_breaking_is_an_error_on_the_page_and_never_an_exception()
     {
@@ -535,6 +550,62 @@ public sealed class DriveSyncTests : IDisposable
         Assert.Null(result.Error);
         Assert.Equal(1, result.Sent);
         Assert.Equal(await File.ReadAllBytesAsync(Path.Combine(Backups, name)), await File.ReadAllBytesAsync(Path.Combine(remote, name)));
+    }
+
+    /// <summary>
+    /// The one test that touches a real Google Drive. Off unless HOSPITALPM_REAL_DRIVE=1, because it needs a signed-in rclone
+    /// remote and the internet, and it writes (then removes) a small file in a throwaway folder of that Drive.
+    ///
+    ///   HOSPITALPM_REAL_DRIVE=1  HOSPITALPM_REAL_DRIVE_RCLONE=full path to rclone.exe
+    ///   HOSPITALPM_REAL_DRIVE_CONF=path to rclone.conf  HOSPITALPM_REAL_DRIVE_REMOTE=gdrive
+    /// </summary>
+    [Fact]
+    public async Task A_real_google_drive_receives_the_file_checks_it_trims_and_is_left_clean()
+    {
+        if (Environment.GetEnvironmentVariable("HOSPITALPM_REAL_DRIVE") != "1") return;
+
+        var rclone = Environment.GetEnvironmentVariable("HOSPITALPM_REAL_DRIVE_RCLONE")!;
+        var conf = Environment.GetEnvironmentVariable("HOSPITALPM_REAL_DRIVE_CONF")!;
+        var remote = Environment.GetEnvironmentVariable("HOSPITALPM_REAL_DRIVE_REMOTE")!;
+        var folder = $"HospitalPM-test-{Guid.NewGuid():N}"[..28];
+        var runner = new ProcessRcloneRunner();
+        var environment = new Dictionary<string, string> { ["RCLONE_CONFIG"] = conf };
+
+        try
+        {
+            var first = await BackupAsync("20991231-020000");
+            var second = await BackupAsync("20991230-020000");
+            var third = await BackupAsync("20991229-020000");
+
+            var sync = new DriveSync(
+                Options.Create(new BackupOptions
+                {
+                    Directory = Backups,
+                    Drive = new DriveOptions { Enabled = true, RclonePath = rclone, RcloneConfigFile = conf, RemoteName = remote, Folder = folder, KeepCount = 2 },
+                }),
+                Licensed(out _, install: false), runner, TimeProvider.System, NullLogger<DriveSync>.Instance);
+
+            var result = await sync.SyncAsync();
+            Assert.True(result.Ran, result.Skipped);
+            Assert.True(result.Error is null, "Google said: " + result.Error);
+            Assert.Equal(2, result.Sent); // KeepCount is 2, so only the newest two are sent
+
+            // What is really on the drive: the two newest, and not the oldest.
+            var listing = await runner.RunAsync(rclone, ["lsf", $"{remote}:{folder}", "--files-only"], environment, TimeSpan.FromMinutes(2), CancellationToken.None);
+            Assert.Equal(0, listing.Exit);
+            var names = listing.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Order(StringComparer.Ordinal).ToArray();
+            Assert.Equal([second, first], names);
+
+            // Nothing is sent twice.
+            Assert.Equal(0, (await sync.SyncAsync()).Sent);
+            Assert.Null(sync.Status().LastError);
+            _ = third;
+        }
+        finally
+        {
+            // Left clean whatever happened: the throwaway folder and everything in it, not into the trash.
+            await runner.RunAsync(rclone, ["purge", $"{remote}:{folder}", "--drive-use-trash=false"], environment, TimeSpan.FromMinutes(2), CancellationToken.None);
+        }
     }
 
     [Fact]
