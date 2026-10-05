@@ -7,19 +7,22 @@ Written 5 October 2026, after the encrypted-backup slice. It replaces the open p
 
 | Item | State |
 |---|---|
-| 0. Commit the encryption slice | **Done and pushed** (37ceba0) |
-| 1. Download, restore from a file, photos survive a restore | **Done**, committed locally (3e45852), not pushed |
-| 1b. Backups are the Developer's alone | **Done**, committed locally (094de16), not pushed |
-| 2. Google Drive with rclone | **Built and tested** with a fake rclone and the real rclone on a local folder (docs/GOOGLE-DRIVE-BACKUP.md). **Not tried against Google**: needs the Workspace account and service-account key from you. rclone not yet packaged in the installer or Docker image |
-| 3. Licence: equipment cap | **Done** (add and import), committed locally (530e1da) |
-| 3. Licence: modules | **Not done.** Needs you to say which sections are modules |
-| 3. Licence: public key in the Docker builds | **Done in the files** (build fails without it). Images not rebuilt or pushed |
-| 3b. Developer licence section, lock and unlock | **Done**, committed locally (530e1da). Screens type-checked and built, not yet looked at in a browser |
-| 4. Encrypt photos and PM files at rest | **Held back on purpose.** A key kept only on the machine would make photos unreadable after a restore on a new machine, which breaks "press a button and everything is back". Needs a design decision first |
-| 4. Data-drive encryption check | **Done** on the Diagnostics page (BitLocker / LUKS), says "could not tell" rather than guess |
-| 4. PDFs | **Waiting** on your answer: a password, or nothing |
-| 5. DevOps (pipeline, K8s, scan) | **Not started** |
-| 6. Dev backend container | **Not touched.** Needs your yes to log in to its database |
+| 0. Commit the encryption slice | **Done and pushed** |
+| 1. Download, restore from a file, photos survive a restore | **Done** (API only: the Backups page is now one button) |
+| 1b. Backups are the Developer's alone | **Done** |
+| 2. Google Drive with rclone | **Built and tested** with a fake rclone and the real rclone on a local folder. **Not tried against your real Drive yet.** Only the 3:00 nightly backup uploads; the page has no Upload now button any more |
+| 3. Licence: equipment cap | **Done** (add and import) |
+| 3. Licence: modules | **Waiting on you**: which sections are modules |
+| 3. Licence: public key in the Docker builds | **Done in the files**; the images are not rebuilt (deferred to the end) |
+| 3b. Developer licence section, lock and unlock | **Done**; the screens are built but not yet looked at in a browser |
+| 4. Encrypt photos and PM files at rest | **Held back**: needs your yes on the design (key travels in the backup, wrapped with the recovery key) |
+| 4. Data-drive encryption check | **Done** (Diagnostics page) |
+| 4. PDFs | **Waiting on you**: a password, or nothing |
+| Nightly backup at 3:00 AM | **Done** (`Backup:DailyAt`) |
+| No plain backups, ever | **Done** (the switch is gone) |
+| Backups page | One button. The recovery-key box is **gone**: decide whether it comes back |
+| 5. DevOps (pipeline, K8s, scan, image rebuild and push, rclone in the image and installer) | **Deferred to the end**, by you |
+| 6. Dev backend container | Gone (old containers deleted) |
 
 The sections below are the original plan, kept for the reasoning.
 
