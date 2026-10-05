@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using HospitalPm.Domain.Operations;
 using HospitalPm.Infrastructure.Persistence;
@@ -27,6 +28,7 @@ namespace HospitalPm.Infrastructure.Operations;
 public sealed partial class BackupService(
     HospitalPmDbContext db,
     PgToolLocator locator,
+    BackupVault vault,
     IConfiguration configuration,
     IOptions<BackupOptions> options,
     TimeProvider clock,
@@ -107,7 +109,8 @@ public sealed partial class BackupService(
         // and a newer file always sorts after an older one because the hospital
         // clock is ahead of UTC, never behind it.
         var stamp = (run.StartedAtUtc + hospital.Offset).ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
-        var fileName = $"hospitalpm-{stamp}-{Reports.ReportTime.Zone(hospital.Offset)}.dump";
+        var plainName = $"hospitalpm-{stamp}-{Reports.ReportTime.Zone(hospital.Offset)}.dump";
+        var fileName = _options.Encrypt ? plainName + BackupVault.EncryptedExtension : plainName;
         var fullPath = Path.Combine(directory, fileName);
 
         // Custom format: compressed, and pg_restore can pull single tables out
@@ -121,10 +124,24 @@ public sealed partial class BackupService(
             $"--port={builder.Port}",
             $"--username={builder.Username}",
             $"--dbname={builder.Database}",
-            $"--file={fullPath}",
         };
 
-        await RunToolAsync(pgDump.Path!, arguments, builder.Password, "pg_dump", ct);
+        if (_options.Encrypt)
+        {
+            // pg_dump writes to its standard output and the bytes go straight through the encryption into the
+            // file. The plain backup is never on the disk, not even for a moment.
+            vault.EnsureKeys();
+            var written = await DumpEncryptedAsync(pgDump.Path!, arguments, builder.Password, fullPath, ct);
+            if (written == 0)
+            {
+                throw new InvalidOperationException(
+                    "pg_dump reported success but wrote no data. Check free disk space on the backup drive.");
+            }
+        }
+        else
+        {
+            await RunToolAsync(pgDump.Path!, [.. arguments, $"--file={fullPath}"], builder.Password, "pg_dump", ct);
+        }
 
         var info = new FileInfo(fullPath);
         if (!info.Exists || info.Length == 0)
@@ -138,10 +155,27 @@ public sealed partial class BackupService(
 
         if (_options.VerifyAfterWrite)
         {
-            await VerifyAsync(fullPath, serverVersion, ct);
+            if (_options.Encrypt)
+            {
+                await VerifyEncryptedAsync(fullPath, serverVersion, ct);
+            }
+            else
+            {
+                await VerifyAsync(fullPath, serverVersion, ct);
+            }
         }
 
         Prune(directory);
+
+        // A backup that has just succeeded must not be failed by tidying up after it.
+        try
+        {
+            await EncryptLeftoversAsync(ct);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            Log.LeftoversFailed(logger, e);
+        }
     }
 
     /// <summary>
@@ -162,6 +196,329 @@ public sealed partial class BackupService(
         }
 
         await RunToolAsync(pgRestore.Path!, ["--list", fullPath], password: null, "pg_restore", ct);
+    }
+
+    /// <summary>
+    /// Runs pg_dump with its output going straight through the encryption into the file, and says how many
+    /// plain bytes it produced. The file is written under a temporary name and only given its real one when
+    /// pg_dump has finished and succeeded, so a failed dump never leaves something that looks like a backup.
+    /// </summary>
+    private async Task<long> DumpEncryptedAsync(
+        string exePath, string[] arguments, string? password, string destination, CancellationToken ct)
+    {
+        var partial = destination + ".partial";
+        long plainBytes = 0;
+
+        try
+        {
+            var startInfo = new ProcessStartInfo(exePath)
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+
+            foreach (var argument in arguments)
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
+
+            if (!string.IsNullOrEmpty(password))
+            {
+                startInfo.Environment["PGPASSWORD"] = password;
+            }
+
+            using var process = Process.Start(startInfo)
+                ?? throw new InvalidOperationException("pg_dump could not be started.");
+
+            var stderr = new StringBuilder();
+            process.ErrorDataReceived += (_, e) =>
+            {
+                if (e.Data is not null) stderr.AppendLine(e.Data);
+            };
+            process.BeginErrorReadLine();
+
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromMinutes(_options.TimeoutMinutes));
+
+            await using (var file = new FileStream(partial, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true))
+            await using (var encryptor = vault.CreateEncryptor(file, leaveOpen: true))
+            {
+                try
+                {
+                    var counting = new CountingStream(encryptor);
+                    await process.StandardOutput.BaseStream.CopyToAsync(counting, timeout.Token);
+                    plainBytes = counting.Count;
+                    await process.WaitForExitAsync(timeout.Token);
+                }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                {
+                    TryKill(process);
+                    throw new InvalidOperationException(
+                        $"pg_dump did not finish within {_options.TimeoutMinutes} minutes and was stopped.");
+                }
+                catch (OperationCanceledException)
+                {
+                    TryKill(process);
+                    throw;
+                }
+                catch (Exception)
+                {
+                    // A full disk, say. Stopped here, pg_dump would wait for ever on a pipe nobody reads,
+                    // holding its connection to the database.
+                    TryKill(process);
+                    throw;
+                }
+            }
+
+            ThrowIfFailed(process, "pg_dump", stderr);
+
+            File.Move(partial, destination, overwrite: false);
+            return plainBytes;
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(partial)) File.Delete(partial);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                // Never the real backup, and not worth failing over.
+            }
+        }
+    }
+
+    /// <summary>
+    /// Reads the finished encrypted backup back. First every part is decrypted and checked, which proves the
+    /// file is whole and has not been touched; then the decrypted bytes are given to pg_restore --list, which
+    /// proves the archive inside can be opened. A backup nobody can open is not a backup.
+    /// </summary>
+    private async Task VerifyEncryptedAsync(string fullPath, Version? serverVersion, CancellationToken ct)
+    {
+        await using (var input = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true))
+        await using (var decryptor = vault.OpenDecryptor(input, leaveOpen: true))
+        {
+            await decryptor.CopyToAsync(Stream.Null, ct);
+        }
+
+        var pgRestore = locator.FindPgRestore(serverVersion);
+        if (!pgRestore.IsUsable)
+        {
+            // The file is written and every part of it has checked out. Refusing to record it because the
+            // archive checker is missing would throw away a good backup.
+            Log.NotVerified(logger, pgRestore.Problem);
+            return;
+        }
+
+        var startInfo = new ProcessStartInfo(pgRestore.Path!)
+        {
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        startInfo.ArgumentList.Add("--list");
+
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("pg_restore could not be started.");
+
+        var stderr = new StringBuilder();
+        process.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data is not null) stderr.AppendLine(e.Data);
+        };
+        process.BeginErrorReadLine();
+        _ = process.StandardOutput.ReadToEndAsync(ct);
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromMinutes(_options.TimeoutMinutes));
+
+        try
+        {
+            await using (var input = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true))
+            await using (var decryptor = vault.OpenDecryptor(input, leaveOpen: true))
+            {
+                try
+                {
+                    await decryptor.CopyToAsync(process.StandardInput.BaseStream, timeout.Token);
+                }
+                catch (IOException)
+                {
+                    // pg_restore --list has read what it needs (the archive's table of contents) and gone.
+                    // Whether that was a success is what its exit code says.
+                }
+            }
+
+            try
+            {
+                process.StandardInput.Close();
+            }
+            catch (IOException)
+            {
+                // Already closed by the other end.
+            }
+
+            await process.WaitForExitAsync(timeout.Token);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            TryKill(process);
+            throw new InvalidOperationException(
+                $"pg_restore did not finish within {_options.TimeoutMinutes} minutes and was stopped.");
+        }
+        catch (OperationCanceledException)
+        {
+            TryKill(process);
+            throw;
+        }
+
+        ThrowIfFailed(process, "pg_restore", stderr);
+    }
+
+    /// <summary>
+    /// Encrypts any plain backup left in the backup folder: the dumps made before encryption was on, and the
+    /// safety copy the restore script writes of the database it is about to replace. Each is encrypted, read
+    /// back and compared with the original, and only then is the plain file deleted. A file written in the
+    /// last half minute is left alone in case it is still being written. Returns how many were done.
+    /// </summary>
+    public async Task<int> EncryptLeftoversAsync(CancellationToken ct = default)
+    {
+        if (!_options.Encrypt)
+        {
+            return 0;
+        }
+
+        var directory = ResolveDirectory();
+        if (!Directory.Exists(directory))
+        {
+            return 0;
+        }
+
+        var folder = new DirectoryInfo(directory);
+        var plain = folder.EnumerateFiles("hospitalpm-*.dump")
+            .Concat(folder.EnumerateFiles("pre-restore-*.dump"))
+            .Where(f => f.LastWriteTimeUtc < clock.GetUtcNow().UtcDateTime.AddSeconds(-30))
+            .ToList();
+
+        var done = 0;
+        foreach (var file in plain)
+        {
+            var target = file.FullName + BackupVault.EncryptedExtension;
+            if (File.Exists(target))
+            {
+                continue;
+            }
+
+            try
+            {
+                vault.EnsureKeys();
+                await vault.EncryptFileAsync(file.FullName, target, ct);
+
+                if (!await SameContentAsync(file.FullName, target, ct))
+                {
+                    File.Delete(target);
+                    Log.LeftoverMismatch(logger, file.Name);
+                    continue;
+                }
+
+                var size = new FileInfo(target).Length;
+                var name = file.Name;
+                file.Delete();
+
+                await db.BackupRuns
+                    .Where(r => r.FileName == name)
+                    .ExecuteUpdateAsync(s => s
+                        .SetProperty(r => r.FileName, name + BackupVault.EncryptedExtension)
+                        .SetProperty(r => r.SizeBytes, (long?)size), ct);
+
+                Log.LeftoverEncrypted(logger, name);
+                done++;
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or BackupDecryptionException)
+            {
+                Log.LeftoverFailed(logger, file.Name, e);
+                try
+                {
+                    if (File.Exists(target)) File.Delete(target);
+                }
+                catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException)
+                {
+                    // Left for the next pass.
+                }
+            }
+        }
+
+        return done;
+    }
+
+    /// <summary>Whether decrypting <paramref name="encrypted"/> gives back exactly <paramref name="plain"/>.</summary>
+    private async Task<bool> SameContentAsync(string plain, string encrypted, CancellationToken ct)
+    {
+        byte[] before;
+        await using (var input = new FileStream(plain, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 81920, useAsync: true))
+        {
+            before = await SHA256.HashDataAsync(input, ct);
+        }
+
+        byte[] after;
+        await using (var input = new FileStream(encrypted, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true))
+        await using (var decryptor = vault.OpenDecryptor(input, leaveOpen: true))
+        {
+            after = await SHA256.HashDataAsync(decryptor, ct);
+        }
+
+        return before.AsSpan().SequenceEqual(after);
+    }
+
+    private static void ThrowIfFailed(Process process, string toolName, StringBuilder stderr)
+    {
+        if (process.ExitCode == 0)
+        {
+            return;
+        }
+
+        var detail = stderr.ToString().Trim();
+        throw new InvalidOperationException(
+            detail.Length > 0
+                ? $"{toolName} failed: {Shorten(detail)}"
+                : $"{toolName} failed with exit code {process.ExitCode}.");
+    }
+
+    /// <summary>Counts what passes through, so an empty dump is noticed.</summary>
+    private sealed class CountingStream(Stream inner) : Stream
+    {
+        public long Count { get; private set; }
+
+        public override bool CanRead => false;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() => inner.Flush();
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            inner.Write(buffer, offset, count);
+            Count += count;
+        }
+
+        public override void Write(ReadOnlySpan<byte> buffer)
+        {
+            inner.Write(buffer);
+            Count += buffer.Length;
+        }
+
+        public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            Write(buffer.Span);
+            return ValueTask.CompletedTask;
+        }
     }
 
     private async Task RunToolAsync(
@@ -257,8 +614,9 @@ public sealed partial class BackupService(
 
         try
         {
-            var ours = new DirectoryInfo(directory)
-                .EnumerateFiles("hospitalpm-*.dump")
+            var folder = new DirectoryInfo(directory);
+            var ours = folder.EnumerateFiles("hospitalpm-*.dump")
+                .Concat(folder.EnumerateFiles("hospitalpm-*.dump" + BackupVault.EncryptedExtension))
                 .OrderByDescending(f => f.Name, StringComparer.Ordinal)
                 .Skip(_options.RetainCount)
                 .ToList();
@@ -335,6 +693,18 @@ public sealed partial class BackupService(
         [LoggerMessage(Level = LogLevel.Warning,
             Message = "Backup written but not verified: {Problem}")]
         public static partial void NotVerified(ILogger logger, string? problem);
+
+        [LoggerMessage(Level = LogLevel.Information, Message = "Encrypted the plain backup {File}")]
+        public static partial void LeftoverEncrypted(ILogger logger, string file);
+
+        [LoggerMessage(Level = LogLevel.Warning, Message = "Could not encrypt the plain backup {File}; it is left as it was")]
+        public static partial void LeftoverFailed(ILogger logger, string file, Exception e);
+
+        [LoggerMessage(Level = LogLevel.Warning, Message = "The encrypted copy of {File} did not match it, so the plain file was kept")]
+        public static partial void LeftoverMismatch(ILogger logger, string file);
+
+        [LoggerMessage(Level = LogLevel.Warning, Message = "Tidying plain backups after a backup failed")]
+        public static partial void LeftoversFailed(ILogger logger, Exception e);
 
         [LoggerMessage(Level = LogLevel.Warning, Message = "Could not delete old backup {File}")]
         public static partial void PruneFileFailed(ILogger logger, string file, Exception e);

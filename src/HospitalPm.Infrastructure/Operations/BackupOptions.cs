@@ -39,6 +39,21 @@ public sealed class BackupOptions
     public int TimeoutMinutes { get; set; } = 30;
 
     /// <summary>
+    /// Whether backups are encrypted. On, and it should stay on: the file is the part that leaves the machine
+    /// (a USB drive, a shared folder, a cloud account) and it holds the whole hospital's records. Off only to
+    /// keep writing plain dumps, for a hospital that encrypts the backup drive itself and wants the old files.
+    /// See BackupVault for how.
+    /// </summary>
+    public bool Encrypt { get; set; } = true;
+
+    /// <summary>
+    /// Where the backup keys are kept. Left empty it is the "keys" folder of the data directory, beside the
+    /// signing key. For the best protection it is NOT on the same drive as <see cref="Directory"/>: a key
+    /// kept next to the backups protects only the copies that leave.
+    /// </summary>
+    public string? KeyDirectory { get; set; }
+
+    /// <summary>
     /// Whether to read the finished archive back with pg_restore --list.
     /// On by default: an unreadable backup that nobody checked is the whole
     /// failure mode this feature exists to prevent.

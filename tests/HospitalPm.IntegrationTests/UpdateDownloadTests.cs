@@ -330,6 +330,7 @@ public sealed class UpdateDownloadTests(PostgresFixture fixture) : IDisposable
             new BackupService(
                 fixture.CreateContext(),
                 new PgToolLocator(backupOptions),
+                TestVault.Create(),
                 configuration,
                 backupOptions,
                 TimeProvider.System,

@@ -41,3 +41,8 @@ docs/
 
 # Editor config
 .editorconfig
+
+# A web UI built on this machine. The full image (Dockerfile) builds its own in a
+# stage of its own and copies it in; the backend-only image (Dockerfile.backend)
+# must not carry one at all, so a stale local build must never reach either.
+src/HospitalPm.Api/wwwroot/

@@ -56,6 +56,7 @@ public sealed class BackupTests(PostgresFixture fixture) : IDisposable
         return new BackupService(
             fixture.CreateContext(),
             new PgToolLocator(wrapped),
+            TestVault.Create(),
             configuration,
             wrapped,
             TimeProvider.System,
@@ -91,9 +92,11 @@ public sealed class BackupTests(PostgresFixture fixture) : IDisposable
     }
 
     [Fact]
-    public async Task A_backup_is_written_and_can_be_read_back()
+    public async Task A_plain_backup_is_written_and_can_be_read_back()
     {
-        var options = new BackupOptions { Directory = NewDirectory() };
+        // Encryption is on by default and is tested in BackupEncryptionTests; this is the plain format, still
+        // available for a hospital that encrypts the backup drive itself.
+        var options = new BackupOptions { Directory = NewDirectory(), Encrypt = false };
 
         var service = CreateService(options);
         var run = await service.RunAsync(BackupTrigger.Manual);
@@ -150,7 +153,8 @@ public sealed class BackupTests(PostgresFixture fixture) : IDisposable
         }
 
         var expectedStamp = run.StartedAtUtc.AddMinutes(330).ToString("yyyyMMdd-HHmmss");
-        Assert.Equal($"hospitalpm-{expectedStamp}-IST.dump", run.FileName);
+        // Encrypted by default, so the name says so.
+        Assert.Equal($"hospitalpm-{expectedStamp}-IST.dump.enc", run.FileName);
     }
 
     [Fact]
@@ -215,7 +219,7 @@ public sealed class BackupTests(PostgresFixture fixture) : IDisposable
         var run = await CreateService(options).RunAsync(BackupTrigger.Scheduled);
         Assert.Equal(BackupStatus.Succeeded, run.Status);
 
-        var remaining = Directory.GetFiles(options.Directory, "hospitalpm-*.dump")
+        var remaining = Directory.GetFiles(options.Directory, "hospitalpm-*.dump*")
             .Select(Path.GetFileName)
             .OrderBy(n => n, StringComparer.Ordinal)
             .ToList();

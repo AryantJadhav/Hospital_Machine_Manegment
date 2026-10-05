@@ -23,6 +23,13 @@ using HospitalPm.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting.WindowsServices;
 
+// "hospitalpm backup-decrypt ...": open an encrypted backup without starting the application. For the day the
+// machine is gone and a backup has to be restored on another one. Handled first, before anything is built.
+if (args.Length > 0 && string.Equals(args[0], "backup-decrypt", StringComparison.OrdinalIgnoreCase))
+{
+    Environment.Exit(HospitalPm.Api.Hosting.BackupCli.Run(args[1..]));
+}
+
 // ContentRoot must be the binary's own directory, not the current working
 // directory. A Windows Service starts with CWD = C:\Windows\System32 and a
 // systemd unit uses whatever WorkingDirectory says, so relying on the default
@@ -84,6 +91,12 @@ builder.Services.AddScoped<HospitalPm.Infrastructure.Export.DataExportService>()
 builder.Services.Configure<HospitalPm.Infrastructure.Operations.BackupOptions>(
     builder.Configuration.GetSection(HospitalPm.Infrastructure.Operations.BackupOptions.Section));
 builder.Services.AddSingleton<HospitalPm.Infrastructure.Operations.PgToolLocator>();
+// The backup keys sit in the same locked-down folder as the signing key unless told otherwise.
+builder.Services.AddSingleton(sp => new HospitalPm.Infrastructure.Operations.BackupVault(
+    sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<HospitalPm.Infrastructure.Operations.BackupOptions>>().Value.KeyDirectory is { Length: > 0 } keyDirectory
+        ? keyDirectory
+        : Path.Combine(InstallPaths.DataDirectory(), "keys"),
+    sp.GetService<ILogger<HospitalPm.Infrastructure.Operations.BackupVault>>()));
 builder.Services.AddScoped<HospitalPm.Infrastructure.Operations.BackupService>();
 builder.Services.AddScoped<HospitalPm.Infrastructure.Operations.DiagnosticsService>();
 builder.Services.Configure<HospitalPm.Infrastructure.Licensing.LicenceOptions>(
@@ -245,6 +258,25 @@ if (hasDatabase)
             job => job.RunScheduledAsync(CancellationToken.None),
             "0 21 * * *",
             new RecurringJobOptions { TimeZone = TimeZoneInfo.Utc });
+
+    // A restore decrypts the backup it is given into a staging folder for its script, and the script writes a
+    // plain safety copy of the database it replaces. Neither is meant to stay. The service has just come back
+    // up, so the staging folder is emptied and any plain backup is encrypted. Never a reason not to start.
+    try
+    {
+        var staging = Path.Combine(InstallPaths.DataDirectory(), "restore-staging");
+        if (Directory.Exists(staging))
+        {
+            Directory.Delete(staging, recursive: true);
+        }
+
+        await scope.ServiceProvider.GetRequiredService<HospitalPm.Infrastructure.Operations.BackupService>()
+            .EncryptLeftoversAsync();
+    }
+    catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException)
+    {
+        app.Logger.LogWarning(e, "Could not tidy plain backups on start");
+    }
 }
 
 if (app.Environment.IsDevelopment())

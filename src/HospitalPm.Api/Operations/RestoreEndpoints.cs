@@ -10,7 +10,10 @@ using Microsoft.EntityFrameworkCore;
 namespace HospitalPm.Api.Operations;
 
 /// <summary>Typed by hand, so a restore cannot happen by clicking through a dialog.</summary>
-public sealed record RestoreRequest(string Confirm);
+public sealed record RestoreRequest(
+    string Confirm,
+    // Only for a backup made on another machine (or after this machine's key was replaced): the recovery key.
+    string? RecoveryKey = null);
 
 /// <summary>
 /// Restoring the database from one of its own backups.
@@ -37,6 +40,7 @@ public static class RestoreEndpoints
         RestoreRequest request,
         HospitalPmDbContext db,
         BackupService backups,
+        BackupVault vault,
         ILogger<Program> logger,
         CancellationToken ct)
     {
@@ -99,6 +103,29 @@ public static class RestoreEndpoints
 
         var log = Path.Combine(dataDirectory, "restore.log");
 
+        // The restore script reads an ordinary dump, so an encrypted backup is opened for it, into a folder of its
+        // own in the locked-down data directory. This is the one place a plain copy exists, and only after every
+        // check above has passed: the service empties that folder the next time it starts, which is straight
+        // after the restore.
+        var dumpForScript = dumpPath;
+        if (BackupVault.LooksEncrypted(dumpPath))
+        {
+            var staging = Path.Combine(dataDirectory, "restore-staging");
+            Directory.CreateDirectory(staging);
+            var opened = Path.Combine(staging, Path.GetFileNameWithoutExtension(run.FileName));
+
+            try
+            {
+                await vault.DecryptFileAsync(dumpPath, opened, request.RecoveryKey, ct);
+            }
+            catch (BackupDecryptionException e)
+            {
+                return Results.BadRequest(new { error = e.Message, needsRecoveryKey = e.NeedsRecoveryKey });
+            }
+
+            dumpForScript = opened;
+        }
+
         var startInfo = new ProcessStartInfo("powershell.exe")
         {
             UseShellExecute = false,
@@ -110,7 +137,7 @@ public static class RestoreEndpoints
                      "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script,
                      "-PgRoot", pgRoot,
                      "-CredentialsFile", credentials,
-                     "-DumpFile", dumpPath,
+                     "-DumpFile", dumpForScript,
                      "-BackupDir", directory,
                      "-LogFile", log,
                  })

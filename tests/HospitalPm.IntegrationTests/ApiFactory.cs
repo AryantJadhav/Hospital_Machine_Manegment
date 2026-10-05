@@ -17,6 +17,9 @@ namespace HospitalPm.IntegrationTests;
 public sealed class ApiFactory(string connectionString, IReadOnlyDictionary<string, string?>? extraSettings = null)
     : WebApplicationFactory<Program>
 {
+    // Its own backup keys, so a test that makes a recovery key never changes a real installation's.
+    private readonly string _keyDirectory = TestVault.NewKeyDirectory();
+
     protected override IHost CreateHost(IHostBuilder builder)
     {
         builder.ConfigureHostConfiguration(config =>
@@ -46,6 +49,8 @@ public sealed class ApiFactory(string connectionString, IReadOnlyDictionary<stri
                 ["Features:Export"] = "true",
                 ["Features:Backups"] = "true",
                 ["Features:Updates"] = "true",
+
+                ["Backup:KeyDirectory"] = _keyDirectory,
             });
 
             if (extraSettings is not null)
@@ -53,5 +58,22 @@ public sealed class ApiFactory(string connectionString, IReadOnlyDictionary<stri
                 config.AddInMemoryCollection(extraSettings);
             }
         });
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing);
+
+        if (disposing)
+        {
+            try
+            {
+                if (Directory.Exists(_keyDirectory)) Directory.Delete(_keyDirectory, recursive: true);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                // A leftover temp folder is not worth failing a test run.
+            }
+        }
     }
 }

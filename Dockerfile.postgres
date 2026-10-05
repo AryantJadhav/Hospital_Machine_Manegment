@@ -1,0 +1,48 @@
+# Hospital PM - PostgreSQL 18 image
+#
+# The official PostgreSQL 18 image with this product's own defaults, so the
+# database the backend expects is there without being told twice: a database
+# and a user both called "hospitalpm", and a health check.
+#
+# Nothing else is changed. It is still the stock server, with its own
+# entrypoint, so every setting the official image documents works as it does there.
+#
+# NO PASSWORD IS BAKED IN. POSTGRES_PASSWORD must be given when the container
+# is created, or the server refuses to start; an image that carried a default
+# would put the same working password in every install.
+#
+# Data: PostgreSQL 18 lays its data out in a version-numbered directory under
+# /var/lib/postgresql, so a volume is mounted there, not at .../data.
+#
+# Build (from the repository root):
+#
+#   docker build -f Dockerfile.postgres -t hospitalpm-postgres .
+#
+# Run:
+#
+#   docker run -d --name hospitalpm-db \
+#     -e POSTGRES_PASSWORD='choose-a-real-one' \
+#     -v hospitalpm-pgdata:/var/lib/postgresql \
+#     -p 5433:5432 \
+#     hospitalpm-postgres
+#
+# and point the backend at it:
+#
+#   ConnectionStrings__HospitalPm="Host=hospitalpm-db;Port=5432;Database=hospitalpm;Username=hospitalpm;Password=choose-a-real-one"
+
+FROM postgres:18-alpine
+
+# What the backend's own docker-compose.yml creates. Both can be overridden when
+# the container is created; they only take effect on the first start, when the
+# data directory is still empty.
+ENV POSTGRES_DB=hospitalpm
+ENV POSTGRES_USER=hospitalpm
+
+LABEL org.opencontainers.image.title="Hospital PM PostgreSQL 18" \
+      org.opencontainers.image.description="PostgreSQL 18 with the Hospital PM database and user preconfigured. No password is built in." \
+      org.opencontainers.image.source="https://github.com/AryantJadhav/Hospital_Machine_Manegment"
+
+# "Accepting connections" is the only thing the backend needs to hear before it
+# starts migrating, and it is what the product's compose file already checks.
+HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=5 \
+    CMD pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" || exit 1

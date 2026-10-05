@@ -1,0 +1,115 @@
+# Hospital PM - backend-only Linux container image
+#
+# The API on its own: no web UI, no Node, no Postgres. It is the same
+# self-contained, single-file binary as the hospital's own install (see
+# Dockerfile for the image that carries the web UI as well), and it is a server
+# for the web UI to talk to, not a replacement for it.
+#
+# What it needs from outside:
+#
+#   - PostgreSQL 18, reached through ConnectionStrings__HospitalPm. The app runs
+#     its own migrations on start, so an empty database is enough.
+#   - A volume at /var/lib/hospitalpm for what must outlive the container: the
+#     licence, the keys that sign sessions, the nightly backups and any update.
+#   - The web UI, served from somewhere that sends /api and /health to this
+#     container on the SAME origin (a reverse proxy). The API sets no CORS
+#     headers, so a page on another origin cannot call it directly.
+#
+# Build (from the repository root; no Node and no web build are involved):
+#
+#   docker build -f Dockerfile.backend -t hospitalpm-backend .
+#
+# Run:
+#
+#   docker run -d --name hospitalpm-backend -p 5000:5000 \
+#     -e ConnectionStrings__HospitalPm="Host=db;Port=5432;Database=hospitalpm;Username=hospitalpm;Password=..." \
+#     -e Reports__HospitalName="Sunrise Multispecialty Hospital" \
+#     -v hospitalpm-appdata:/var/lib/hospitalpm \
+#     hospitalpm-backend
+
+# --- Stage 1: build --------------------------------------------------------
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+# Restore first - this layer is cached unless a .csproj or props file changes.
+COPY Directory.Build.props .
+COPY global.json .
+COPY dotnet-tools.json .
+COPY HospitalPm.slnx .
+COPY src/HospitalPm.Api/HospitalPm.Api.csproj src/HospitalPm.Api/
+COPY src/HospitalPm.Domain/HospitalPm.Domain.csproj src/HospitalPm.Domain/
+COPY src/HospitalPm.Infrastructure/HospitalPm.Infrastructure.csproj src/HospitalPm.Infrastructure/
+RUN dotnet restore src/HospitalPm.Api/HospitalPm.Api.csproj -r linux-x64
+
+# The source. src/HospitalPm.Api/wwwroot is left out by .dockerignore, so a UI
+# that happens to be built on the machine doing this build never reaches the image.
+COPY src/ src/
+RUN dotnet publish src/HospitalPm.Api/HospitalPm.Api.csproj \
+    -c Release \
+    -r linux-x64 \
+    --no-restore \
+    -o /app/publish
+
+# --- Stage 2: runtime -------------------------------------------------------
+# runtime-deps carries the native libraries a self-contained .NET app needs
+# (libssl, libstdc++, ...) without the managed runtime, which is inside the binary.
+FROM mcr.microsoft.com/dotnet/runtime-deps:10.0 AS runtime
+WORKDIR /app
+
+# Two things the base image does not carry, installed at build time only -
+# nothing here reaches the network when the container runs:
+#
+#  - curl, because the health check calls it. Without it every check fails and
+#    the container reports unhealthy while serving perfectly well.
+#  - pg_dump, because nightly backups shell out to it. It must be at least as new
+#    as the server (PostgreSQL 18), and the distribution's own client is older, so
+#    it comes from the PostgreSQL project's apt repository.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
+    && install -d /usr/share/keyrings \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+        | gpg --dearmor -o /usr/share/keyrings/pgdg.gpg \
+    && . /etc/os-release \
+    && echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+        > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client-18 \
+    && apt-get purge -y --auto-remove gnupg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Where the app keeps what must outlive the container. A container has no settings
+# file written by an installer, and the defaults are relative to the binary, which
+# is inside the container: backups and the licence written there are lost the first
+# time the container is recreated, which is what an upgrade does.
+ENV HOSPITALPM_DATA=/var/lib/hospitalpm
+ENV ASPNETCORE_URLS=http://+:5000
+ENV Backup__Directory=/var/lib/hospitalpm/backups
+ENV Update__Directory=/var/lib/hospitalpm/updates
+ENV Update__StagingDirectory=/var/lib/hospitalpm/updates/staging
+ENV Licence__Path=/var/lib/hospitalpm/hospitalpm.licence
+
+# Not root. The base image's own unprivileged user ($APP_UID) owns the data
+# directory, and a new named volume takes its ownership from here. The port is
+# above 1024, so nothing needs more.
+RUN mkdir -p /var/lib/hospitalpm/backups \
+             /var/lib/hospitalpm/keys \
+             /var/lib/hospitalpm/updates \
+    && chown -R $APP_UID:$APP_UID /var/lib/hospitalpm
+
+COPY --from=build /app/publish .
+
+# The binary is self-contained and single-file.
+RUN chmod +x hospitalpm
+
+LABEL org.opencontainers.image.title="Hospital PM backend" \
+      org.opencontainers.image.description="Hospital PM API only: no web UI, no database." \
+      org.opencontainers.image.source="https://github.com/AryantJadhav/Hospital_Machine_Manegment"
+
+USER $APP_UID
+VOLUME /var/lib/hospitalpm
+EXPOSE 5000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:5000/health || exit 1
+
+ENTRYPOINT ["./hospitalpm"]

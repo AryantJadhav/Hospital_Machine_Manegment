@@ -169,6 +169,7 @@ public sealed class UpdateServiceTests(PostgresFixture fixture) : IDisposable
         var backups = new BackupService(
             fixture.CreateContext(),
             new PgToolLocator(wrappedBackup),
+            TestVault.Create(),
             configuration,
             wrappedBackup,
             TimeProvider.System,
