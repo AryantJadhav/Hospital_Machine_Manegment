@@ -46,14 +46,22 @@ A service account cannot be used with a personal Gmail: Google gives service acc
 so every upload fails with a quota error. A personal account signs in as itself instead, with a token that rclone
 makes once.
 
+0. **Make a Google sign-in client of your own (once).** rclone's built-in shared client has been disabled by Google, and
+   signing in with it fails with *"The OAuth client was not found" (401 invalid_client)*, so one of your own is required.
+   In console.cloud.google.com: create a project; enable the **Google Drive API**; open the **OAuth consent screen**
+   (External), add the `drive.file` scope and yourself as a test user, then **Publish app** (to "In production"). In
+   "Testing" mode Google ends the sign-in after 7 days and the backups would stop; with the narrow `drive.file` scope,
+   publishing needs no review, and you accept an "unverified app" warning once. Then **Credentials ▸ Create credentials ▸
+   OAuth client ID ▸ Desktop app** gives a client id and a client secret.
 1. On any PC with rclone and a browser, run `rclone config`. Choose **New remote**, name it `hp`, type `drive`.
-   Leave the client id and secret empty. For *scope* choose **3** (`drive.file`): the program can then see only the
-   files it created itself, never the rest of your Drive, and a leaked token cannot read your photos or documents.
-   Say **no** to the service account question, and **yes** to the browser sign-in. Sign in with the personal account
-   and allow it.
-2. Run `rclone config show hp`. The `token = {...}` line is the JSON that is the sign-in. Copy that JSON only.
-3. Save it as `drive-token.json` somewhere private, and set `Backup:Drive:TokenFile` to it (or the text in
-   `Backup:Drive:TokenJson`). The program sets the `drive.file` scope itself; nothing else is needed.
+   Paste your **client id** and **client secret**. For *scope* choose **3** (`drive.file`): the program can then see
+   only the files it created itself, never the rest of your Drive, and a leaked token cannot read your photos or
+   documents. Leave the service account file empty, say **no** to advanced config, and **yes** to the browser sign-in.
+2. Run `rclone config show hp`. The `token = {...}` line is the sign-in. Copy that JSON only.
+3. Save it as `drive-token.json` somewhere private. Set `Backup:Drive:TokenFile` to it, and
+   `Backup:Drive:Remote:client_id` and `Backup:Drive:Remote:client_secret` to the two from step 0. **The token alone is
+   not enough:** rclone needs the client id and secret to renew it every hour. The program sets the `drive.file` scope
+   itself.
 4. Set `Backup:Drive:Enabled` to `true`, and restart.
 
 Things to know about a personal account:
@@ -63,8 +71,6 @@ Things to know about a personal account:
   the reason, and the fix is to make a new token (steps 1 and 2).
 - It is `drive.file`, so it cannot see anything the program did not create. It can still **delete what the program
   made**, so a leaked token can wipe the backups of every hospital, though not read them.
-- rclone's own shared Google client is used unless you make your own in Google Cloud. It is slower at busy times. A
-  client of your own is better for many hospitals.
 - Storage is the account's: 15 GB free, shared with your Gmail and Photos.
 
 ## Setting up Google with a Workspace service account (the other way)
