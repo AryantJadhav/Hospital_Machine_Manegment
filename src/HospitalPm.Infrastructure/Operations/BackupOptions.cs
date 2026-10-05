@@ -90,6 +90,17 @@ public sealed class DriveOptions
     /// <summary>The same, as a file, for a machine where an environment variable is awkward.</summary>
     public string? ServiceAccountFile { get; set; }
 
+    /// <summary>
+    /// For an ordinary (personal) Google account, which a service account cannot use because Google gives service
+    /// accounts no storage in a personal Drive: the sign-in token that <c>rclone config</c> makes, as its JSON text.
+    /// Used with the narrow <c>drive.file</c> scope, so the program can only ever see the files it created itself and
+    /// never the rest of the account's Drive. When set, it is used instead of the service account.
+    /// </summary>
+    public string? TokenJson { get; set; }
+
+    /// <summary>The same, as a file.</summary>
+    public string? TokenFile { get; set; }
+
     /// <summary>The Drive folder shared with the service account, in which every hospital's folder is made.</summary>
     public string? RootFolderId { get; set; }
 

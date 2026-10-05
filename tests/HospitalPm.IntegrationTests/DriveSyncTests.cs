@@ -172,7 +172,7 @@ public sealed class DriveSyncTests : IDisposable
         Assert.Contains("rclone was not found", noRclone.Skipped, StringComparison.Ordinal);
 
         var noKey = await Sync(Licensed(out _), new FakeRclone(), d => d.ServiceAccountJson = null).SyncAsync();
-        Assert.Contains("service account key", noKey.Skipped, StringComparison.Ordinal);
+        Assert.Contains("not signed in", noKey.Skipped, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -246,6 +246,44 @@ public sealed class DriveSyncTests : IDisposable
 
         // And no configuration file is read or written for it.
         Assert.False(File.Exists(call.Env["RCLONE_CONFIG"]));
+    }
+
+    private const string Token = """{"access_token":"ya29.ACCESSSECRET","token_type":"Bearer","refresh_token":"1//REFRESHSECRET","expiry":"2026-10-05T10:00:00Z"}""";
+
+    [Fact]
+    public async Task A_personal_accounts_token_is_used_with_only_the_narrow_scope_and_in_preference_to_a_service_account()
+    {
+        var licences = Licensed(out _);
+        await BackupAsync("20261001-020000");
+        var rclone = new FakeRclone();
+
+        // Given as a file, with the service account key also set: the token wins.
+        var file = Path.Combine(_folder, "token.json");
+        await File.WriteAllTextAsync(file, "  " + Token + "\n");
+        await Sync(licences, rclone, d => { d.TokenFile = file; d.ServiceAccountJson = Key; }).SyncAsync();
+
+        var env = rclone.Calls.First(c => c.Args[0] == "copyto").Env;
+        Assert.Equal("drive", env["RCLONE_CONFIG_HPDRIVE_TYPE"]);
+        // Only the files this program creates itself: never the rest of the person's Drive.
+        Assert.Equal("drive.file", env["RCLONE_CONFIG_HPDRIVE_SCOPE"]);
+        Assert.Equal(Token, env["RCLONE_CONFIG_HPDRIVE_TOKEN"]);
+        Assert.False(env.ContainsKey("RCLONE_CONFIG_HPDRIVE_SERVICE_ACCOUNT_CREDENTIALS"));
+    }
+
+    [Fact]
+    public async Task A_token_never_appears_in_an_error_or_on_a_command_line()
+    {
+        var licences = Licensed(out _);
+        var name = await BackupAsync("20261001-020000");
+        var rclone = new FakeRclone { FailCopyOf = name, FailMessage = "couldn't refresh " + Token + " and " + "\"refresh_token\": \"1//OTHER\"" };
+
+        var result = await Sync(licences, rclone, d => { d.TokenJson = Token; d.ServiceAccountJson = null; }).SyncAsync();
+
+        Assert.NotNull(result.Error);
+        Assert.DoesNotContain("REFRESHSECRET", result.Error, StringComparison.Ordinal);
+        Assert.DoesNotContain("ACCESSSECRET", result.Error, StringComparison.Ordinal);
+        Assert.DoesNotContain("OTHER", result.Error, StringComparison.Ordinal);
+        Assert.DoesNotContain(rclone.Calls.SelectMany(c => c.Args), a => a.Contains("SECRET", StringComparison.Ordinal));
     }
 
     [Fact]

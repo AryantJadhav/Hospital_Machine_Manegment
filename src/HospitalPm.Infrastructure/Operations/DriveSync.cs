@@ -159,10 +159,11 @@ public sealed class DriveSync(
             return (null, null, null, "rclone was not found. Put rclone beside the program, or set Backup:Drive:RclonePath.");
         }
 
-        var credentials = ReadCredentials();
+        var credentials = ReadSecret(Drive.TokenJson, Drive.TokenFile) ?? ReadSecret(Drive.ServiceAccountJson, Drive.ServiceAccountFile);
         if (credentials is null && !Drive.Remote.ContainsKey("type"))
         {
-            return (rclone, null, null, "No Google service account key is set (Backup:Drive:ServiceAccountJson).");
+            return (rclone, null, null,
+                "Google Drive is not signed in. Set Backup:Drive:TokenJson (a personal account) or Backup:Drive:ServiceAccountJson.");
         }
 
         var folder = string.IsNullOrWhiteSpace(Drive.Folder)
@@ -171,17 +172,18 @@ public sealed class DriveSync(
         return (rclone, credentials, folder, null);
     }
 
-    private string? ReadCredentials()
+    /// <summary>A secret given as text or as a file. Whitespace around it is not part of it.</summary>
+    private static string? ReadSecret(string? text, string? file)
     {
-        if (!string.IsNullOrWhiteSpace(Drive.ServiceAccountJson))
+        if (!string.IsNullOrWhiteSpace(text))
         {
-            return Drive.ServiceAccountJson;
+            return text.Trim();
         }
 
         try
         {
-            return !string.IsNullOrWhiteSpace(Drive.ServiceAccountFile) && File.Exists(Drive.ServiceAccountFile)
-                ? File.ReadAllText(Drive.ServiceAccountFile)
+            return !string.IsNullOrWhiteSpace(file) && File.Exists(file)
+                ? File.ReadAllText(file).Trim()
                 : null;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
@@ -219,8 +221,19 @@ public sealed class DriveSync(
         if (credentials is not null)
         {
             settings["type"] = "drive";
-            settings["scope"] = "drive";
-            settings["service_account_credentials"] = credentials;
+
+            if (IsToken(credentials))
+            {
+                // A personal account's own sign-in, with only the right to see what this program put there.
+                settings["scope"] = "drive.file";
+                settings["token"] = credentials;
+            }
+            else
+            {
+                settings["scope"] = "drive";
+                settings["service_account_credentials"] = credentials;
+            }
+
             if (!string.IsNullOrWhiteSpace(Drive.RootFolderId))
             {
                 settings["root_folder_id"] = Drive.RootFolderId.Trim();
@@ -246,6 +259,10 @@ public sealed class DriveSync(
     }
 
     // ------------------------------------------------------------------ the files
+
+    /// <summary>A token has an access token and a refresh token; a service account key has a private key.</summary>
+    private static bool IsToken(string secret) =>
+        secret.Contains("\"access_token\"", StringComparison.Ordinal) || secret.Contains("\"refresh_token\"", StringComparison.Ordinal);
 
     private static bool IsOurs(string name) =>
         name.StartsWith("hospitalpm-", StringComparison.Ordinal)
@@ -407,7 +424,7 @@ public sealed class DriveSync(
             logger.LogWarning(e, "Sending backups to the drive failed");
             var state = ReadState();
             state.LastAttemptAtUtc = clock.GetUtcNow().UtcDateTime;
-            state.LastError = Redact(e.Message, ReadCredentials());
+            state.LastError = Redact(e.Message, ReadSecret(Drive.TokenJson, Drive.TokenFile) ?? ReadSecret(Drive.ServiceAccountJson, Drive.ServiceAccountFile));
             WriteState(state);
             return new DriveSyncResult(true, 0, state.LastError, null);
         }
@@ -460,6 +477,11 @@ public sealed class DriveSync(
         {
             text = text.Replace(credentials, "[key removed]", StringComparison.Ordinal);
         }
+
+        // A token, if rclone ever prints one: the values of the two that matter.
+        text = System.Text.RegularExpressions.Regex.Replace(
+            text, @"""(access_token|refresh_token)""\s*:\s*""[^""]*""", "\"$1\":\"[key removed]\"",
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
         text = System.Text.RegularExpressions.Regex.Replace(
             text, "-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", "[key removed]",
