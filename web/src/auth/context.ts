@@ -55,7 +55,7 @@ export const ROLE_LABEL: Record<string, string> = {
 /** One line on what each role is for. */
 export const ROLE_HELP: Record<string, string> = {
   Developer: 'Built and supports the software. Full access.',
-  ItAdmin: "The hospital's IT team: staff accounts, backups, updates, the licence and diagnostics.",
+  ItAdmin: "The hospital's IT team: staff accounts, updates, the licence, diagnostics and the audit log.",
   BmeHead: 'Head of Biomedical: the register, schedules, checklists, spare parts, training, reports and staff.',
   BmeEngineer: 'Works the floor: PM rounds, faults, and reading the register. Cannot change what the department has committed to.',
   DepartmentUser: 'Reports faults on the equipment of their own departments, and follows them. Sees nothing outside the departments they are given.',

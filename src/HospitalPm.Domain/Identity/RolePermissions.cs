@@ -54,8 +54,6 @@ public static class RolePermissions
     private static readonly IReadOnlySet<string> Installation = new HashSet<string>(StringComparer.Ordinal)
     {
         Permissions.StaffManage,
-        Permissions.SystemBackups,
-        Permissions.SystemRestore,
         Permissions.SystemUpdates,
         Permissions.SystemDiagnostics,
         Permissions.SystemLicence,
@@ -69,7 +67,7 @@ public static class RolePermissions
     /// </summary>
     private static readonly IReadOnlySet<string> Department =
         new HashSet<string>(
-            Permissions.All.Where(p => p != Permissions.AccessManage
+            Permissions.All.Where(p => !Permissions.DeveloperOnly.Contains(p)
                          // Incidents are written up by the department they happen in, not by the biomedical team.
                          && p != Permissions.IncidentsReport
                          && (p == Permissions.StaffManage || !Installation.Contains(p))),
@@ -79,8 +77,9 @@ public static class RolePermissions
     /// What one role may do. An unknown role may do nothing.
     ///
     /// The head of Biomedical decides what the department does and does not run the installation:
-    /// backups, restore, updates, diagnostics and the licence are the IT team's (and the Developer's).
-    /// A hospital with no IT team can still be given one of those sections by name.
+    /// updates, diagnostics and the licence are the IT team's (and the Developer's). A hospital with no IT
+    /// team can still be given one of those sections by name. Backups and restore are the Developer's alone
+    /// (see <see cref="Permissions.DeveloperOnly"/>).
     ///
     /// A department user sees only their own departments' equipment and requests (see
     /// <see cref="Ward"/>).

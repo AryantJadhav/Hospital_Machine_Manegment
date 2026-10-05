@@ -140,12 +140,32 @@ public sealed class PermissionTests(PostgresFixture fixture) : IAsyncLifetime, I
 
         Assert.True(it.SetEquals(
         [
-            Permissions.StaffManage, Permissions.SystemBackups, Permissions.SystemRestore,
-            Permissions.SystemUpdates, Permissions.SystemDiagnostics, Permissions.SystemLicence,
-            Permissions.AuditView,
+            Permissions.StaffManage, Permissions.SystemUpdates, Permissions.SystemDiagnostics,
+            Permissions.SystemLicence, Permissions.AuditView,
         ]));
         Assert.DoesNotContain(Permissions.RegisterView, it);
         Assert.DoesNotContain(Permissions.WorkOrdersView, it);
+    }
+
+    [Fact]
+    public void Backups_and_restore_are_the_developers_alone()
+    {
+        string[] only = [Permissions.SystemBackups, Permissions.SystemRestore];
+
+        foreach (var role in Roles.All.Where(r => r != Roles.Developer))
+        {
+            Assert.All(Permissions.DeveloperOnly, p => Assert.DoesNotContain(p, RolePermissions.For(role)));
+        }
+
+        Assert.All(only, p => Assert.Contains(p, RolePermissions.For(Roles.Developer)));
+
+        // Not even by name: nothing on the Access page can hand them out, and a grant written anyway does nothing.
+        Assert.All(only, p => Assert.False(PermissionCatalog.IsGrantable(p)));
+        var set = EffectivePermissions.For(
+            [Roles.ItAdmin],
+            [new PermissionGrant { Permission = Permissions.SystemBackups, Effect = GrantEffect.Grant }],
+            DateOnly.FromDateTime(DateTime.UtcNow));
+        Assert.DoesNotContain(Permissions.SystemBackups, set);
     }
 
     [Fact]

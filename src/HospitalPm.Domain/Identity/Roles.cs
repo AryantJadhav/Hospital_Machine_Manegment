@@ -26,7 +26,7 @@ public static class Roles
     /// <summary>Built and supports the software. Everything, including who may sign in as one.</summary>
     public const string Developer = "Developer";
 
-    /// <summary>The hospital's IT team: backups, updates, the licence, diagnostics, and staff accounts.</summary>
+    /// <summary>The hospital's IT team: updates, the licence, diagnostics, the audit log and staff accounts. Not backups.</summary>
     public const string ItAdmin = "ItAdmin";
 
     /// <summary>Head of the Biomedical department. Owns the register, the schedules and the reports.</summary>
@@ -55,7 +55,7 @@ public static class Roles
     public static string Describe(string role) => role switch
     {
         Developer => "Built and supports the software. Full access.",
-        ItAdmin => "The hospital's IT team: staff accounts, backups, updates, the licence and diagnostics.",
+        ItAdmin => "The hospital's IT team: staff accounts, updates, the licence, diagnostics and the audit log.",
         BmeHead => "Head of Biomedical: the register, schedules, checklists, spare parts, training, reports and staff.",
         BmeEngineer => "Works the floor: PM rounds, faults, and reading the register.",
         DepartmentUser => "Reports faults on the equipment of their own departments, and follows them.",

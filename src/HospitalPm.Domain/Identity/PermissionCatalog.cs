@@ -7,8 +7,8 @@ public sealed record PermissionInfo(string Permission, string Group, string Labe
 /// The sections that can be given to one person or taken from them, with names a person would use.
 ///
 /// Not everything in <see cref="Permissions"/> can be given. Looking after staff is decided by role
-/// (who may make whom is a rule about the roles themselves), and giving access is the Developer's
-/// alone, so neither is here.
+/// (who may make whom is a rule about the roles themselves), and giving access, backups and restore are
+/// the Developer's alone (<see cref="Permissions.DeveloperOnly"/>), so none of those is here.
 /// </summary>
 public static class PermissionCatalog
 {
@@ -47,8 +47,6 @@ public static class PermissionCatalog
         new(Permissions.TrainingEdit, "The department", "Record training", "Add, change and remove training sessions."),
         new(Permissions.ReportsView, "The department", "See reports and costs", "Downtime, cost, work done, stock and compliance reports."),
 
-        new(Permissions.SystemBackups, "The installation", "Backups", "Run a backup and see its history."),
-        new(Permissions.SystemRestore, "The installation", "Restore from a backup", "Put a backup back."),
         new(Permissions.SystemUpdates, "The installation", "Updates", "Check for and install an update."),
         new(Permissions.SystemDiagnostics, "The installation", "Diagnostics", "Health of the installation."),
         new(Permissions.SystemLicence, "The installation", "Licence", "See and install the licence."),

@@ -89,6 +89,11 @@ public static class Permissions
     /// not something that can itself be granted, or the hospital could hand out the right to hand out.
     /// </summary>
     public const string AccessManage = "access.manage";
+
+    /// <summary>
+    /// Backups, download and restore. Held by the Developer alone: not the hospital's IT team, not the head of
+    /// Biomedical, and not something that can be granted on the Access page.
+    /// </summary>
     public const string SystemBackups = "system.backups";
     public const string SystemRestore = "system.restore";
     public const string SystemUpdates = "system.updates";
@@ -97,6 +102,12 @@ public static class Permissions
 
     /// <summary>Read the audit log: who changed what, and when. The IT team's and the Developer's.</summary>
     public const string AuditView = "audit.view";
+
+    /// <summary>
+    /// What no role but the Developer holds and no grant can hand out. Every other role's table is checked
+    /// against this, so adding a permission here is the whole of making it the Developer's alone.
+    /// </summary>
+    public static readonly IReadOnlyList<string> DeveloperOnly = [AccessManage, SystemBackups, SystemRestore];
 
     public static readonly IReadOnlyList<string> All =
     [

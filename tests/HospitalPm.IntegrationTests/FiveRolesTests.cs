@@ -146,8 +146,12 @@ public sealed class FiveRolesTests(PostgresFixture fixture) : IAsyncLifetime, ID
     {
         var (it, _) = await SignInAsync("it4", Roles.ItAdmin);
 
-        Assert.Equal(HttpStatusCode.OK, (await it.GetAsync("/api/admin/backups")).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await it.GetAsync("/api/users")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await it.GetAsync("/api/admin/diagnostics")).StatusCode);
+
+        // Backups are the Developer's alone.
+        Assert.Equal(HttpStatusCode.Forbidden, (await it.GetAsync("/api/admin/backups")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await it.PostAsync("/api/admin/backups/run", null)).StatusCode);
 
         Assert.Equal(HttpStatusCode.Forbidden, (await it.GetAsync("/api/equipment")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await it.GetAsync("/api/work-orders")).StatusCode);

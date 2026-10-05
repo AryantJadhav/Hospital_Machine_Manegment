@@ -115,8 +115,11 @@ public sealed class AccessGrantTests(PostgresFixture fixture) : IAsyncLifetime, 
         // Each is listed once, and everything but the two that cannot be given is listed.
         Assert.Equal(PermissionCatalog.All.Count, PermissionCatalog.All.Select(p => p.Permission).Distinct().Count());
         var left = Permissions.All.Except(PermissionCatalog.All.Select(p => p.Permission)).Order().ToArray();
-        // Looking after staff, giving access, and the one that makes a person a department user.
-        Assert.Equal([Permissions.AccessManage, Permissions.DepartmentView, Permissions.StaffManage], left);
+        // Looking after staff, giving access, backups and restore (the Developer's alone), and the one that
+        // makes a person a department user.
+        Assert.Equal(
+            [Permissions.AccessManage, Permissions.DepartmentView, Permissions.StaffManage, Permissions.SystemBackups, Permissions.SystemRestore],
+            left);
     }
 
     // ---------------- through the API ----------------
