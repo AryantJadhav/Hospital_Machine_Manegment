@@ -26,6 +26,7 @@ const TITLES: [prefix: string, title: string][] = [
   ['/backups', 'Backups'],
   ['/diagnostics', 'Diagnostics'],
   ['/licence', 'Licence'],
+  ['/developer/licences', 'Issue licences'],
   ['/updates', 'Updates'],
 ];
 

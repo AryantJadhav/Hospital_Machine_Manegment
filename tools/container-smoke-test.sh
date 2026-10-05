@@ -78,6 +78,10 @@ signin() {
         -d '{"userName":"admin","password":"Container-Test-2026"}' | json "print(d.get('accessToken', ''))"
 }
 
+# The image will not build without a licence public key. This run only proves the container starts and serves, so
+# it is given a throwaway one (made for this purpose, its private half discarded), unless a real one is passed in.
+export LICENCE_PUBLIC_KEY="${LICENCE_PUBLIC_KEY:-MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEuexxvI6P341RpxxmH9lhZsigfdVe6SUUxtBcyo4VONDcJUyqdnGpdd5T26KJU5ZN4DMLji/p6NROsrWsfl+8Iw==}"
+
 echo "==> Building the image and starting it with its database"
 "${COMPOSE[@]}" up -d --build || { fail "the image builds and starts"; exit 1; }
 pass "the image builds and starts"

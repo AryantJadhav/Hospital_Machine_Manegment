@@ -22,6 +22,9 @@ public sealed class LicenceReadOnlyMiddleware(RequestDelegate next)
         "/api/auth/",
         "/api/setup/",
         "/api/admin/licence",
+        // A code is entered where there may be no one signed in, and the Developer's licence section is not recording.
+        "/api/licence/",
+        "/api/developer/licences",
         "/api/admin/backups",
         "/api/admin/update",
     ];

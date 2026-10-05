@@ -57,17 +57,18 @@ public sealed class EquipmentImportService(HospitalPmDbContext db)
     ];
 
     /// <summary>Parses and validates without writing anything.</summary>
-    public async Task<ImportResult> ValidateAsync(Stream workbook, CancellationToken ct = default)
-        => await RunAsync(workbook, commit: false, ct);
+    /// <param name="equipmentLimit">The licence's cap on machines, or null for none. A file that would go over it is refused.</param>
+    public async Task<ImportResult> ValidateAsync(Stream workbook, CancellationToken ct = default, int? equipmentLimit = null)
+        => await RunAsync(workbook, commit: false, ct, equipmentLimit);
 
     /// <summary>
     /// Validates and, only if the file is entirely clean, writes it in one
     /// transaction.
     /// </summary>
-    public async Task<ImportResult> CommitAsync(Stream workbook, CancellationToken ct = default)
-        => await RunAsync(workbook, commit: true, ct);
+    public async Task<ImportResult> CommitAsync(Stream workbook, CancellationToken ct = default, int? equipmentLimit = null)
+        => await RunAsync(workbook, commit: true, ct, equipmentLimit);
 
-    private async Task<ImportResult> RunAsync(Stream workbook, bool commit, CancellationToken ct)
+    private async Task<ImportResult> RunAsync(Stream workbook, bool commit, CancellationToken ct, int? equipmentLimit)
     {
         var errors = new List<ImportError>();
         var rows = ParseRows(workbook, errors);
@@ -215,6 +216,16 @@ public sealed class EquipmentImportService(HospitalPmDbContext db)
                 WarrantyExpiryDate = row.WarrantyExpiryDate,
                 Notes = Blank(row.Notes),
             });
+        }
+
+        // The licence's cap is on the whole register, so the file is judged as a whole: all of it would fit, or none
+        // of it goes in, and the person is told before anything is written.
+        if (equipmentLimit is { } limit && existingTagSet.Count + resolved.Count > limit && errors.Count == 0)
+        {
+            errors.Add(new ImportError(
+                0, "Licence",
+                $"Your licence allows {limit} machines and {existingTagSet.Count} are already recorded, so this file's "
+                + $"{resolved.Count} more would go over it. Ask your supplier for a larger licence, or import fewer machines."));
         }
 
         if (!commit || errors.Count > 0)

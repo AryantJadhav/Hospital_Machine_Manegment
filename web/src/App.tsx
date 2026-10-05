@@ -17,6 +17,8 @@ import { LocationsPage } from './pages/LocationsPage';
 import { BackupsPage } from './pages/BackupsPage';
 import { DiagnosticsPage } from './pages/DiagnosticsPage';
 import { LicencePage } from './pages/LicencePage';
+import { LicenceIssuerPage } from './pages/LicenceIssuerPage';
+import { LockGuard } from './pages/LockedPage';
 import { UpdatesPage } from './pages/UpdatesPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { PmTasksPage } from './pages/PmTasksPage';
@@ -292,6 +294,10 @@ function Shell() {
             path="/licence"
             element={may(PERMISSIONS.systemLicence) ? <LicencePage /> : <Elsewhere notice={ADMIN_ONLY} />}
           />
+          <Route
+            path="/developer/licences"
+            element={may(PERMISSIONS.licenceIssue) ? <LicenceIssuerPage /> : <Elsewhere notice={ADMIN_ONLY} />}
+          />
           <Route path="/updates" element={gated(PERMISSIONS.systemUpdates, features?.updates, <UpdatesPage />)} />
           <Route path="*" element={<Elsewhere notice={NO_SUCH_PAGE} />} />
         </Routes>
@@ -335,12 +341,15 @@ function Gate() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <ToastProvider>
-        <BrowserRouter>
-          <Gate />
-        </BrowserRouter>
-      </ToastProvider>
-    </AuthProvider>
+    // Outside everything else: a locked installation shows the lock screen and nothing of the program.
+    <LockGuard>
+      <AuthProvider>
+        <ToastProvider>
+          <BrowserRouter>
+            <Gate />
+          </BrowserRouter>
+        </ToastProvider>
+      </AuthProvider>
+    </LockGuard>
   );
 }

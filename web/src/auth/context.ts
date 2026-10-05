@@ -104,5 +104,6 @@ export const PERMISSIONS = {
   systemUpdates: 'system.updates',
   systemDiagnostics: 'system.diagnostics',
   systemLicence: 'system.licence',
+  licenceIssue: 'licence.issue',
   auditView: 'audit.view',
 } as const;

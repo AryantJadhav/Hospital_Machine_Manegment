@@ -54,7 +54,11 @@ services:
       - internal
 
   app:
-    build: .
+    build:
+      context: .
+      args:
+        # The licence's public key (the contents of public-key.txt), in the .env file. The build stops without it.
+        LICENCE_PUBLIC_KEY: ${LICENCE_PUBLIC_KEY:-}
     restart: unless-stopped
     ports:
       - "${APP_PORT:-5000}:5000"

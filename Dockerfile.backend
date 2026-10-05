@@ -17,7 +17,7 @@
 #
 # Build (from the repository root; no Node and no web build are involved):
 #
-#   docker build -f Dockerfile.backend -t hospitalpm-backend .
+#   docker build -f Dockerfile.backend -t hospitalpm-backend #     --build-arg LICENCE_PUBLIC_KEY="$(cat /path/to/public-key.txt)" .
 #
 # Run:
 #
@@ -30,6 +30,15 @@
 # --- Stage 1: build --------------------------------------------------------
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
+
+# The licence's public key. Required: an image without it runs "unlicensed" for ever, and cannot tell a real licence
+# from a forged one, so the build stops here, before anything slow, rather than produce one. The key is public (it
+# only verifies); the private half that signs licences is never in a build. A P-256 SubjectPublicKeyInfo is exactly 91
+# bytes, so a typo, an empty variable and a private key are all caught.
+#
+#   docker build --build-arg LICENCE_PUBLIC_KEY="$(cat public-key.txt)" ...
+ARG LICENCE_PUBLIC_KEY
+RUN test -n "$LICENCE_PUBLIC_KEY"     || { echo "ERROR: the LICENCE_PUBLIC_KEY build argument is required (the contents of the licence public-key.txt)." >&2; exit 1; }     && test "$(printf %s "$LICENCE_PUBLIC_KEY" | base64 -d 2>/dev/null | wc -c)" -eq 91     || { echo "ERROR: LICENCE_PUBLIC_KEY is not a P-256 public key (base64 SubjectPublicKeyInfo, 91 bytes)." >&2; exit 1; }
 
 # Restore first - this layer is cached unless a .csproj or props file changes.
 COPY Directory.Build.props .
@@ -55,6 +64,10 @@ RUN dotnet publish src/HospitalPm.Api/HospitalPm.Api.csproj \
 # (libssl, libstdc++, ...) without the managed runtime, which is inside the binary.
 FROM mcr.microsoft.com/dotnet/runtime-deps:10.0 AS runtime
 WORKDIR /app
+
+# Carried into the running image, where the program reads it as Licence:PublicKey. Checked in the first stage.
+ARG LICENCE_PUBLIC_KEY
+ENV Licence__PublicKey=$LICENCE_PUBLIC_KEY
 
 # Two things the base image does not carry, installed at build time only -
 # nothing here reaches the network when the container runs:

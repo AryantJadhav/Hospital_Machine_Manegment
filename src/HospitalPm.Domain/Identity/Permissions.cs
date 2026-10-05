@@ -96,6 +96,12 @@ public static class Permissions
     /// </summary>
     public const string SystemBackups = "system.backups";
     public const string SystemRestore = "system.restore";
+
+    /// <summary>
+    /// Making licences, and locking or unlocking an installation with a signed code. Held by the Developer alone, and
+    /// only useful on the copy of the software that has the signing key.
+    /// </summary>
+    public const string LicenceIssue = "licence.issue";
     public const string SystemUpdates = "system.updates";
     public const string SystemDiagnostics = "system.diagnostics";
     public const string SystemLicence = "system.licence";
@@ -107,7 +113,7 @@ public static class Permissions
     /// What no role but the Developer holds and no grant can hand out. Every other role's table is checked
     /// against this, so adding a permission here is the whole of making it the Developer's alone.
     /// </summary>
-    public static readonly IReadOnlyList<string> DeveloperOnly = [AccessManage, SystemBackups, SystemRestore];
+    public static readonly IReadOnlyList<string> DeveloperOnly = [AccessManage, SystemBackups, SystemRestore, LicenceIssue];
 
     public static readonly IReadOnlyList<string> All =
     [
@@ -117,6 +123,6 @@ public static class Permissions
         ChecklistsEdit, PmManage, WorkOrdersAssign, WorkOrdersCancel, AttachmentsDelete,
         SparePartsEdit, TrainingEdit, ReportsView,
         StaffManage, AccessManage, SystemBackups, SystemRestore, SystemUpdates, SystemDiagnostics, SystemLicence,
-        AuditView,
+        AuditView, LicenceIssue,
     ];
 }

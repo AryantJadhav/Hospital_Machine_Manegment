@@ -354,8 +354,27 @@ public static class EquipmentEndpoints
         HospitalPmDbContext db,
         PmScheduleGenerator generator,
         HospitalClock clock,
+        HospitalPm.Infrastructure.Licensing.LicenceService licences,
         CancellationToken ct)
     {
+        // The licence's cap on machines, said before anything else so nobody fills in a form that cannot be saved.
+        if (licences.EquipmentLimit() is { } limit)
+        {
+            // Every machine counts, whoever's department it is in: the cap is the hospital's, not the viewer's.
+            var recorded = await db.Equipment.IgnoreQueryFilters().CountAsync(ct);
+            if (recorded >= limit)
+            {
+                return Results.Conflict(new
+                {
+                    error = $"Your licence allows {limit} machines and {recorded} are already recorded. "
+                            + "Ask your supplier for a larger licence to add more.",
+                    code = "licence-equipment-limit",
+                    limit,
+                    recorded,
+                });
+            }
+        }
+
         // Left blank, the software numbers the machine itself.
         var error = await ValidateAsync(request, db, ct, tagRequired: !string.IsNullOrWhiteSpace(request.AssetTag));
         if (error is not null)

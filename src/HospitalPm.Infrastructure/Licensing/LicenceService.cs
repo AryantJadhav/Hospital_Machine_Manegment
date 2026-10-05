@@ -27,7 +27,32 @@ public sealed class LicenceOptions
     /// Days after a licence's end date before the software turns read-only.
     /// </summary>
     public int GraceDays { get; set; } = LicenceVerifier.DefaultGraceDays;
+
+    /// <summary>
+    /// Where the Developer's own copy finds the licence signing key (a PEM file), to issue licences and lock codes.
+    /// Empty everywhere else: a hospital's installation never has the key, so it has no way to make a licence, and
+    /// the Developer's licence section says so instead of working.
+    /// </summary>
+    public string SigningKeyPath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// A second place the lock is remembered, in a different folder from the licence (the data folder). A lock
+    /// that lives in one file is undone by deleting that file; with two, both have to go.
+    /// </summary>
+    public string LockMirrorDirectory { get; set; } = string.Empty;
 }
+
+/// <summary>
+/// Whether the installation is locked, and by which licence's code. A lock turns everyone away until an unlock
+/// code for the same licence, with a higher number, is entered.
+/// </summary>
+/// <param name="LicenceId">The licence the last accepted code named.</param>
+/// <param name="Sequence">The number on that code. Codes at or below it are never accepted again.</param>
+/// <param name="HospitalName">For the lock screen: who this installation is, so they can say so on the phone.</param>
+public sealed record LockState(Guid LicenceId, long Sequence, bool Locked, string HospitalName, DateTime ChangedAtUtc);
+
+/// <summary>What happened when a code was entered.</summary>
+public sealed record CodeResult(bool Applied, string Message, LicenceCommand? Command = null);
 
 /// <summary>
 /// The installation's licence, read from disk and checked offline.
@@ -159,6 +184,193 @@ public sealed class LicenceService(IOptions<LicenceOptions> options, TimeProvide
                     + "Check the service account's permissions on the installation folder."));
             }
         }
+    }
+
+    // ------------------------------------------------------------------ the equipment limit
+
+    /// <summary>
+    /// The most machines this installation may record, or null for no limit (no licence, a perpetual one with no
+    /// cap, or a build that cannot check). Read-only is not asked here: it already refuses every new record.
+    /// </summary>
+    public int? EquipmentLimit()
+    {
+        var status = Current();
+        return status.State is LicenceState.Valid or LicenceState.Expired ? status.Licence?.MaxEquipment : null;
+    }
+
+    // ------------------------------------------------------------------ the lock
+
+    private (long Ticks, LockState? State)? _lockCache;
+
+    /// <summary>A lock is read often (every request asks), so the answer is kept for a moment. Entering a code clears it.</summary>
+    private const long LockCacheMilliseconds = 2000;
+
+    private string LockPath => ResolvePath() + ".lock";
+
+    private string? MirrorPath => string.IsNullOrWhiteSpace(_options.LockMirrorDirectory)
+        ? null
+        : System.IO.Path.Combine(_options.LockMirrorDirectory, "licence-lock.json");
+
+    /// <summary>The lock on this installation, or null when it is not locked.</summary>
+    public LockState? CurrentLock()
+    {
+        lock (_gate)
+        {
+            var now = Environment.TickCount64;
+            if (_lockCache is not { } hit || now - hit.Ticks >= LockCacheMilliseconds)
+            {
+                hit = (now, ReadLockState());
+                _lockCache = hit;
+            }
+
+            return hit.State is { Locked: true } ? hit.State : null;
+        }
+    }
+
+    /// <summary>
+    /// Checks a pasted lock or unlock code and, if it is ours, for this licence and newer than the last one
+    /// accepted, applies it. A lock names the licence installed here. An unlock names the licence that locked it,
+    /// so swapping the licence file for another does not slip past. Each licence's codes are numbered, and only a
+    /// higher number is ever accepted, so an old unlock cannot undo a newer lock, nor the other way round.
+    /// </summary>
+    public CodeResult ApplyCode(string? code)
+    {
+        if (string.IsNullOrWhiteSpace(_options.PublicKey))
+        {
+            return new CodeResult(false, "This build has no licence key configured, so a code cannot be checked.");
+        }
+
+        var command = LicenceCommandFile.Verify(code, _options.PublicKey);
+        if (command is null)
+        {
+            return new CodeResult(false,
+                "That code is not valid for this software. Check that all of it was copied, from the first line to the last.");
+        }
+
+        lock (_gate)
+        {
+            var current = ReadLockState();
+            var installed = InstalledLicence();
+            var locking = command.Action == LicenceAction.Lock;
+
+            var target = locking
+                ? installed?.LicenceId
+                : current is { Locked: true } ? current.LicenceId : installed?.LicenceId;
+
+            if (target != command.LicenceId)
+            {
+                return new CodeResult(false, "That code is for a different licence from the one on this installation.");
+            }
+
+            var last = current?.LicenceId == command.LicenceId ? current.Sequence : 0;
+            if (command.Sequence <= last)
+            {
+                return new CodeResult(false, "That code has already been used, or a newer one has replaced it.");
+            }
+
+            var state = new LockState(
+                command.LicenceId, command.Sequence, locking,
+                installed?.HospitalName ?? current?.HospitalName ?? string.Empty,
+                clock.GetUtcNow().UtcDateTime);
+
+            if (!WriteLockState(state))
+            {
+                return new CodeResult(false,
+                    "The code is valid but could not be saved. Check the service account's permissions on the installation folder.");
+            }
+
+            _lockCache = null;
+            return new CodeResult(true,
+                locking
+                    ? "This installation is now locked. Nobody can sign in until an unlock code is entered."
+                    : "This installation is unlocked.",
+                command);
+        }
+    }
+
+    private Licence? InstalledLicence()
+    {
+        try
+        {
+            var path = ResolvePath();
+            return File.Exists(path) ? new LicenceVerifier(_options.PublicKey).Trusted(File.ReadAllText(path)) : null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// What the two places say. Per licence the highest number wins; a lock stands if any licence's latest word is
+    /// a lock. If the places disagree, or one has gone, both are made to say what the winner says.
+    /// </summary>
+    private LockState? ReadLockState()
+    {
+        var paths = new List<string> { LockPath };
+        if (MirrorPath is { } mirror)
+        {
+            paths.Add(mirror);
+        }
+
+        var found = paths.Select(ReadLockFile).OfType<LockState>().ToList();
+        if (found.Count == 0)
+        {
+            return null;
+        }
+
+        var latest = found
+            .GroupBy(s => s.LicenceId)
+            .Select(g => g.OrderByDescending(s => s.Sequence).ThenByDescending(s => s.Locked).First())
+            .ToList();
+        var winner = latest.FirstOrDefault(s => s.Locked) ?? latest.OrderByDescending(s => s.ChangedAtUtc).First();
+
+        if (found.Count < paths.Count || found.Any(s => s != winner))
+        {
+            WriteLockState(winner);
+        }
+
+        return winner;
+    }
+
+    private static LockState? ReadLockFile(string path)
+    {
+        try
+        {
+            return File.Exists(path)
+                ? JsonSerializer.Deserialize<LockState>(File.ReadAllText(path), LicenceFile.Json)
+                : null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
+        {
+            // Unreadable is treated as absent, and the other place is asked.
+            return null;
+        }
+    }
+
+    private bool WriteLockState(LockState state)
+    {
+        var written = false;
+        foreach (var path in new[] { LockPath, MirrorPath }.OfType<string>())
+        {
+            try
+            {
+                var directory = System.IO.Path.GetDirectoryName(path);
+                if (!string.IsNullOrEmpty(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                File.WriteAllText(path, JsonSerializer.Serialize(state, LicenceFile.Json));
+                written = true;
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                // One place failing is not the end of it: the other still holds the lock.
+            }
+        }
+
+        return written;
     }
 
     private LicenceStatus Assess(string? text, DateOnly today, bool record)

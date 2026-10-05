@@ -102,7 +102,17 @@ builder.Services.AddSingleton<HospitalPm.Api.Operations.DownloadTickets>();
 builder.Services.AddScoped<HospitalPm.Infrastructure.Operations.DiagnosticsService>();
 builder.Services.Configure<HospitalPm.Infrastructure.Licensing.LicenceOptions>(
     builder.Configuration.GetSection(HospitalPm.Infrastructure.Licensing.LicenceOptions.Section));
+// The lock is remembered in a second place, in the locked-down data folder, so deleting the licence's folder
+// does not unlock anything.
+builder.Services.PostConfigure<HospitalPm.Infrastructure.Licensing.LicenceOptions>(o =>
+{
+    if (string.IsNullOrWhiteSpace(o.LockMirrorDirectory))
+    {
+        o.LockMirrorDirectory = Path.Combine(InstallPaths.DataDirectory(), "keys");
+    }
+});
 builder.Services.AddSingleton<HospitalPm.Infrastructure.Licensing.LicenceService>();
+builder.Services.AddScoped<HospitalPm.Infrastructure.Licensing.LicenceIssuer>();
 
 // Updating from a signed file on a USB stick. Scoped rather than singleton
 // because it takes a backup, and BackupService is scoped around the
@@ -325,6 +335,8 @@ app.MapGet("/health", () => Results.Ok(new
 // The React bundle is built into wwwroot and embedded in the published
 // binary, so the UI ships with the app rather than as a second deployment.
 // This is what makes "one binary" literally true.
+// First, before anyone is even recognised: a locked installation turns everyone away, so nobody signs in.
+app.UseMiddleware<HospitalPm.Api.Hosting.LicenceLockMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseMiddleware<HospitalPm.Api.Hosting.FeatureSwitchMiddleware>();
@@ -362,6 +374,7 @@ app.MapDiagnosticsEndpoints();
 app.MapAuditEndpoints();
 app.MapRestoreEndpoints();
 app.MapLicenceEndpoints();
+app.MapLicenceIssuerEndpoints();
 app.MapUpdateEndpoints();
 app.MapPilotMetricsEndpoints();
 app.MapPmComplianceEndpoints();

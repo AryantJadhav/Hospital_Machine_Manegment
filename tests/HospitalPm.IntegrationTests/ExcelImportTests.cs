@@ -293,6 +293,42 @@ public sealed class ExcelImportTests(PostgresFixture fixture)
         Assert.True(rows > 0, "expected an audit row for the imported asset");
     }
 
+    // ---------------- the licence's cap on machines ----------------
+
+    [Fact]
+    public async Task A_file_that_would_go_over_the_licence_cap_is_refused_whole_and_nothing_is_written()
+    {
+        await using var db = fixture.CreateContext();
+        var (dept, _) = await SeedLocationAsync(db);
+        var recorded = await db.Equipment.IgnoreQueryFilters().CountAsync();
+        var tags = new[] { NewTag(), NewTag() };
+
+        string[][] File() =>
+        [
+            [tags[0], "", "Ventilator", dept, "", "", "", "", "", "", ""],
+            [tags[1], "", "Ventilator", dept, "", "", "", "", "", "", ""],
+        ];
+
+        // Room for one more, and the file has two: judged as a whole, and told before anything is written.
+        var validated = await new EquipmentImportService(db).ValidateAsync(Workbook(File()), equipmentLimit: recorded + 1);
+        Assert.NotEmpty(validated.Errors);
+        Assert.Contains(validated.Errors, e => e.Column == "Licence" && e.Message.Contains("larger licence", StringComparison.Ordinal));
+
+        var committed = await new EquipmentImportService(db).CommitAsync(Workbook(File()), equipmentLimit: recorded + 1);
+        Assert.False(committed.Committed);
+        Assert.False(await db.Equipment.AnyAsync(e => tags.Contains(e.AssetTag)));
+
+        // Room for both, and it goes in. No cap at all, the same.
+        var fits = await new EquipmentImportService(db).CommitAsync(Workbook(File()), equipmentLimit: recorded + 2);
+        Assert.True(fits.Committed, string.Join("; ", fits.Errors.Select(e => e.Message)));
+        Assert.Equal(2, await db.Equipment.CountAsync(e => tags.Contains(e.AssetTag)));
+
+        var more = new[] { NewTag() };
+        var uncapped = await new EquipmentImportService(db).CommitAsync(
+            Workbook([more[0], "", "Ventilator", dept, "", "", "", "", "", "", ""]), equipmentLimit: null);
+        Assert.True(uncapped.Committed);
+    }
+
     // ---------------- helpers ----------------
 
     private static string NewTag() => "IMP-" + Guid.NewGuid().ToString("N")[..10];

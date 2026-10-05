@@ -19,9 +19,14 @@ namespace HospitalPm.Domain.Licensing;
 /// </summary>
 public static class LicenceFile
 {
-    private const string Begin = "-----BEGIN HOSPITALPM LICENCE-----";
+    /// <summary>The kind of signed file this wrapper carries by default: a licence.</summary>
+    public const string LicenceKind = "LICENCE";
+
     private const string SignatureMarker = "-----SIGNATURE-----";
-    private const string End = "-----END HOSPITALPM LICENCE-----";
+
+    private static string Begin(string kind) => $"-----BEGIN HOSPITALPM {kind}-----";
+
+    private static string End(string kind) => $"-----END HOSPITALPM {kind}-----";
 
     /// <summary>Line length for the base64 blocks. Long enough to be compact, short enough to survive email.</summary>
     private const int WrapAt = 76;
@@ -34,17 +39,21 @@ public static class LicenceFile
     /// <summary>The payload bytes and the signature over them, exactly as stored.</summary>
     public sealed record Parsed(byte[] Payload, byte[] Signature);
 
-    public static string Format(byte[] payload, byte[] signature)
+    /// <param name="kind">
+    /// What the file is. A different kind has different markers, so a file of one kind is never read as another:
+    /// a lock code pasted where a licence belongs is "not a licence file", whatever it was signed with.
+    /// </param>
+    public static string Format(byte[] payload, byte[] signature, string kind = LicenceKind)
     {
         ArgumentNullException.ThrowIfNull(payload);
         ArgumentNullException.ThrowIfNull(signature);
 
         var builder = new StringBuilder();
-        builder.AppendLine(Begin);
+        builder.AppendLine(Begin(kind));
         AppendWrapped(builder, Convert.ToBase64String(payload));
         builder.AppendLine(SignatureMarker);
         AppendWrapped(builder, Convert.ToBase64String(signature));
-        builder.AppendLine(End);
+        builder.AppendLine(End(kind));
         return builder.ToString();
     }
 
@@ -62,7 +71,7 @@ public static class LicenceFile
     /// rather than crashing, because this text arrives by email and gets
     /// mangled.
     /// </summary>
-    public static Parsed? Parse(string text)
+    public static Parsed? Parse(string text, string kind = LicenceKind)
     {
         if (string.IsNullOrWhiteSpace(text)) return null;
 
@@ -71,9 +80,9 @@ public static class LicenceFile
             .Where(l => l.Length > 0)
             .ToList();
 
-        var begin = lines.IndexOf(Begin);
+        var begin = lines.IndexOf(Begin(kind));
         var middle = lines.IndexOf(SignatureMarker);
-        var end = lines.IndexOf(End);
+        var end = lines.IndexOf(End(kind));
 
         if (begin < 0 || middle <= begin || end <= middle) return null;
 

@@ -55,8 +55,8 @@ public static class ImportEndpoints
         => RunCoreAsync(file, (s, c) => importer.CommitAsync(s, c), ct);
 
     private static Task<IResult> ValidateAsync(
-        IFormFile file, EquipmentImportService importer, CancellationToken ct)
-        => RunAsync(file, importer, commit: false, ct);
+        IFormFile file, EquipmentImportService importer, HospitalPm.Infrastructure.Licensing.LicenceService licences, CancellationToken ct)
+        => RunAsync(file, importer, licences, commit: false, ct);
 
     /// <summary>
     /// Validates and returns the caller's own workbook with the problems
@@ -68,9 +68,9 @@ public static class ImportEndpoints
     /// it.
     /// </summary>
     private static Task<IResult> EquipmentReportAsync(
-        IFormFile file, EquipmentImportService importer, HospitalPm.Infrastructure.Maintenance.HospitalClock clock,
-        CancellationToken ct)
-        => ReportCoreAsync(file, (s, c) => importer.ValidateAsync(s, c), "equipment", clock, ct);
+        IFormFile file, EquipmentImportService importer, HospitalPm.Infrastructure.Licensing.LicenceService licences,
+        HospitalPm.Infrastructure.Maintenance.HospitalClock clock, CancellationToken ct)
+        => ReportCoreAsync(file, (s, c) => importer.ValidateAsync(s, c, licences.EquipmentLimit()), "equipment", clock, ct);
 
     private static Task<IResult> LocationReportAsync(
         IFormFile file, LocationImportService importer, HospitalPm.Infrastructure.Maintenance.HospitalClock clock,
@@ -134,14 +134,16 @@ public static class ImportEndpoints
     }
 
     private static Task<IResult> CommitAsync(
-        IFormFile file, EquipmentImportService importer, CancellationToken ct)
-        => RunAsync(file, importer, commit: true, ct);
+        IFormFile file, EquipmentImportService importer, HospitalPm.Infrastructure.Licensing.LicenceService licences, CancellationToken ct)
+        => RunAsync(file, importer, licences, commit: true, ct);
 
     private static Task<IResult> RunAsync(
-        IFormFile file, EquipmentImportService importer, bool commit, CancellationToken ct)
+        IFormFile file, EquipmentImportService importer, HospitalPm.Infrastructure.Licensing.LicenceService licences, bool commit, CancellationToken ct)
         => RunCoreAsync(
             file,
-            (s, c) => commit ? importer.CommitAsync(s, c) : importer.ValidateAsync(s, c),
+            (s, c) => commit
+                ? importer.CommitAsync(s, c, licences.EquipmentLimit())
+                : importer.ValidateAsync(s, c, licences.EquipmentLimit()),
             ct);
 
     /// <summary>

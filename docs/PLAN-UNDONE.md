@@ -3,15 +3,29 @@
 Written 5 October 2026, after the encrypted-backup slice. It replaces the open parts of
 `PLAN-2026-10-05.md`. One slice at a time: migration → API → UI → tests → commit.
 
-## Done today (so it is not repeated)
+## Status, end of 5 October 2026
 
-Encrypted backups: AES-256-GCM, machine key plus a written-down recovery key, restore, key rotation,
-`hospitalpm backup-decrypt`, the Backups page card. Full suite 1119 of 1119. **Not committed.**
+| Item | State |
+|---|---|
+| 0. Commit the encryption slice | **Done and pushed** (37ceba0) |
+| 1. Download, restore from a file, photos survive a restore | **Done**, committed locally (3e45852), not pushed |
+| 1b. Backups are the Developer's alone | **Done**, committed locally (094de16), not pushed |
+| 2. Google Drive with rclone | **Not started.** Needs the Google account and its service-account key from you |
+| 3. Licence: equipment cap | **Done** (add and import). Not yet committed |
+| 3. Licence: modules | **Not done.** Needs you to say which sections are modules |
+| 3. Licence: public key in the Docker builds | **Done in the files** (build fails without it). Images not rebuilt or pushed |
+| 3b. Developer licence section, lock and unlock | **Done.** Not yet committed |
+| 4. Encrypt photos and PM files at rest | **Not started** |
+| 4. Data-drive encryption check | **Not started** |
+| 4. PDFs | **Waiting** on your answer: a password, or nothing |
+| 5. DevOps (pipeline, K8s, scan) | **Not started** |
+| 6. Dev backend container | **Not touched.** Needs your yes to log in to its database |
 
-## 0. Commit what is finished (5 minutes)
+The sections below are the original plan, kept for the reasoning.
 
-Commit the backup-encryption slice and the loose files: `Dockerfile.backend`, `Dockerfile.postgres`,
-`.dockerignore`, `docs/BACKUP-ENCRYPTION.md`, the two plan docs. Never `.claude/`. Needs your yes.
+## 0. Commit what is finished (done)
+
+Committed and pushed as 37ceba0.
 
 ## 1. Backup that brings everything back (next)
 
@@ -112,9 +126,10 @@ product, for the Developer role, and adds a lock.
   licence id. Nothing else is reachable from that screen. It shows the hospital name and licence id so they
   can quote it when they ring.
 - **A code cannot be replayed or undone.** Each code carries a number that only goes up per licence, so an
-  old *unlock* cannot undo a newer *lock*, and the other way round. The highest number seen is stored in the
-  database **and** in the licence state file and the larger wins. Restoring an old backup therefore cannot
-  unlock a locked install.
+  old *unlock* cannot undo a newer *lock*, and the other way round. Built differently from this plan: the
+  highest number seen is stored in **two files** (beside the licence, and in the data folder's `keys` folder),
+  not the database. Either file restores the other. Restoring an old backup therefore cannot unlock a locked
+  install, because neither file is in the database.
 - **Limits, said plainly.** A licence file is not tied to a machine, so a hospital with no licence file
   ("unlicensed", a pilot) has no id to lock. Someone with administrator rights on the machine can still
   delete the state file and the database rows. This stops casual cases, not a determined one. It does not

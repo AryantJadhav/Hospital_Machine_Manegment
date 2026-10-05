@@ -8,6 +8,7 @@ using HospitalPm.Domain.WorkOrders;
 using HospitalPm.Domain.Operations;
 using HospitalPm.Domain.GatePasses;
 using HospitalPm.Domain.Incidents;
+using HospitalPm.Domain.Licensing;
 using HospitalPm.Domain.Training;
 using HospitalPm.Domain.Locations;
 using HospitalPm.Infrastructure.Identity;
@@ -114,6 +115,8 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     public DbSet<BackupRun> BackupRuns => Set<BackupRun>();
+
+    public DbSet<IssuedLicence> IssuedLicences => Set<IssuedLicence>();
 
     public DbSet<UserLocation> UserLocations => Set<UserLocation>();
 
@@ -844,6 +847,32 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
             // asked on every page load.
             e.HasIndex(x => x.StartedAtUtc).HasDatabaseName("ix_backup_run_recent")
                 .IsDescending();
+        });
+
+        builder.Entity<IssuedLicence>(e =>
+        {
+            e.ToTable("issued_licence");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.LicenceId).HasColumnName("licence_id");
+            e.Property(x => x.HospitalName).HasColumnName("hospital_name").HasMaxLength(200).IsRequired();
+            e.Property(x => x.IssuedOn).HasColumnName("issued_on");
+            e.Property(x => x.ExpiresOn).HasColumnName("expires_on");
+            e.Property(x => x.DurationDays).HasColumnName("duration_days");
+            e.Property(x => x.MaxEquipment).HasColumnName("max_equipment");
+            e.Property(x => x.Modules).HasColumnName("modules").HasMaxLength(500).IsRequired().HasDefaultValue(string.Empty);
+            e.Property(x => x.Notes).HasColumnName("notes").HasMaxLength(500);
+            e.Property(x => x.LicenceText).HasColumnName("licence_text").IsRequired();
+            e.Property(x => x.IssuedByUserId).HasColumnName("issued_by_user_id");
+            e.Property(x => x.IssuedAtUtc).HasColumnName("issued_at_utc").HasDefaultValueSql("now()");
+            e.Property(x => x.LockSequence).HasColumnName("lock_sequence").HasDefaultValue(0L);
+            e.Property(x => x.IsLocked).HasColumnName("is_locked").HasDefaultValue(false);
+            e.Property(x => x.LockChangedAtUtc).HasColumnName("lock_changed_at_utc");
+
+            // One row per signed licence: the id is what a hospital quotes and what a lock code names.
+            e.HasIndex(x => x.LicenceId).IsUnique().HasDatabaseName("ux_issued_licence_licence_id");
+            e.HasIndex(x => x.IssuedAtUtc).HasDatabaseName("ix_issued_licence_recent").IsDescending();
         });
 
         builder.Entity<Location>(e =>

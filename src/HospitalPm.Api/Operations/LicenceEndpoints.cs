@@ -7,6 +7,8 @@ namespace HospitalPm.Api.Operations;
 
 public sealed record InstallLicenceRequest(string Licence);
 
+public sealed record EnterCodeRequest(string? Code);
+
 /// <summary>
 /// Licence status, and installing one.
 ///
@@ -32,6 +34,52 @@ public static class LicenceEndpoints
         app.MapGet("/api/licence/banner", Banner)
             .WithTags("Licence")
             .RequireAuthorization();
+
+        // The lock screen has nobody signed in, so these two are open. Neither gives anything away: the first says
+        // whether this installation is locked and who it is for, and the second does nothing unless the code was
+        // signed by us for this licence and is newer than the last.
+        app.MapGet("/api/licence/lock", LockStatus)
+            .WithTags("Licence")
+            .AllowAnonymous();
+        app.MapPost("/api/licence/code", EnterCode)
+            .WithTags("Licence")
+            .AllowAnonymous();
+    }
+
+    /// <summary>The longest code accepted. A real one is about a kilobyte; this stops anyone sending a megabyte for nothing.</summary>
+    private const int LongestCode = 8 * 1024;
+
+    private static IResult LockStatus(LicenceService licences)
+    {
+        var state = licences.CurrentLock();
+        return Results.Ok(new
+        {
+            locked = state is not null,
+            hospitalName = state?.HospitalName,
+            licenceId = state?.LicenceId,
+            message = state is null
+                ? null
+                : $"This installation of Hospital PM{(string.IsNullOrWhiteSpace(state.HospitalName) ? string.Empty : " for " + state.HospitalName)} "
+                  + "has been locked by your supplier. Contact them, quoting the licence id below, and they will give you an unlock code.",
+        });
+    }
+
+    private static IResult EnterCode(EnterCodeRequest request, LicenceService licences)
+    {
+        if (string.IsNullOrWhiteSpace(request.Code))
+        {
+            return Results.BadRequest(new { error = "Paste the code, from the first line to the last." });
+        }
+
+        if (request.Code.Length > LongestCode)
+        {
+            return Results.BadRequest(new { error = "That is too long to be a code. Paste only the code." });
+        }
+
+        var result = licences.ApplyCode(request.Code);
+        return result.Applied
+            ? Results.Ok(new { applied = true, locked = result.Command?.Action == HospitalPm.Domain.Licensing.LicenceAction.Lock, message = result.Message })
+            : Results.BadRequest(new { error = result.Message });
     }
 
     /// <summary>

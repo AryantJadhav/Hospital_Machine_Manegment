@@ -43,6 +43,11 @@ export function LicencePage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  // A lock or unlock code from the supplier.
+  const [code, setCode] = useState('');
+  const [codeBusy, setCodeBusy] = useState(false);
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const [codeDone, setCodeDone] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -71,6 +76,26 @@ export function LicencePage() {
       setError(e instanceof Error ? e.message : 'The licence could not be installed.');
     } finally {
       setSaving(false);
+    }
+  }
+
+  /** A code the supplier sent. A lock takes effect at once, and the lock screen takes over. */
+  async function enterCode() {
+    setCodeBusy(true);
+    setCodeError(null);
+    setCodeDone(null);
+    try {
+      const res = await api.post<{ locked: boolean; message: string }>('/api/licence/code', { code });
+      setCode('');
+      if (res.locked) {
+        window.location.assign('/');
+        return;
+      }
+      setCodeDone(res.message);
+    } catch (e) {
+      setCodeError(e instanceof Error ? e.message : 'The code could not be entered.');
+    } finally {
+      setCodeBusy(false);
     }
   }
 
@@ -105,7 +130,7 @@ export function LicencePage() {
         <p className="muted" style={{ marginTop: '-0.4rem' }}>
           {data.state === READ_ONLY
             ? 'Every record can still be opened and printed. Nothing new can be recorded until a renewal key is installed below.'
-            : 'Everything keeps working. Hospital PM does not lock you out of your own maintenance records over a licence.'}
+            : 'Everything keeps working. A licence that runs out never locks you out of your own maintenance records.'}
         </p>
       )}
 
@@ -184,6 +209,40 @@ export function LicencePage() {
             onClick={() => void install()}
           >
             {saving ? 'Checking…' : 'Install licence'}
+          </button>
+        </div>
+      </div>
+
+      <div className="card stack">
+        <h2 className="section-h" style={{ marginBottom: 0 }}>A code from your supplier</h2>
+        <p className="muted" style={{ margin: 0 }}>
+          Your supplier may send a short code, to lock this installation or to unlock it. Paste it here, from the
+          first line to the last. It is checked on this machine, and does nothing unless it was made for this
+          licence. If this installation is ever locked, the same box is on the screen that opens instead of the
+          sign-in.
+        </p>
+
+        {codeError && <p className="alert alert-error" role="alert">{codeError}</p>}
+        {codeDone && <p className="alert alert-ok" role="status">{codeDone}</p>}
+
+        <textarea
+          className="licence-box mono"
+          rows={6}
+          spellCheck={false}
+          autoComplete="off"
+          placeholder={'-----BEGIN HOSPITALPM CODE-----'}
+          aria-label="Code from your supplier"
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+        />
+
+        <div className="row">
+          <button
+            className="btn btn-primary"
+            disabled={codeBusy || code.trim().length === 0}
+            onClick={() => void enterCode()}
+          >
+            {codeBusy ? 'Checking…' : 'Enter the code'}
           </button>
         </div>
       </div>

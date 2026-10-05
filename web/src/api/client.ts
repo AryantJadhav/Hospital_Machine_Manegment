@@ -105,6 +105,9 @@ async function refresh(): Promise<boolean> {
   return refreshInFlight;
 }
 
+/** Sent on the window when any request is answered "locked", so the lock screen can replace the page. */
+export const LOCKED_EVENT = 'hospitalpm:locked';
+
 async function request<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
   const headers = new Headers(init.headers);
   if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
@@ -116,6 +119,11 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
 
   if (res.status === 401 && retry && (await refresh())) {
     return request<T>(path, init, false);
+  }
+
+  // The installation has been locked by its supplier. Whatever the page was doing, the lock screen takes over.
+  if (res.status === 423) {
+    window.dispatchEvent(new Event(LOCKED_EVENT));
   }
 
   if (!res.ok) {
