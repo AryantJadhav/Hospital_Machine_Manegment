@@ -71,7 +71,7 @@ public sealed class BackupPhotoLinkTests(PostgresFixture fixture) : IDisposable
     [Fact]
     public async Task A_restored_backup_returns_every_photo_and_PM_report_still_attached_to_the_same_record()
     {
-        var options = new BackupOptions { Directory = NewDirectory() };
+        var options = new BackupOptions { Directory = NewDirectory(), Encrypt = true };
         var locator = new PgToolLocator(Options.Create(options));
         var tool = locator.FindPgDump(new Version(18, 0));
         if (!tool.IsUsable)

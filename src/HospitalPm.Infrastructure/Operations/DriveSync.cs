@@ -105,8 +105,8 @@ public sealed record DriveSyncResult(bool Ran, int Sent, string? Error, string? 
 ///
 /// Four rules hold the design:
 ///
-///  - Only encrypted files are ever sent. A plain dump is the whole database in the clear and is refused here
-///    whatever calls this.
+///  - Only real backups are ever sent: an encrypted file, or (while encryption is off) a PostgreSQL dump. Something
+///    that is neither is refused here, whatever it is called and whatever calls this.
 ///  - It never fails a backup, and never throws. No internet means the files wait for the next night.
 ///  - It is off unless switched on, and does nothing without a current licence (the folder is named by it).
 ///  - It does not try to be clever: no sync, no conflict handling. It sends the files that have not gone yet, newest
@@ -292,9 +292,26 @@ public sealed class DriveSync(
     private static bool IsToken(string secret) =>
         secret.Contains("\"access_token\"", StringComparison.Ordinal) || secret.Contains("\"refresh_token\"", StringComparison.Ordinal);
 
+    /// <summary>A backup this program wrote: a dump, plain or encrypted. Nothing else on the drive is ever touched.</summary>
     private static bool IsOurs(string name) =>
         name.StartsWith("hospitalpm-", StringComparison.Ordinal)
-        && name.EndsWith(".dump" + BackupVault.EncryptedExtension, StringComparison.Ordinal);
+        && (name.EndsWith(".dump", StringComparison.Ordinal)
+            || name.EndsWith(".dump" + BackupVault.EncryptedExtension, StringComparison.Ordinal));
+
+    /// <summary>A real PostgreSQL archive: what a plain backup starts with.</summary>
+    private static bool LooksLikeDump(string path)
+    {
+        try
+        {
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            Span<byte> head = stackalloc byte[5];
+            return stream.ReadAtLeast(head, 5, throwOnEndOfStream: false) == 5 && head.SequenceEqual("PGDMP"u8);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
 
     private IEnumerable<string> EncryptedBackups()
     {
@@ -305,7 +322,8 @@ public sealed class DriveSync(
         }
 
         // Newest first. The names sort by time, and the hospital's clock is never behind UTC.
-        return Directory.EnumerateFiles(directory, "hospitalpm-*.dump" + BackupVault.EncryptedExtension)
+        return Directory.EnumerateFiles(directory, "hospitalpm-*.dump")
+            .Concat(Directory.EnumerateFiles(directory, "hospitalpm-*.dump" + BackupVault.EncryptedExtension))
             .Where(path => IsOurs(Path.GetFileName(path)))
             .OrderByDescending(path => Path.GetFileName(path), StringComparer.Ordinal)
             .Take(Math.Max(1, Drive.KeepCount));
@@ -405,10 +423,12 @@ public sealed class DriveSync(
             {
                 var name = Path.GetFileName(path);
 
-                // Refused whatever called this: a file that is not encrypted never leaves.
-                if (!BackupVault.LooksEncrypted(path))
+                // What may leave: an encrypted backup, always; a plain dump only while encryption is off, and only if it
+                // really is a dump. With encryption switched on a plain file is a leftover and stays where it is.
+                var sendable = BackupVault.LooksEncrypted(path) || (!_options.Encrypt && LooksLikeDump(path));
+                if (!sendable)
                 {
-                    logger.LogWarning("Not sending {File} to the drive: it is not encrypted", name);
+                    logger.LogWarning("Not sending {File} to the drive: it is not a backup this setting allows", name);
                     continue;
                 }
 

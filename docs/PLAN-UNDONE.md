@@ -19,7 +19,7 @@ Written 5 October 2026, after the encrypted-backup slice. It replaces the open p
 | 4. Data-drive encryption check | **Done** (Diagnostics page) |
 | 4. PDFs | **Waiting on you**: a password, or nothing |
 | Nightly backup at 3:00 AM | **Done** (`Backup:DailyAt`) |
-| No plain backups, ever | **Done** (the switch is gone) |
+| Backup encryption | **Dropped by you, 5 October.** Off by default; the code stays so existing encrypted backups still open |
 | Backups page | One button. The recovery-key box is **gone**: decide whether it comes back |
 | 5. DevOps (pipeline, K8s, scan, image rebuild and push, rclone in the image and installer) | **Deferred to the end**, by you |
 | 6. Dev backend container | Gone (old containers deleted) |

@@ -107,7 +107,7 @@ public sealed class DriveSyncTests : IDisposable
         return service;
     }
 
-    private DriveSync Sync(LicenceService licences, FakeRclone runner, Action<DriveOptions>? tune = null)
+    private DriveSync Sync(LicenceService licences, FakeRclone runner, Action<DriveOptions>? tune = null, bool encrypt = false)
     {
         // Any file stands in for rclone: the fake never runs it.
         var fakeExe = Path.Combine(_folder, OperatingSystem.IsWindows() ? "rclone.exe" : "rclone");
@@ -117,7 +117,7 @@ public sealed class DriveSyncTests : IDisposable
         var drive = new DriveOptions { Enabled = true, RclonePath = fakeExe, ServiceAccountJson = Key, RootFolderId = "ROOTID", KeepCount = 14 };
         tune?.Invoke(drive);
         return new DriveSync(
-            Options.Create(new BackupOptions { Directory = Backups, Drive = drive }),
+            Options.Create(new BackupOptions { Directory = Backups, Encrypt = encrypt, Drive = drive }),
             licences, runner, TimeProvider.System, NullLogger<DriveSync>.Instance);
     }
 
@@ -349,7 +349,7 @@ public sealed class DriveSyncTests : IDisposable
     }
 
     [Fact]
-    public async Task A_file_that_is_not_encrypted_is_never_sent_whatever_it_is_called()
+    public async Task With_encryption_on_a_file_that_is_not_encrypted_is_never_sent_whatever_it_is_called()
     {
         var licences = Licensed(out _);
         await BackupAsync("20261001-020000", encrypted: false);
@@ -359,10 +359,28 @@ public sealed class DriveSyncTests : IDisposable
         await File.WriteAllBytesAsync(impostor, "PGDMP the whole database, in the clear"u8.ToArray());
         var rclone = new FakeRclone();
 
-        var result = await Sync(licences, rclone).SyncAsync();
+        var result = await Sync(licences, rclone, encrypt: true).SyncAsync();
 
         Assert.Equal(0, result.Sent);
         Assert.DoesNotContain(rclone.Calls, c => c.Args[0] == "copyto");
+    }
+
+    [Fact]
+    public async Task With_encryption_off_a_plain_dump_is_sent_but_a_file_that_is_not_a_dump_still_is_not()
+    {
+        var licences = Licensed(out _);
+        var plain = await BackupAsync("20261001-020000", encrypted: false);
+
+        // Named like a backup of ours, but not a PostgreSQL archive: never sent.
+        await File.WriteAllBytesAsync(Path.Combine(Backups, "hospitalpm-20261002-020000-IST.dump"), "just some text"u8.ToArray());
+        var rclone = new FakeRclone();
+
+        var result = await Sync(licences, rclone).SyncAsync();
+
+        Assert.Equal(1, result.Sent);
+        var copies = rclone.Calls.Where(c => c.Args[0] == "copyto").ToList();
+        Assert.Single(copies);
+        Assert.EndsWith(plain, copies[0].Args[2], StringComparison.Ordinal);
     }
 
     [Fact]
@@ -443,7 +461,7 @@ public sealed class DriveSyncTests : IDisposable
         }
 
         rclone.Remote.Add($"{folder}/notes.txt");
-        rclone.Remote.Add($"{folder}/hospitalpm-20260901-020000-IST.dump");
+        rclone.Remote.Add($"{folder}/hospitalpm-20260901-020000-IST.txt");
 
         await BackupAsync("20261001-020000");
         await Sync(licences, rclone, d => d.KeepCount = 3).SyncAsync();
@@ -451,7 +469,7 @@ public sealed class DriveSyncTests : IDisposable
         var kept = rclone.Remote.Select(r => r[(folder.Length + 1)..]).Order(StringComparer.Ordinal).ToList();
         Assert.Equal(
         [
-            "hospitalpm-20260901-020000-IST.dump", // not an encrypted backup of ours: left alone
+            "hospitalpm-20260901-020000-IST.txt", // not a backup of ours: left alone
             "hospitalpm-20260904-020000-IST.dump.enc",
             "hospitalpm-20260905-020000-IST.dump.enc",
             "hospitalpm-20261001-020000-IST.dump.enc",
@@ -759,8 +777,10 @@ public sealed class ManualBackupDriveTests(PostgresFixture fixture) : IDisposabl
         return client;
     }
 
-    [Fact]
-    public async Task Back_up_now_also_sends_the_backup_to_the_drive_and_says_so()
+    [Theory]
+    [InlineData(false)] // the shipped default: plain backups
+    [InlineData(true)]
+    public async Task Back_up_now_also_sends_the_backup_to_the_drive_and_says_so(bool encrypt)
     {
         var rclone = RealRclone();
         if (rclone is null) return;
@@ -769,6 +789,7 @@ public sealed class ManualBackupDriveTests(PostgresFixture fixture) : IDisposabl
         using var client = await DeveloperAsync(new Dictionary<string, string?>
         {
             ["Backup:Directory"] = Path.Combine(_folder, "backups"),
+            ["Backup:Encrypt"] = encrypt ? "true" : "false",
             ["Backup:Drive:Enabled"] = "true",
             ["Backup:Drive:RclonePath"] = rclone,
             ["Backup:Drive:Folder"] = remote,
@@ -790,12 +811,13 @@ public sealed class ManualBackupDriveTests(PostgresFixture fixture) : IDisposabl
         Assert.Equal(JsonValueKind.Null, drive.GetProperty("error").ValueKind);
         Assert.True(drive.GetProperty("sent").GetInt32() >= 1);
 
-        // The file really is on the "drive", byte for byte, and encrypted.
+        // The file really is on the "drive", byte for byte: encrypted when encryption is on, a plain dump when it is off.
         var name = body.GetProperty("fileName").GetString()!;
         var there = Path.Combine(remote, name);
         Assert.True(File.Exists(there), $"{name} did not reach the drive");
         Assert.Equal(await File.ReadAllBytesAsync(Path.Combine(_folder, "backups", name)), await File.ReadAllBytesAsync(there));
-        Assert.True(BackupVault.LooksEncrypted(there));
+        Assert.Equal(encrypt, BackupVault.LooksEncrypted(there));
+        Assert.EndsWith(encrypt ? ".dump.enc" : ".dump", name, StringComparison.Ordinal);
     }
 
     [Fact]

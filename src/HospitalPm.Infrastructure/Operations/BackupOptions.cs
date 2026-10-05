@@ -38,9 +38,16 @@ public sealed class BackupOptions
     /// </summary>
     public int TimeoutMinutes { get; set; } = 30;
 
-    // There is no setting to turn backup encryption off. A backup is the whole hospital's records in one file, and the
-    // file is the part that leaves the machine (a USB drive, a shared folder, a cloud account), so every backup is
-    // encrypted, always. A "Backup:Encrypt" value in an old settings file is ignored, and the program says so on start.
+    /// <summary>
+    /// Whether new backups are encrypted. OFF by default (the owner's decision, 5 October 2026): backups are plain
+    /// PostgreSQL dumps, so they can be opened and restored with ordinary tools and need no key. Switch it on and every
+    /// backup is encrypted again (see BackupVault). Whatever this says, an encrypted backup already on the disk can still
+    /// be read and restored: the code that opens them stays in the program.
+    ///
+    /// Said plainly: a plain backup holds the whole hospital's records and is as readable as the place it is kept. That
+    /// includes a Google Drive it is sent to.
+    /// </summary>
+    public bool Encrypt { get; set; }
 
     /// <summary>
     /// Where the backup keys are kept. Left empty it is the "keys" folder of the data directory, beside the

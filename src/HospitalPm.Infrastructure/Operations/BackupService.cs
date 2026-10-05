@@ -126,8 +126,7 @@ public sealed partial class BackupService(
         // clock is ahead of UTC, never behind it.
         var stamp = (run.StartedAtUtc + hospital.Offset).ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
         var plainName = $"hospitalpm-{stamp}-{Reports.ReportTime.Zone(hospital.Offset)}.dump";
-        // Always encrypted: there is no setting that writes a plain backup.
-        var fileName = plainName + BackupVault.EncryptedExtension;
+        var fileName = _options.Encrypt ? plainName + BackupVault.EncryptedExtension : plainName;
         var fullPath = Path.Combine(directory, fileName);
 
         // Custom format: compressed, and pg_restore can pull single tables out
@@ -143,14 +142,21 @@ public sealed partial class BackupService(
             $"--dbname={builder.Database}",
         };
 
-        // pg_dump writes to its standard output and the bytes go straight through the encryption into the file. The
-        // plain backup is never on the disk, not even for a moment.
-        vault.EnsureKeys();
-        var written = await DumpEncryptedAsync(pgDump.Path!, arguments, builder.Password, fullPath, ct);
-        if (written == 0)
+        if (_options.Encrypt)
         {
-            throw new InvalidOperationException(
-                "pg_dump reported success but wrote no data. Check free disk space on the backup drive.");
+            // pg_dump writes to its standard output and the bytes go straight through the encryption into the
+            // file. The plain backup is never on the disk, not even for a moment.
+            vault.EnsureKeys();
+            var written = await DumpEncryptedAsync(pgDump.Path!, arguments, builder.Password, fullPath, ct);
+            if (written == 0)
+            {
+                throw new InvalidOperationException(
+                    "pg_dump reported success but wrote no data. Check free disk space on the backup drive.");
+            }
+        }
+        else
+        {
+            await RunToolAsync(pgDump.Path!, [.. arguments, $"--file={fullPath}"], builder.Password, "pg_dump", ct);
         }
 
         var info = new FileInfo(fullPath);
@@ -165,7 +171,14 @@ public sealed partial class BackupService(
 
         if (_options.VerifyAfterWrite)
         {
-            await VerifyEncryptedAsync(fullPath, serverVersion, ct);
+            if (_options.Encrypt)
+            {
+                await VerifyEncryptedAsync(fullPath, serverVersion, ct);
+            }
+            else
+            {
+                await VerifyAsync(fullPath, serverVersion, ct);
+            }
         }
 
         Prune(directory);
@@ -179,6 +192,26 @@ public sealed partial class BackupService(
         {
             Log.LeftoversFailed(logger, e);
         }
+    }
+
+    /// <summary>
+    /// Reads the finished archive back. A backup nobody can open is not a
+    /// backup, and this is the cheapest moment to find that out.
+    /// </summary>
+    private async Task VerifyAsync(string fullPath, Version? serverVersion, CancellationToken ct)
+    {
+        var pgRestore = locator.FindPgRestore(serverVersion);
+
+        if (!pgRestore.IsUsable)
+        {
+            // The dump itself is written and its size is known. Refusing to
+            // record it because the checker is missing would throw away a good
+            // backup, so this degrades to a warning rather than a failure.
+            Log.NotVerified(logger, pgRestore.Problem);
+            return;
+        }
+
+        await RunToolAsync(pgRestore.Path!, ["--list", fullPath], password: null, "pg_restore", ct);
     }
 
     /// <summary>
@@ -369,6 +402,11 @@ public sealed partial class BackupService(
     /// </summary>
     public async Task<int> EncryptLeftoversAsync(CancellationToken ct = default)
     {
+        if (!_options.Encrypt)
+        {
+            return 0;
+        }
+
         var directory = ResolveDirectory();
         if (!Directory.Exists(directory))
         {
@@ -499,6 +537,73 @@ public sealed partial class BackupService(
         }
     }
 
+    private async Task RunToolAsync(
+        string exePath, string[] arguments, string? password, string toolName, CancellationToken ct)
+    {
+        var startInfo = new ProcessStartInfo(exePath)
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+
+        foreach (var argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        // Through the environment, never the command line. Arguments are
+        // visible to every user on the machine in the process list; a hospital
+        // PC is a shared machine.
+        if (!string.IsNullOrEmpty(password))
+        {
+            startInfo.Environment["PGPASSWORD"] = password;
+        }
+
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException($"{toolName} could not be started.");
+
+        var stderr = new StringBuilder();
+        process.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data is not null) stderr.AppendLine(e.Data);
+        };
+        process.BeginErrorReadLine();
+
+        // Read stdout too, so a chatty tool cannot fill the pipe buffer and
+        // deadlock waiting for someone to drain it.
+        _ = process.StandardOutput.ReadToEndAsync(ct);
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromMinutes(_options.TimeoutMinutes));
+
+        try
+        {
+            await process.WaitForExitAsync(timeout.Token);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            TryKill(process);
+            throw new InvalidOperationException(
+                $"{toolName} did not finish within {_options.TimeoutMinutes} minutes and was stopped.");
+        }
+        catch (OperationCanceledException)
+        {
+            TryKill(process);
+            throw;
+        }
+
+        if (process.ExitCode != 0)
+        {
+            var detail = stderr.ToString().Trim();
+            throw new InvalidOperationException(
+                detail.Length > 0
+                    ? $"{toolName} failed: {Shorten(detail)}"
+                    : $"{toolName} failed with exit code {process.ExitCode}.");
+        }
+    }
+
     private static void TryKill(Process process)
     {
         try
@@ -576,11 +681,13 @@ public sealed partial class BackupService(
                 await content.CopyToAsync(output, ct);
             }
 
-            if (!BackupVault.LooksEncrypted(temporary))
+            // Either kind of backup this program writes: an encrypted one, or a plain PostgreSQL dump.
+            var encrypted = BackupVault.LooksEncrypted(temporary);
+            if (!encrypted && !StartsWithDump(temporary))
             {
                 throw new BackupUploadException(
-                    "That is not an encrypted Hospital PM backup. Choose a file whose name ends in .dump.enc, "
-                    + "as downloaded from the Backups page.");
+                    "That is not a Hospital PM backup. Choose a file whose name ends in .dump or .dump.enc, "
+                    + "as saved from the Backups page.");
             }
 
             var connectionString = configuration.GetConnectionString("HospitalPm");
@@ -590,14 +697,21 @@ public sealed partial class BackupService(
 
             try
             {
-                await VerifyEncryptedAsync(temporary, serverVersion, ct, recoveryKey);
+                if (encrypted)
+                {
+                    await VerifyEncryptedAsync(temporary, serverVersion, ct, recoveryKey);
+                }
+                else
+                {
+                    await VerifyAsync(temporary, serverVersion, ct);
+                }
             }
             catch (InvalidOperationException e)
             {
                 throw new BackupUploadException("The file opened, but the archive inside it is damaged: " + Shorten(e.Message));
             }
 
-            var finalName = UploadedName(directory, originalName);
+            var finalName = UploadedName(directory, originalName, encrypted);
             File.Move(temporary, Path.Combine(directory, finalName));
 
             var run = new BackupRun
@@ -633,7 +747,7 @@ public sealed partial class BackupService(
     /// otherwise a fresh one in the same form. Never a name taken from the request as it came: it is only
     /// ever used when it matches the pattern of the files this program writes.
     /// </summary>
-    private string UploadedName(string directory, string? originalName)
+    private string UploadedName(string directory, string? originalName, bool encrypted)
     {
         var name = Path.GetFileName(originalName ?? string.Empty);
         if (UploadedFileName().IsMatch(name) && !File.Exists(Path.Combine(directory, name)))
@@ -644,7 +758,7 @@ public sealed partial class BackupService(
         var stamp = clock.GetUtcNow().UtcDateTime.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
         for (var attempt = 0; ; attempt++)
         {
-            name = $"hospitalpm-{stamp}-uploaded{(attempt == 0 ? string.Empty : "-" + attempt.ToString(CultureInfo.InvariantCulture))}.dump{BackupVault.EncryptedExtension}";
+            name = $"hospitalpm-{stamp}-uploaded{(attempt == 0 ? string.Empty : "-" + attempt.ToString(CultureInfo.InvariantCulture))}.dump{(encrypted ? BackupVault.EncryptedExtension : string.Empty)}";
             if (!File.Exists(Path.Combine(directory, name)))
             {
                 return name;
@@ -652,7 +766,15 @@ public sealed partial class BackupService(
         }
     }
 
-    [System.Text.RegularExpressions.GeneratedRegex(@"^hospitalpm-[0-9]{8}-[0-9]{6}-[A-Za-z0-9+-]{1,10}\.dump\.enc$", System.Text.RegularExpressions.RegexOptions.CultureInvariant)]
+    /// <summary>A plain backup starts with the PostgreSQL archive marker.</summary>
+    private static bool StartsWithDump(string path)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        Span<byte> head = stackalloc byte[5];
+        return stream.ReadAtLeast(head, 5, throwOnEndOfStream: false) == 5 && head.SequenceEqual("PGDMP"u8);
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^hospitalpm-[0-9]{8}-[0-9]{6}-[A-Za-z0-9+-]{1,10}\.dump(\.enc)?$", System.Text.RegularExpressions.RegexOptions.CultureInvariant)]
     private static partial System.Text.RegularExpressions.Regex UploadedFileName();
 
     public string ResolveDirectory() =>

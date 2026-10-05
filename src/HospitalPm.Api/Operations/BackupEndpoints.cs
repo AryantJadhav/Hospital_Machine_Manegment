@@ -117,6 +117,7 @@ public static class BackupEndpoints
         int id,
         HospitalPmDbContext db,
         BackupService service,
+        IOptions<BackupOptions> options,
         DownloadTickets tickets,
         System.Security.Claims.ClaimsPrincipal principal,
         ILoggerFactory loggers,
@@ -142,12 +143,14 @@ public static class BackupEndpoints
             });
         }
 
-        if (!BackupVault.LooksEncrypted(path))
+        // With encryption switched on, a plain file in the folder is a leftover and is not handed out. With it off,
+        // plain backups are the backups, and they download like any other.
+        if (options.Value.Encrypt && !BackupVault.LooksEncrypted(path))
         {
             return Results.Conflict(new
             {
-                error = "That backup is not encrypted, so it cannot be downloaded. "
-                        + "Run a new backup with encryption on, and download that one.",
+                error = "That backup is not encrypted, so it cannot be downloaded while encryption is on. "
+                        + "Run a new backup, and download that one.",
             });
         }
 
@@ -225,8 +228,7 @@ public static class BackupEndpoints
         var keys = vault.Status();
         return new
         {
-            // Always: there is no setting that turns backup encryption off.
-            enabled = true,
+            enabled = options.Encrypt,
             keyPresent = keys.MasterKeyPresent,
             recoveryKeyCreatedAtUtc = keys.RecoveryKeyCreatedAtUtc,
             recoveryKeySaved = keys.RecoveryKeySaved,

@@ -1,5 +1,11 @@
 # Encrypted backups
 
+> **Decision of 5 October 2026: backup encryption is OFF by default.** Backups are plain PostgreSQL dumps, so they can be
+> opened and restored with ordinary tools and need no key. Set `Backup:Encrypt=true` to turn encryption on again; everything
+> below describes how it works when it is on. An encrypted backup that already exists is always still readable and
+> restorable, whatever the setting says. A plain backup is as readable as the place it is kept, including a Google Drive.
+
+
 Every backup is encrypted. A backup is the whole hospital's equipment records in one file, and the file
 is the part that leaves the machine: a USB drive, a shared folder, a cloud account. Encrypted, a copy is
 useless to whoever picks it up.
@@ -111,13 +117,11 @@ folder of its own for the script, and the service empties that folder as it star
 
 ## Settings
 
-There is no setting to turn encryption off: every backup is encrypted, always. A `Backup:Encrypt=false` left in an old
-settings file is ignored, and the program says so in its log when it starts.
-
-All optional. In `appsettings.json` or the environment.
+All optional. In `appsettings.json` or the environment (`Backup__Encrypt=false`).
 
 | Setting | Default | |
 |---|---|---|
+| `Backup:Encrypt` | `true` | `false` writes plain dumps as before. Only for a hospital that encrypts the backup drive itself |
 | `Backup:KeyDirectory` | `<data>/keys` | Where the machine key is kept. Best on a different drive from the backups |
 
 ## The file

@@ -51,6 +51,10 @@ public sealed class ApiFactory(string connectionString, IReadOnlyDictionary<stri
                 ["Features:Updates"] = "true",
 
                 ["Backup:KeyDirectory"] = _keyDirectory,
+
+                // The shipped default is plain backups. Most of these tests are about encrypted ones, so they run with it
+                // on; the tests of the plain default say so through extraSettings.
+                ["Backup:Encrypt"] = "true",
             });
 
             if (extraSettings is not null)

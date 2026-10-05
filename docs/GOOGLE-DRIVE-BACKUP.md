@@ -3,9 +3,10 @@
 Each night, after the backup is written, the encrypted file is copied to Google Drive with **rclone**. It is off unless
 switched on, it never fails a backup, and a hospital with no internet is not affected.
 
-Only the **encrypted** files are ever sent (a plain dump is refused by the code, whatever it is called). What is on the
-drive is useless without the keys: the machine key never leaves the machine, and the recovery key is written down
-elsewhere.
+With encryption on (`Backup:Encrypt=true`) only encrypted files are ever sent, and what is on the drive is useless without
+the keys. With it off, which is the default, the plain dumps are sent as they are, so **what is on the Drive is readable by
+anyone who can open that Drive**. Only files that really are backups (a PostgreSQL archive, or an encrypted file) are ever
+sent, whatever they are called.
 
 Only the Developer can use the Backups page. There is no Drive card on it: **Back up now** takes the backup and sends it.
 
