@@ -54,19 +54,26 @@ public sealed class DriveSyncTests : IDisposable
 
         public Exception? Throws { get; set; }
 
+        /// <summary>The file names given to each copy, in the order they were given (read from the list file at the time).</summary>
+        public List<string[]> Lists { get; } = [];
+
         public Task<RcloneResult> RunAsync(string exe, IReadOnlyList<string> arguments, IReadOnlyDictionary<string, string> environment, TimeSpan timeout, CancellationToken ct)
         {
             Calls.Add((exe, [.. arguments], new Dictionary<string, string>(environment)));
             if (Throws is not null) throw Throws;
 
             var verb = arguments[0];
-            var target = verb == "copyto" ? arguments[2] : arguments.Count > 1 ? arguments[1] : string.Empty;
+            var target = arguments.Count > 1 ? arguments[1] : string.Empty;
             switch (verb)
             {
-                case "copyto":
-                    if (FailCopyOf is not null && target.EndsWith(FailCopyOf, StringComparison.Ordinal))
+                case "copy":
+                    // copy <source folder> <remote:folder> --files-from <list> ...
+                    var names = File.ReadAllLines(arguments[arguments.ToList().IndexOf("--files-from") + 1]).Where(n => n.Length > 0).ToArray();
+                    Lists.Add(names);
+                    if (FailCopyOf is not null && names.Contains(FailCopyOf))
                         return Task.FromResult(new RcloneResult(1, string.Empty, FailMessage));
-                    Remote.Add(target[(target.IndexOf(':') + 1)..]);
+                    var folderPart = arguments[2][(arguments[2].IndexOf(':') + 1)..];
+                    foreach (var name in names) Remote.Add($"{folderPart}/{name}");
                     return Task.FromResult(new RcloneResult(0, string.Empty, string.Empty));
                 case "check":
                     return Task.FromResult(FailCheck
@@ -172,7 +179,7 @@ public sealed class DriveSyncTests : IDisposable
         var named = await Sync(Licensed(out _, install: false), rclone, d => d.Folder = "my-own-folder").SyncAsync();
         Assert.True(named.Ran, named.Skipped);
         Assert.Equal(1, named.Sent);
-        Assert.StartsWith("HPDRIVE:my-own-folder/", rclone.Calls.First(c => c.Args[0] == "copyto").Args[2], StringComparison.Ordinal);
+        Assert.Equal("HPDRIVE:my-own-folder", rclone.Calls.First(c => c.Args[0] == "copy").Args[2]);
     }
 
     [Fact]
@@ -218,11 +225,12 @@ public sealed class DriveSyncTests : IDisposable
         Assert.True(first.Ran);
         Assert.Equal(2, first.Sent);
         Assert.Null(first.Error);
-        var copies = rclone.Calls.Where(c => c.Args[0] == "copyto").ToList();
-        Assert.Equal(2, copies.Count);
-        Assert.EndsWith(newer, copies[0].Args[2], StringComparison.Ordinal);
-        Assert.EndsWith(older, copies[1].Args[2], StringComparison.Ordinal);
-        Assert.StartsWith($"HPDRIVE:{id:N}/", copies[0].Args[2], StringComparison.Ordinal);
+        // ONE copy and ONE check for both files, not one of each per file, newest first, into the hospital's own folder.
+        var copies = rclone.Calls.Where(c => c.Args[0] == "copy").ToList();
+        Assert.Single(copies);
+        Assert.Single(rclone.Calls.Where(c => c.Args[0] == "check"));
+        Assert.Equal([newer, older], rclone.Lists[0]);
+        Assert.Equal($"HPDRIVE:{id:N}", copies[0].Args[2]);
 
         // What has gone is not sent again, and a new file is the only one that is.
         var again = await sync.SyncAsync();
@@ -231,7 +239,7 @@ public sealed class DriveSyncTests : IDisposable
         var third = await BackupAsync("20261003-020000");
         var next = await sync.SyncAsync();
         Assert.Equal(1, next.Sent);
-        Assert.EndsWith(third, rclone.Calls.Last(c => c.Args[0] == "copyto").Args[2], StringComparison.Ordinal);
+        Assert.Equal([third], rclone.Lists.Last());
 
         var status = sync.Status();
         Assert.True(status.Ready);
@@ -250,7 +258,7 @@ public sealed class DriveSyncTests : IDisposable
 
         await Sync(licences, rclone).SyncAsync();
 
-        var call = rclone.Calls.First(c => c.Args[0] == "copyto");
+        var call = rclone.Calls.First(c => c.Args[0] == "copy");
         Assert.DoesNotContain(call.Args, a => a.Contains("SECRETSECRET", StringComparison.Ordinal) || a.Contains("service_account", StringComparison.Ordinal));
         Assert.Equal(Key, call.Env["RCLONE_CONFIG_HPDRIVE_SERVICE_ACCOUNT_CREDENTIALS"]);
         Assert.Equal("drive", call.Env["RCLONE_CONFIG_HPDRIVE_TYPE"]);
@@ -272,7 +280,8 @@ public sealed class DriveSyncTests : IDisposable
 
         var check = rclone.Calls.First(c => c.Args[0] == "check").Args;
         Assert.Contains("--one-way", check);
-        Assert.Equal(name, check[check.ToList().IndexOf("--include") + 1]);
+        Assert.Contains("--files-from", check);
+        Assert.Equal([name], rclone.Lists[0]);
         Assert.Equal(0, result.Sent);
         Assert.Contains("did not match", result.Error, StringComparison.Ordinal);
         Assert.Equal(1, sync.Status().Pending);
@@ -298,8 +307,8 @@ public sealed class DriveSyncTests : IDisposable
             d.RemoteName = "gdrive";
         }).SyncAsync();
 
-        var call = rclone.Calls.First(c => c.Args[0] == "copyto");
-        Assert.StartsWith($"gdrive:{id:N}/", call.Args[2], StringComparison.Ordinal);
+        var call = rclone.Calls.First(c => c.Args[0] == "copy");
+        Assert.Equal($"gdrive:{id:N}", call.Args[2]);
         Assert.Equal(conf, call.Env["RCLONE_CONFIG"]);
         Assert.DoesNotContain(call.Env.Keys, k => k.StartsWith("RCLONE_CONFIG_", StringComparison.Ordinal));
 
@@ -324,7 +333,7 @@ public sealed class DriveSyncTests : IDisposable
         await File.WriteAllTextAsync(file, "  " + Token + "\n");
         await Sync(licences, rclone, d => { d.TokenFile = file; d.ServiceAccountJson = Key; }).SyncAsync();
 
-        var env = rclone.Calls.First(c => c.Args[0] == "copyto").Env;
+        var env = rclone.Calls.First(c => c.Args[0] == "copy").Env;
         Assert.Equal("drive", env["RCLONE_CONFIG_HPDRIVE_TYPE"]);
         // Only the files this program creates itself: never the rest of the person's Drive.
         Assert.Equal("drive.file", env["RCLONE_CONFIG_HPDRIVE_SCOPE"]);
@@ -362,7 +371,7 @@ public sealed class DriveSyncTests : IDisposable
         var result = await Sync(licences, rclone, encrypt: true).SyncAsync();
 
         Assert.Equal(0, result.Sent);
-        Assert.DoesNotContain(rclone.Calls, c => c.Args[0] == "copyto");
+        Assert.DoesNotContain(rclone.Calls, c => c.Args[0] == "copy");
     }
 
     [Fact]
@@ -378,9 +387,8 @@ public sealed class DriveSyncTests : IDisposable
         var result = await Sync(licences, rclone).SyncAsync();
 
         Assert.Equal(1, result.Sent);
-        var copies = rclone.Calls.Where(c => c.Args[0] == "copyto").ToList();
-        Assert.Single(copies);
-        Assert.EndsWith(plain, copies[0].Args[2], StringComparison.Ordinal);
+        Assert.Single(rclone.Calls.Where(c => c.Args[0] == "copy"));
+        Assert.Equal([plain], rclone.Lists[0]);
     }
 
     [Fact]
@@ -400,8 +408,9 @@ public sealed class DriveSyncTests : IDisposable
         Assert.DoesNotContain("SECRETSECRET", result.Error, StringComparison.Ordinal);
         Assert.Contains("[key removed]", result.Error, StringComparison.Ordinal);
 
-        // It stopped at the first failure: the older file was not tried, and nothing is marked as gone.
-        Assert.Single(rclone.Calls.Where(c => c.Args[0] == "copyto"));
+        // The one batch failed, so nothing is marked as gone and no check was made.
+        Assert.Single(rclone.Calls.Where(c => c.Args[0] == "copy"));
+        Assert.DoesNotContain(rclone.Calls, c => c.Args[0] == "check");
         var status = sync.Status();
         Assert.Equal(0, status.Uploaded);
         Assert.Equal(2, status.Pending);

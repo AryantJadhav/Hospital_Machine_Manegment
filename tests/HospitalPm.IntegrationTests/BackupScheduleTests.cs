@@ -41,9 +41,9 @@ public sealed class BackupScheduleTests(PostgresFixture fixture) : IDisposable
         var job = connection.GetRecurringJobs().SingleOrDefault(j => j.Id == JobId);
 
         Assert.NotNull(job);
-        // 21:30 UTC is 03:00 in India — the middle of the hospital's night.
-        // At 02:30 UTC it ran at 08:00 India time, as the day shift arrived.
-        Assert.Equal("30 21 * * *", job.Cron);
+        // Every two hours from midnight on the hospital's clock. In India (UTC+5:30) that is :30 past every even UTC hour.
+        // At 02:30 UTC it once ran at 08:00 India time, as the day shift arrived.
+        Assert.Equal("30 0,2,4,6,8,10,12,14,16,18,20,22 * * *", job.Cron);
         Assert.Equal("UTC", job.TimeZoneId);
 
         // Asserted as the time it will actually fire on the hospital's clock,
@@ -54,23 +54,26 @@ public sealed class BackupScheduleTests(PostgresFixture fixture) : IDisposable
         var hospital = _factory.Services.GetRequiredService<HospitalClock>();
         var fires = job.NextExecution!.Value + hospital.Offset;
 
-        Assert.Equal(3, fires.Hour);
+        // On the hour, at an even hour of the hospital's day: 00:00, 02:00, 04:00 and so on.
         Assert.Equal(0, fires.Minute);
+        Assert.Equal(0, fires.Hour % 2);
     }
 
     [Theory]
-    [InlineData("03:00", 330, "30 21 * * *")] // India: the default
-    [InlineData("3:00", 330, "30 21 * * *")]
-    [InlineData("03:00", 0, "0 3 * * *")]
-    [InlineData("03:00", 60, "0 2 * * *")]
-    [InlineData("01:00", 330, "30 19 * * *")] // before midnight UTC
-    [InlineData("00:15", 330, "45 18 * * *")]
-    [InlineData("23:30", -300, "30 4 * * *")] // west of UTC, past midnight UTC
-    public void The_daily_time_is_turned_into_a_utc_cron_for_the_hospitals_own_offset(string at, int offsetMinutes, string cron)
+    [InlineData("00:00", 330, 2, "30 0,2,4,6,8,10,12,14,16,18,20,22 * * *")] // India, every two hours from midnight: the default
+    [InlineData("00:00", 0, 2, "0 0,2,4,6,8,10,12,14,16,18,20,22 * * *")]
+    [InlineData("00:00", 60, 2, "0 1,3,5,7,9,11,13,15,17,19,21,23 * * *")] // midnight at UTC+1 is 23:00 UTC: odd hours
+    [InlineData("03:00", 330, 24, "30 21 * * *")] // once a day at three in the morning, as before
+    [InlineData("3:00", 330, 24, "30 21 * * *")]
+    [InlineData("03:00", 0, 12, "0 3,15 * * *")]
+    [InlineData("01:00", 60, 6, "0 0,6,12,18 * * *")]
+    [InlineData("23:30", -300, 24, "30 4 * * *")] // west of UTC, past midnight UTC
+    [InlineData("00:00", 330, 1, "30 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23 * * *")]
+    public void The_start_and_the_interval_become_a_utc_cron_for_the_hospitals_own_offset(string at, int offsetMinutes, int every, string cron)
     {
-        var options = new Infrastructure.Operations.BackupOptions { DailyAt = at };
+        var options = new Infrastructure.Operations.BackupOptions { StartsAt = at, EveryHours = every };
 
-        Assert.Equal(cron, Infrastructure.Operations.BackupOptions.CronFor(options.DailyAtLocal(), TimeSpan.FromMinutes(offsetMinutes)));
+        Assert.Equal(cron, Infrastructure.Operations.BackupOptions.CronFor(options.StartsAtLocal(), TimeSpan.FromMinutes(offsetMinutes), options.EveryHoursChecked()));
     }
 
     [Theory]
@@ -79,19 +82,47 @@ public sealed class BackupScheduleTests(PostgresFixture fixture) : IDisposable
     [InlineData("25:00")]
     [InlineData("-1:00")]
     [InlineData("3")]
-    public void A_time_that_cannot_be_read_falls_back_to_three_in_the_morning_and_never_switches_the_backup_off(string at)
+    public void A_time_that_cannot_be_read_falls_back_to_midnight_and_never_switches_the_backup_off(string at)
     {
-        var options = new Infrastructure.Operations.BackupOptions { DailyAt = at };
+        var options = new Infrastructure.Operations.BackupOptions { StartsAt = at };
 
-        Assert.Equal(TimeSpan.FromHours(3), options.DailyAtLocal());
+        Assert.Equal(TimeSpan.Zero, options.StartsAtLocal());
+    }
+
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(2, 2)]
+    [InlineData(3, 3)]
+    [InlineData(4, 4)]
+    [InlineData(6, 6)]
+    [InlineData(8, 8)]
+    [InlineData(12, 12)]
+    [InlineData(24, 24)]
+    [InlineData(5, 2)]
+    [InlineData(0, 2)]
+    [InlineData(-2, 2)]
+    [InlineData(48, 2)]
+    public void Only_an_interval_that_divides_a_day_is_used_and_anything_else_means_every_two_hours(int configured, int used)
+    {
+        Assert.Equal(used, new Infrastructure.Operations.BackupOptions { EveryHours = configured }.EveryHoursChecked());
+        Assert.Equal(2, new Infrastructure.Operations.BackupOptions().EveryHours);
+    }
+
+    [Fact]
+    public void Two_hourly_backups_are_kept_for_a_fortnight_here_and_on_the_drive()
+    {
+        var options = new Infrastructure.Operations.BackupOptions();
+
+        Assert.Equal(14 * 12, options.RetainCount);
+        Assert.Equal(14 * 12, options.Drive.KeepCount);
     }
 
     /// <summary>
-    /// PM generation runs a quarter of an hour into the hospital's day, and
-    /// before that night's backup, so the dump holds the tasks just generated.
+    /// PM generation runs a quarter of an hour into the hospital's day. The backup is every two hours, so the 02:00 one is
+    /// the first to hold the tasks just generated, and the one at 00:00 holds the day before's.
     /// </summary>
     [Fact]
-    public void Generation_runs_at_a_quarter_past_midnight_and_before_the_backup()
+    public void Generation_runs_at_a_quarter_past_midnight_and_the_backup_follows_it_within_two_hours()
     {
         using var connection = _factory.Services.GetRequiredService<JobStorage>().GetConnection();
         var jobs = connection.GetRecurringJobs();
@@ -110,17 +141,11 @@ public sealed class BackupScheduleTests(PostgresFixture fixture) : IDisposable
         Assert.Equal(0, generateFires.Hour);
         Assert.Equal(15, generateFires.Minute);
 
-        // And in that order within one night. Compared as minutes past the
-        // hospital's midnight, because the two next-executions can fall on
-        // different calendar days depending on when the suite happens to run.
+        // Whichever backup follows the generation does so within two hours: it fires on an even hour, and the generation is
+        // a quarter past midnight, so the next one is at 02:00.
         var backupFires = backup.NextExecution!.Value + offset;
-        var generateMinutes = (generateFires.Hour * 60) + generateFires.Minute;
-        var backupMinutes = (backupFires.Hour * 60) + backupFires.Minute;
-
-        Assert.True(
-            generateMinutes < backupMinutes,
-            $"generation fires at {generateFires:HH:mm} and the backup at {backupFires:HH:mm}; "
-            + "the backup must follow generation so a dump holds that day's tasks");
+        Assert.Equal(0, backupFires.Minute);
+        Assert.Equal(0, backupFires.Hour % 2);
     }
 
     /// <summary>

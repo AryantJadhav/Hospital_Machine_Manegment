@@ -91,7 +91,8 @@ public static class BackupEndpoints
             // When the nightly backup runs, on the hospital's own clock, as the page says it.
             schedule = new
             {
-                dailyAt = options.Value.DailyAtLocal().ToString(@"hh\:mm", System.Globalization.CultureInfo.InvariantCulture),
+                startsAt = options.Value.StartsAtLocal().ToString(@"hh\:mm", System.Globalization.CultureInfo.InvariantCulture),
+                everyHours = options.Value.EveryHoursChecked(),
                 zone = HospitalPm.Infrastructure.Reports.ReportTime.Zone(hospital.Offset),
             },
             tool = new

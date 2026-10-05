@@ -1,6 +1,6 @@
 # Backups on Google Drive
 
-Each night, after the backup is written, the encrypted file is copied to Google Drive with **rclone**. It is off unless
+After each backup is written (now every two hours, and when you press **Back up now**), the backup is copied to Google Drive with **rclone**. It is off unless
 switched on, it never fails a backup, and a hospital with no internet is not affected.
 
 With encryption on (`Backup:Encrypt=true`) only encrypted files are ever sent, and what is on the drive is useless without
@@ -14,8 +14,12 @@ Only the Developer can use the Backups page. There is no Drive card on it: **Bac
 
 1. A backup succeeds. The nightly job, and the **Back up now** button, ask the uploader to send what has not gone yet. The button
    says on the page how that went ("Sent to Google Drive", or why not); a failed upload never fails the backup.
-2. It sends the newest files first with `rclone copyto --checksum`, one at a time, into a folder named after the
-   licence's id, under the shared root folder. It stops at the first failure and records the reason.
+2. It sends everything that has not gone yet in **one** `rclone copy` and verifies it with **one** `rclone check`, both given a
+   list of file names, into a folder named after the licence's id (or `Backup:Drive:Folder`). Fewer, bigger requests: Google
+   counts requests, and rclone's shared sign-in has one allowance for everyone. rclone is also told to be patient: two
+   requests a second at most, one file at a time, 128 MB pieces, and 5 tries (20 low-level) with growing pauses, so a "slow
+   down" from Google is waited out inside the command. If it still fails, the files wait and go with the next backup, two hours
+   later.
 3. Then it lists that folder and removes the oldest beyond the number to keep (`KeepCount`, 14). It only ever touches
    files this program named (`hospitalpm-*.dump.enc`).
 4. What has gone is remembered in `.drive-state.json` beside the backups. Losing it means a file is sent again, which
@@ -39,7 +43,7 @@ All under `Backup:Drive` in `appsettings.json`, or as environment variables (`Ba
 | `ServiceAccountJson` / `ServiceAccountFile` | | A Workspace service account's key, as the JSON file's text or a file |
 | `RootFolderId` | | The Drive folder shared with the service account |
 | `Folder` | the licence id | This installation's folder under the root |
-| `KeepCount` | `14` | How many backups to keep on the drive |
+| `KeepCount` | `168` | How many backups to keep on the drive: a fortnight at one every two hours |
 | `TimeoutMinutes` | `120` | How long one upload may run |
 | `Remote` | | Extra rclone settings, e.g. `Remote:type=local` and `Folder=D:/offsite` to copy to a plain folder or share instead |
 

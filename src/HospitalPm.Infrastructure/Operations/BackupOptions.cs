@@ -17,10 +17,10 @@ public sealed class BackupOptions
     public string Directory { get; set; } = "backups";
 
     /// <summary>
-    /// How many daily backups to keep. Fourteen fits comfortably on any disk
-    /// a hospital PC has and covers a fortnight's holiday.
+    /// How many backups to keep. 168 is a fortnight at one every two hours, which fits comfortably on any disk a hospital
+    /// PC has (a backup is a few megabytes) and covers a fortnight's holiday. Change it with <see cref="EveryHours"/>.
     /// </summary>
-    public int RetainCount { get; set; } = 14;
+    public int RetainCount { get; set; } = 168;
 
     /// <summary>
     /// Explicit path to pg_dump. Left empty, the app searches PATH and the
@@ -67,30 +67,52 @@ public sealed class BackupOptions
     public DriveOptions Drive { get; set; } = new();
 
     /// <summary>
-    /// When the nightly backup runs, on the hospital's own clock, as "HH:mm". Three in the morning: the quietest
-    /// the PC ever is, and after the day's PM tasks have been generated at a quarter past midnight. A value that
-    /// cannot be read falls back to this rather than switching the backup off.
+    /// How often a backup runs, in hours: 1, 2, 3, 4, 6, 8, 12 or 24. Every two hours by default, so at most two hours of
+    /// work is ever lost. Anything else falls back to two rather than switching the backup off.
     /// </summary>
-    public string DailyAt { get; set; } = DefaultDailyAt;
+    public int EveryHours { get; set; } = DefaultEveryHours;
 
-    public const string DefaultDailyAt = "03:00";
+    public const int DefaultEveryHours = 2;
 
-    /// <summary>The time of day from <see cref="DailyAt"/>, or the default when it is not a time.</summary>
-    public TimeSpan DailyAtLocal() =>
-        TimeSpan.TryParseExact(DailyAt?.Trim(), @"h\:mm", System.Globalization.CultureInfo.InvariantCulture, out var time)
-        && time >= TimeSpan.Zero && time < TimeSpan.FromHours(24)
-            ? time
-            : TimeSpan.Parse(DefaultDailyAt, System.Globalization.CultureInfo.InvariantCulture);
+    /// <summary>The hours that divide a day, which are the only ones that give the same times every day.</summary>
+    private static readonly int[] DayDivisors = [1, 2, 3, 4, 6, 8, 12, 24];
+
+    /// <summary>The interval from <see cref="EveryHours"/>, or the default when it is not one that fits a day.</summary>
+    public int EveryHoursChecked() => DayDivisors.Contains(EveryHours) ? EveryHours : DefaultEveryHours;
 
     /// <summary>
-    /// The cron line, in UTC, that fires at <paramref name="local"/> on a clock <paramref name="offset"/> ahead of UTC.
-    /// The scheduler works in UTC because the program carries no OS time zone data; the hospital's offset is applied here.
+    /// The time of day the first backup runs, on the hospital's own clock, as "HH:mm"; the others follow every
+    /// <see cref="EveryHours"/> hours. Midnight by default. For one backup a day, set <see cref="EveryHours"/> to 24 and this
+    /// to the hour you want (03:00 is the quietest the PC ever is). A value that cannot be read falls back to midnight
+    /// rather than switching the backup off.
     /// </summary>
-    public static string CronFor(TimeSpan local, TimeSpan offset)
+    public string StartsAt { get; set; } = DefaultStartsAt;
+
+    public const string DefaultStartsAt = "00:00";
+
+    /// <summary>The time of day from <see cref="StartsAt"/>, or the default when it is not a time.</summary>
+    public TimeSpan StartsAtLocal() =>
+        TimeSpan.TryParseExact(StartsAt?.Trim(), @"h\:mm", System.Globalization.CultureInfo.InvariantCulture, out var time)
+        && time >= TimeSpan.Zero && time < TimeSpan.FromHours(24)
+            ? time
+            : TimeSpan.Parse(DefaultStartsAt, System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// The cron line, in UTC, for a backup at <paramref name="start"/> and then every <paramref name="everyHours"/> hours on a clock
+    /// <paramref name="offset"/> ahead of UTC. The scheduler works in UTC because the program carries no OS time zone data;
+    /// the hospital's offset is applied here. Every day's times are the same, because the interval divides the day.
+    /// </summary>
+    public static string CronFor(TimeSpan start, TimeSpan offset, int everyHours)
     {
-        var utc = local - offset;
-        var minutes = ((int)utc.TotalMinutes % 1440 + 1440) % 1440;
-        return $"{minutes % 60} {minutes / 60} * * *";
+        var first = ((int)(start - offset).TotalMinutes % 1440 + 1440) % 1440;
+        var minute = first % 60;
+        var hours = Enumerable.Range(0, 24 / everyHours)
+            .Select(k => (first / 60 + k * everyHours) % 24)
+            .Distinct()
+            .Order()
+            .ToArray();
+
+        return $"{minute} {string.Join(',', hours)} * * *";
     }
 
     /// <summary>The backup folder as a full path. A relative one is beside the program, never the working directory.</summary>
@@ -151,8 +173,8 @@ public sealed class DriveOptions
     /// </summary>
     public string? Folder { get; set; }
 
-    /// <summary>How many backups to keep on the drive. The oldest beyond this are removed from it.</summary>
-    public int KeepCount { get; set; } = 14;
+    /// <summary>How many backups to keep on the drive. The oldest beyond this are removed from it. 168 is a fortnight at one every two hours.</summary>
+    public int KeepCount { get; set; } = 168;
 
     /// <summary>How long one upload may run before it is stopped. The next night tries again.</summary>
     public int TimeoutMinutes { get; set; } = 120;

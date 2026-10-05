@@ -253,9 +253,9 @@ if (hasDatabase)
             "45 18 * * *",
             new RecurringJobOptions { TimeZone = TimeZoneInfo.Utc });
 
-    // Every day at 03:00 on the hospital's own clock (Backup:DailyAt): the middle of the night and the quietest the PC
-    // ever is. It once ran at 02:30 UTC, which is 08:00 in India: the start of the day shift, exactly when a
-    // biomedical department begins writing.
+    // Every two hours from midnight on the hospital's own clock (Backup:StartsAt, Backup:EveryHours), so at most two hours
+    // of work is ever lost. It once ran once a night at 02:30 UTC, which is 08:00 in India: the start of the day shift,
+    // exactly when a biomedical department begins writing.
     //
     // The cron is UTC because the app deliberately carries no OS time zone data; the hospital's offset
     // (ScheduleOptions) is applied here, so a hospital outside India only changes its offset, not this line.
@@ -269,8 +269,9 @@ if (hasDatabase)
             "nightly-backup",
             job => job.RunScheduledAsync(CancellationToken.None),
             HospitalPm.Infrastructure.Operations.BackupOptions.CronFor(
-                backupOptions.DailyAtLocal(),
-                scope.ServiceProvider.GetRequiredService<HospitalPm.Infrastructure.Maintenance.HospitalClock>().Offset),
+                backupOptions.StartsAtLocal(),
+                scope.ServiceProvider.GetRequiredService<HospitalPm.Infrastructure.Maintenance.HospitalClock>().Offset,
+                backupOptions.EveryHoursChecked()),
             new RecurringJobOptions { TimeZone = TimeZoneInfo.Utc });
 
     // A restore decrypts the backup it is given into a staging folder for its script, and the script writes a

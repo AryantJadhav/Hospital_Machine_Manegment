@@ -394,6 +394,19 @@ public sealed class DriveSync(
     // ------------------------------------------------------------------ sending
 
     /// <summary>
+    /// How patient rclone is with Google. Few requests at a time (two a second, one file at a time), big pieces
+    /// (128 MB, so a backup is one request to start and one to finish, not hundreds), and many more tries than the
+    /// default, with rclone's own growing pauses between them. A "slow down" from Google is then waited out inside the
+    /// one command instead of ending the upload.
+    /// </summary>
+    private static readonly string[] Patient =
+    [
+        "--tpslimit", "2", "--tpslimit-burst", "1", "--transfers", "1", "--checkers", "1",
+        "--drive-chunk-size", "128M", "--retries", "5", "--low-level-retries", "20",
+    ];
+
+
+    /// <summary>
     /// Sends what has not gone yet, newest first, then removes the oldest beyond the number to keep. Safe to call at
     /// any time and from anywhere: one at a time, and it does nothing when there is nothing to do.
     /// </summary>
@@ -419,44 +432,75 @@ public sealed class DriveSync(
             var sent = 0;
             string? error = null;
 
+            // What has not gone yet, and may leave. An encrypted backup always; a plain dump only while encryption is off,
+            // and only if it really is a dump. With encryption switched on a plain file is a leftover and stays put.
+            var pending = new List<string>();
             foreach (var path in EncryptedBackups().Where(p => !state.Uploaded.Contains(Path.GetFileName(p))))
             {
-                var name = Path.GetFileName(path);
-
-                // What may leave: an encrypted backup, always; a plain dump only while encryption is off, and only if it
-                // really is a dump. With encryption switched on a plain file is a leftover and stays where it is.
-                var sendable = BackupVault.LooksEncrypted(path) || (!_options.Encrypt && LooksLikeDump(path));
-                if (!sendable)
+                if (BackupVault.LooksEncrypted(path) || (!_options.Encrypt && LooksLikeDump(path)))
                 {
-                    logger.LogWarning("Not sending {File} to the drive: it is not a backup this setting allows", name);
-                    continue;
+                    pending.Add(path);
                 }
-
-                var result = await runner.RunAsync(
-                    rclone, ["copyto", path, $"{RemoteLabel}:{folder}/{name}", "--checksum", "--retries", "2", "--low-level-retries", "5"],
-                    env, timeout, ct);
-
-                if (result.Exit != 0)
+                else
                 {
-                    error = Describe(result, credentials);
-                    break;
+                    logger.LogWarning("Not sending {File} to the drive: it is not a backup this setting allows", Path.GetFileName(path));
                 }
+            }
 
-                // Checked, not trusted. "rclone exited zero" is good evidence and this is the proof: every byte's size and
-                // hash on the drive is compared with the file here, and only a match counts as sent.
-                var verified = await runner.RunAsync(
-                    rclone, ["check", Path.GetDirectoryName(path)!, $"{RemoteLabel}:{folder}", "--one-way", "--include", name, "--retries", "3", "--low-level-retries", "10"],
-                    env, timeout, ct);
-
-                if (verified.Exit != 0)
+            if (pending.Count > 0)
+            {
+                // ONE copy and ONE check for the whole lot, not a copy and a check per file. Google counts requests, and the
+                // shared sign-in's allowance is used up by everyone at once; the fewer, bigger requests we make, the less
+                // we add to that. The names go in a list file so the command stays short however many there are.
+                var directory = _options.ResolveDirectory();
+                var listFile = Path.Combine(Path.GetTempPath(), $"hospitalpm-drive-{Guid.NewGuid():N}.txt");
+                try
                 {
-                    error = "It was uploaded but did not match when checked, so it is not counted as sent. " + Describe(verified, credentials);
-                    break;
-                }
+                    await File.WriteAllLinesAsync(listFile, pending.Select(p => Path.GetFileName(p)), ct);
 
-                state.Uploaded.Add(name);
-                state.LastUploadAtUtc = clock.GetUtcNow().UtcDateTime;
-                sent++;
+                    var copy = await runner.RunAsync(
+                        rclone, ["copy", directory, $"{RemoteLabel}:{folder}", "--files-from", listFile, "--checksum", .. Patient],
+                        env, timeout, ct);
+
+                    if (copy.Exit != 0)
+                    {
+                        error = Describe(copy, credentials);
+                    }
+                    else
+                    {
+                        // Checked, not trusted. "rclone exited zero" is good evidence and this is the proof: every file's size
+                        // and hash on the drive is compared with the one here, and only a match counts as sent.
+                        var verified = await runner.RunAsync(
+                            rclone, ["check", directory, $"{RemoteLabel}:{folder}", "--files-from", listFile, "--one-way", .. Patient],
+                            env, timeout, ct);
+
+                        if (verified.Exit != 0)
+                        {
+                            error = "It was uploaded but did not match when checked, so it is not counted as sent. " + Describe(verified, credentials);
+                        }
+                        else
+                        {
+                            foreach (var path in pending)
+                            {
+                                state.Uploaded.Add(Path.GetFileName(path));
+                            }
+
+                            state.LastUploadAtUtc = clock.GetUtcNow().UtcDateTime;
+                            sent = pending.Count;
+                        }
+                    }
+                }
+                finally
+                {
+                    try
+                    {
+                        File.Delete(listFile);
+                    }
+                    catch (IOException)
+                    {
+                        // A list of file names, in the temp folder. Not worth failing for.
+                    }
+                }
             }
 
             state.LastError = error;
