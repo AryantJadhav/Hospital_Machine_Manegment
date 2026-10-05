@@ -108,7 +108,7 @@ async function refresh(): Promise<boolean> {
 async function request<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
   const headers = new Headers(init.headers);
   if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
-  if (init.body && !(init.body instanceof FormData)) {
+  if (init.body && !(init.body instanceof FormData) && !(init.body instanceof Blob)) {
     headers.set('Content-Type', 'application/json');
   }
 
@@ -191,6 +191,12 @@ export const api = {
 
     return res.blob();
   },
+  /**
+   * Sends a file as the whole request, streamed from disk and never held in the page's memory, with any extra
+   * headers. For files too large for a form: a backup is as big as the database and its photos.
+   */
+  uploadFile: <T>(path: string, file: File, headers: Record<string, string> = {}) =>
+    request<T>(path, { method: 'POST', body: file, headers }),
   upload: <T>(path: string, file: File) => {
     const form = new FormData();
     form.append('file', file);

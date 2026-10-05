@@ -287,6 +287,9 @@ public sealed class PermissionTests(PostgresFixture fixture) : IAsyncLifetime, I
         // First-run setup: made before any account exists, and it refuses once there is an administrator.
         "GET /api/setup/status",
         "POST /api/setup/first-admin",
+        // A backup download. A browser cannot send the sign-in on a link, so the link carries a one-use pass the
+        // signed-in Developer asked for, good for one file for one minute (DownloadTickets).
+        "GET /api/admin/backups/download/{token}",
     ];
 
     private async Task<HttpClient> SignInAsync(string prefix, string role)

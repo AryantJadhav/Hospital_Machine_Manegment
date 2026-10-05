@@ -25,6 +25,30 @@ Lose it, or let someone see it who should not have? *Make a new recovery key*. E
 is updated to it within seconds, and the old key stops working. (A backup that is not on the server at
 that moment, say a copy on a USB drive, keeps the old key. The page tells you how many it updated.)
 
+## Who may do this
+
+Only the **Developer** account. Backups, restore, download and bringing a file in are not held by the
+hospital's IT team or the head of Biomedical, and cannot be given to them on the Access page.
+
+## Taking a backup away, and bringing one in
+
+On the Backups page (Developer):
+
+- **Download** on any encrypted backup saves that file to the computer you are using. It stays encrypted. The
+  browser saves it straight to disk from a link good for one file and one minute, so a large backup does not
+  have to fit in the page.
+- **Restore from a file** takes a downloaded file, and the recovery key if it was made on another machine. The
+  file is checked first: it must be a whole, untouched Hospital PM backup that opens with this machine's key or
+  the recovery key, and the archive inside must open. A file that fails is deleted and nothing is recorded. If it
+  passes, it is kept in the backup folder and restored like any other.
+
+What is in a backup: the whole database. Photos and uploaded PM reports are rows in it, each tied to its work order
+or PM by a constraint the database enforces, so one file carries the records, the photos and the links, and a restore
+returns all three (a test restores a real backup and compares every photo byte for byte). Reports and printouts are
+not stored anywhere: the program draws them again from the records, so they are not in the backup.
+
+The licence file is not in the backup. A rebuilt machine is licensed again from the licence section.
+
 ## Getting a backup back
 
 ### On the server that made it

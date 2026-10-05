@@ -356,6 +356,7 @@ public sealed class BackupEncryptionEndpointTests(PostgresFixture fixture) : IAs
     private ApiFactory _factory = null!;
     private HttpClient _it = null!;
     private HttpClient _engineer = null!;
+    private HttpClient _itTeam = null!;
     private HttpClient _anonymous = null!;
 
     public async Task InitializeAsync()
@@ -364,8 +365,9 @@ public sealed class BackupEncryptionEndpointTests(PostgresFixture fixture) : IAs
         _anonymous = _factory.CreateClient();
         var suffix = Guid.NewGuid().ToString("N")[..8];
 
-        _it = await SignInAsync($"enc-it-{suffix}", Roles.ItAdmin);
+        _it = await SignInAsync($"enc-dev-{suffix}", Roles.Developer);
         _engineer = await SignInAsync($"enc-eng-{suffix}", Roles.BmeEngineer);
+        _itTeam = await SignInAsync($"enc-it-{suffix}", Roles.ItAdmin);
     }
 
     private async Task<HttpClient> SignInAsync(string userName, string role)
@@ -397,6 +399,7 @@ public sealed class BackupEncryptionEndpointTests(PostgresFixture fixture) : IAs
     {
         _it?.Dispose();
         _engineer?.Dispose();
+        _itTeam?.Dispose();
         _anonymous?.Dispose();
         _factory?.Dispose();
     }
@@ -470,6 +473,14 @@ public sealed class BackupEncryptionEndpointTests(PostgresFixture fixture) : IAs
         }
 
         Assert.Equal(HttpStatusCode.Forbidden, (await _engineer.GetAsync("/api/admin/backups")).StatusCode);
+
+        // Nor does the hospital's own IT team: backups are the Developer's alone.
+        foreach (var path in new[] { "/api/admin/backups/encryption/recovery-key", "/api/admin/backups/run" })
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, (await _itTeam.PostAsync(path, null)).StatusCode);
+        }
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await _itTeam.GetAsync("/api/admin/backups")).StatusCode);
     }
 
     [Fact]
@@ -509,6 +520,157 @@ public sealed class BackupEncryptionEndpointTests(PostgresFixture fixture) : IAs
         {
             File.Delete(output);
             File.Delete(output + "2");
+        }
+    }
+
+    // ---------------------------------------------------------------- taking a backup away and bringing one in
+
+    /// <summary>A backup made through the API, or null when this machine has no usable pg_dump to make one.</summary>
+    private async Task<(int Id, string Path, string FileName)?> BackUpAsync()
+    {
+        var run = await _it.PostAsync("/api/admin/backups/run", null);
+        Assert.Equal(HttpStatusCode.OK, run.StatusCode);
+        var result = await run.Content.ReadFromJsonAsync<JsonElement>();
+        if (result.GetProperty("status").GetInt32() != (int)BackupStatus.Succeeded)
+        {
+            return null;
+        }
+
+        var directory = (await (await _it.GetAsync("/api/admin/backups")).Content.ReadFromJsonAsync<JsonElement>()).GetProperty("directory").GetString()!;
+        var fileName = result.GetProperty("fileName").GetString()!;
+        return (result.GetProperty("id").GetInt32(), Path.Combine(directory, fileName), fileName);
+    }
+
+    private static Task<HttpResponseMessage> UploadAsync(HttpClient client, byte[] bytes, string? name = null, string? recoveryKey = null)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/admin/backups/upload") { Content = new ByteArrayContent(bytes) };
+        if (name is not null) request.Headers.Add("X-File-Name", Uri.EscapeDataString(name));
+        if (recoveryKey is not null) request.Headers.Add("X-Recovery-Key", recoveryKey);
+        return client.SendAsync(request);
+    }
+
+    [Fact]
+    public async Task A_download_link_is_for_the_developer_works_once_and_hands_over_the_encrypted_file()
+    {
+        var made = await BackUpAsync();
+        if (made is null) return;
+        var (id, path, fileName) = made.Value;
+
+        var link = $"/api/admin/backups/{id}/download-link";
+        Assert.Equal(HttpStatusCode.Forbidden, (await _engineer.PostAsync(link, null)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await _itTeam.PostAsync(link, null)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await _anonymous.PostAsync(link, null)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await _it.PostAsync("/api/admin/backups/2000000000/download-link", null)).StatusCode);
+
+        var asked = await _it.PostAsync(link, null);
+        Assert.Equal(HttpStatusCode.OK, asked.StatusCode);
+        var url = (await asked.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("url").GetString()!;
+
+        // The browser follows the link with no sign-in of its own: the pass in it is the sign-in.
+        var file = await _anonymous.GetAsync(url);
+        Assert.Equal(HttpStatusCode.OK, file.StatusCode);
+        Assert.Equal(fileName, file.Content.Headers.ContentDisposition?.FileName?.Trim('"'));
+        Assert.Contains("no-store", file.Headers.CacheControl?.ToString() ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+
+        var bytes = await file.Content.ReadAsByteArrayAsync();
+        Assert.Equal("HPBK"u8.ToArray(), bytes[..4]);
+        Assert.Equal(await File.ReadAllBytesAsync(path), bytes);
+
+        // Used up. Nor does a made-up pass open anything.
+        Assert.Equal(HttpStatusCode.NotFound, (await _anonymous.GetAsync(url)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await _anonymous.GetAsync("/api/admin/backups/download/" + new string('a', 64))).StatusCode);
+    }
+
+    [Fact]
+    public async Task A_backup_file_brought_in_is_checked_kept_and_listed_and_anything_else_is_refused()
+    {
+        var made = await BackUpAsync();
+        if (made is null) return;
+        var (_, path, _) = made.Value;
+        var bytes = await File.ReadAllBytesAsync(path);
+        const string name = "hospitalpm-20200101-000000-IST.dump.enc";
+
+        // Nobody else may bring a file in, and someone not signed in is turned away first.
+        Assert.Equal(HttpStatusCode.Forbidden, (await UploadAsync(_engineer, bytes, name)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await UploadAsync(_itTeam, bytes, name)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await UploadAsync(_anonymous, bytes, name)).StatusCode);
+
+        // Not a backup at all, a backup with one byte changed, and one cut short: each is refused with a reason.
+        var notBackup = await UploadAsync(_it, "just some text"u8.ToArray(), name);
+        Assert.Equal(HttpStatusCode.BadRequest, notBackup.StatusCode);
+        Assert.Contains("not an encrypted", (await notBackup.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString(), StringComparison.Ordinal);
+
+        var flipped = (byte[])bytes.Clone();
+        flipped[flipped.Length / 2] ^= 0xFF;
+        Assert.Equal(HttpStatusCode.BadRequest, (await UploadAsync(_it, flipped, name)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await UploadAsync(_it, bytes[..(bytes.Length - 40)], name)).StatusCode);
+
+        // Nothing refused was kept, and nothing half-written was left behind.
+        var directory = Path.GetDirectoryName(path)!;
+        Assert.False(File.Exists(Path.Combine(directory, name)));
+        Assert.Empty(Directory.GetFiles(directory, "*.partial"));
+
+        // The real thing is kept under its own name, recorded, and offered for restore.
+        var good = await UploadAsync(_it, bytes, name);
+        Assert.Equal(HttpStatusCode.OK, good.StatusCode);
+        var kept = await good.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(name, kept.GetProperty("fileName").GetString());
+        Assert.Equal(bytes.Length, kept.GetProperty("sizeBytes").GetInt64());
+        Assert.Equal(bytes, await File.ReadAllBytesAsync(Path.Combine(directory, name)));
+
+        var runs = (await (await _it.GetAsync("/api/admin/backups")).Content.ReadFromJsonAsync<JsonElement>()).GetProperty("runs").EnumerateArray();
+        Assert.Contains(runs, r => r.GetProperty("id").GetInt32() == kept.GetProperty("id").GetInt32() && r.GetProperty("fileName").GetString() == name);
+
+        // The same name again does not overwrite it.
+        var again = await (await UploadAsync(_it, bytes, name)).Content.ReadFromJsonAsync<JsonElement>();
+        Assert.NotEqual(name, again.GetProperty("fileName").GetString());
+        Assert.EndsWith(".dump.enc", again.GetProperty("fileName").GetString(), StringComparison.Ordinal);
+
+        // A name that is not one of ours, or that tries to leave the folder, is never used as given.
+        var odd = await (await UploadAsync(_it, bytes, @"..\..\evil.exe")).Content.ReadFromJsonAsync<JsonElement>();
+        Assert.StartsWith("hospitalpm-", odd.GetProperty("fileName").GetString(), StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(directory, "..", "evil.exe")));
+
+        // It is a real record, so restoring it gets as far as the installed-system check and no further here.
+        var restore = await _it.PostAsJsonAsync($"/api/admin/backups/{kept.GetProperty("id").GetInt32()}/restore", new { confirm = "RESTORE" });
+        Assert.Equal(HttpStatusCode.BadRequest, restore.StatusCode);
+        Assert.Contains("installed system", (await restore.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_backup_made_on_another_machine_is_taken_in_only_with_its_recovery_key()
+    {
+        var made = await BackUpAsync();
+        if (made is null) return;
+
+        // This machine's backup, opened with its own recovery key and sealed again by "another machine".
+        var mine = await NewRecoveryKeyAsync();
+        var sealedPath = Path.Combine(Path.GetTempPath(), $"hospitalpm-other-{Guid.NewGuid():N}");
+        var plain = sealedPath + ".dump";
+        var other = TestVault.Create();
+        var otherKey = other.CreateRecoveryKey(null).Key;
+        try
+        {
+            await TestVault.Create().DecryptFileAsync(made.Value.Path, plain, mine);
+            await other.EncryptFileAsync(plain, sealedPath + ".enc");
+            var bytes = await File.ReadAllBytesAsync(sealedPath + ".enc");
+
+            // This machine's key does not open it, and the answer says the recovery key would.
+            var without = await UploadAsync(_it, bytes);
+            Assert.Equal(HttpStatusCode.BadRequest, without.StatusCode);
+            Assert.True((await without.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("needsRecoveryKey").GetBoolean());
+
+            // A different key does not open it either.
+            Assert.Equal(HttpStatusCode.BadRequest, (await UploadAsync(_it, bytes, null, mine)).StatusCode);
+
+            // The key it was made with does, typed the way it is written down.
+            var right = await UploadAsync(_it, bytes, null, otherKey.ToLowerInvariant().Replace("-", " "));
+            Assert.Equal(HttpStatusCode.OK, right.StatusCode);
+        }
+        finally
+        {
+            File.Delete(plain);
+            File.Delete(sealedPath + ".enc");
         }
     }
 }

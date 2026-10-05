@@ -52,6 +52,12 @@ export function BackupsPage() {
   const [shownKey, setShownKey] = useState<string | null>(null);
   const [writtenDown, setWrittenDown] = useState(false);
   const [keyBusy, setKeyBusy] = useState(false);
+  // A backup file brought in from elsewhere, and the recovery key typed for it.
+  const [chosen, setChosen] = useState<File | null>(null);
+  const [fileKey, setFileKey] = useState('');
+  const [needsKey, setNeedsKey] = useState(false);
+  const [bringing, setBringing] = useState(false);
+  const [downloading, setDownloading] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -130,6 +136,75 @@ export function BackupsPage() {
       }
     } finally {
       setRestoring(null);
+    }
+  }
+
+  /** Saves one backup file. It stays encrypted: the file is no use to anyone without the keys. */
+  async function download(run: Run) {
+    setDownloading(run.id);
+    setError(null);
+    setNotice(null);
+    try {
+      // The browser saves the file itself, straight to disk, from a one-use link: a backup can be far too large
+      // to be held in the page and handed back.
+      const made = await api.post<{ url: string; fileName: string }>(`/api/admin/backups/${run.id}/download-link`, {});
+      const link = document.createElement('a');
+      link.href = made.url;
+      link.download = made.fileName;
+      link.click();
+      setNotice(`Saving ${made.fileName}. It is encrypted: keep it with the recovery key, but not in the same place.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not start the download.');
+    } finally {
+      setDownloading(null);
+    }
+  }
+
+  /**
+   * Restores from a file chosen on this computer: the way back after the machine is lost. The file is sent here,
+   * checked (it must be a whole, untouched backup that opens with this machine's key or the recovery key), and then
+   * restored exactly like one of this machine's own.
+   */
+  async function restoreFromFile() {
+    if (!chosen) return;
+
+    const typed = prompt(
+      [
+        `Restore from ${chosen.name}?`,
+        '',
+        'This REPLACES the current database with the contents of that file.',
+        'Anything recorded here since it was taken will be lost.',
+        '',
+        'A copy of the current database is saved first, so this can be undone.',
+        '',
+        'Type RESTORE to continue:',
+      ].join('\n'),
+    );
+
+    if (typed !== 'RESTORE') return;
+
+    setBringing(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const key = fileKey.trim();
+      const kept = await api.uploadFile<{ id: number }>('/api/admin/backups/upload', chosen, {
+        'X-File-Name': encodeURIComponent(chosen.name),
+        ...(key ? { 'X-Recovery-Key': key } : {}),
+      });
+      setNotice(await startRestore(kept.id, key || null));
+      setChosen(null);
+      setFileKey('');
+      setNeedsKey(false);
+    } catch (e) {
+      if (e instanceof ApiError && (e.body as { needsRecoveryKey?: boolean } | undefined)?.needsRecoveryKey) {
+        setNeedsKey(true);
+        setError('This file was made on another machine. Type the recovery key written down for it below, then try again.');
+      } else {
+        setError(e instanceof Error ? e.message : 'The file could not be restored.');
+      }
+    } finally {
+      setBringing(false);
     }
   }
 
@@ -275,6 +350,52 @@ export function BackupsPage() {
         </p>
       </div>
 
+      <div className="card">
+        <h2 className="section-h">Restore from a file</h2>
+        <p className="muted">
+          For when this machine is new, or its data is gone. Choose a backup file you saved earlier (the ones named
+          <span className="mono"> hospitalpm-…dump.enc</span>). Every record comes back, with its photos and uploaded
+          reports, each still attached to the same machine, work order or PM. Reports and printouts are not in the
+          backup: the program makes them again from the records.
+        </p>
+        <div style={{ display: 'grid', gap: '0.75rem', maxWidth: '32rem', marginBottom: '0.75rem' }}>
+          <label className="field" htmlFor="backup-file">
+            <span>Backup file</span>
+            <input
+              id="backup-file"
+              type="file"
+              accept=".enc"
+              disabled={bringing}
+              onChange={(e) => {
+                setChosen(e.target.files?.[0] ?? null);
+                setNeedsKey(false);
+              }}
+            />
+          </label>
+          <label className="field" htmlFor="backup-file-key">
+            <span>Recovery key{needsKey ? '' : ' (only if the backup was made on another machine)'}</span>
+            <input
+              id="backup-file-key"
+              type="text"
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="XXXX-XXXX-XXXX-…"
+              value={fileKey}
+              disabled={bringing}
+              aria-invalid={needsKey && !fileKey.trim()}
+              onChange={(e) => setFileKey(e.target.value)}
+            />
+          </label>
+        </div>
+        <button
+          className="btn btn-primary"
+          disabled={!chosen || bringing || restoring !== null}
+          onClick={() => void restoreFromFile()}
+        >
+          {bringing ? 'Sending the file and restoring…' : 'Restore from this file'}
+        </button>
+      </div>
+
       <div className="card table-wrap">
         <h2 className="section-h">Recent runs</h2>
         <table className="table">
@@ -310,13 +431,24 @@ export function BackupsPage() {
                 <td>{r.durationMs !== null ? formatDuration(r.durationMs) : <span className="muted">—</span>}</td>
                 <td>
                   {r.status === 20 && r.fileName && (
-                    <button
-                      className="btn btn-quiet"
-                      disabled={restoring !== null}
-                      onClick={() => void restore(r)}
-                    >
-                      {restoring === r.id ? 'Starting…' : 'Restore'}
-                    </button>
+                    <>
+                      {r.fileName.endsWith('.enc') && (
+                        <button
+                          className="btn btn-quiet"
+                          disabled={downloading !== null}
+                          onClick={() => void download(r)}
+                        >
+                          {downloading === r.id ? 'Starting…' : 'Download'}
+                        </button>
+                      )}
+                      <button
+                        className="btn btn-quiet"
+                        disabled={restoring !== null}
+                        onClick={() => void restore(r)}
+                      >
+                        {restoring === r.id ? 'Starting…' : 'Restore'}
+                      </button>
+                    </>
                   )}
                 </td>
               </tr>

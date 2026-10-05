@@ -5,6 +5,9 @@ using Microsoft.Extensions.Logging;
 
 namespace HospitalPm.Infrastructure.Operations;
 
+/// <summary>A file offered as a backup that cannot be used as one, and why, in words an administrator can act on.</summary>
+public sealed class BackupUploadException(string message) : Exception(message);
+
 /// <summary>A backup that cannot be opened, and why, in words an administrator can act on.</summary>
 public sealed class BackupDecryptionException(string message, bool needsRecoveryKey = false) : Exception(message)
 {

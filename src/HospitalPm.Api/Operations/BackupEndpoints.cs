@@ -29,6 +29,17 @@ public static class BackupEndpoints
         group.MapGet("/", StatusAsync);
         group.MapPost("/run", RunAsync);
 
+        // Taking a backup away, and bringing one in. The file stays encrypted both ways.
+        group.MapPost("/{id:int}/download-link", DownloadLinkAsync);
+        group.MapPost("/upload", UploadAsync)
+            .RequirePermission(Permissions.SystemRestore);
+
+        // The link the browser follows to save the file: it cannot send the sign-in, so the pass in the link is
+        // the sign-in, for one file, once (see DownloadTickets). Not under the group, which asks for a sign-in.
+        app.MapGet("/api/admin/backups/download/{token}", DownloadAsync)
+            .WithTags("Backups")
+            .AllowAnonymous();
+
         // The keys that keep the backup files private. The recovery key is shown once, when it is made.
         group.MapPost("/encryption/recovery-key", NewRecoveryKeyAsync);
         group.MapPost("/encryption/recovery-key/saved", RecoveryKeySaved);
@@ -84,6 +95,110 @@ public static class BackupEndpoints
                 .Select(r => (DateTime?)r.StartedAtUtc)
                 .FirstOrDefaultAsync(ct),
         });
+    }
+
+    /// <summary>
+    /// A link to save one backup file. Only an encrypted file is handed out: a plain dump is the whole database
+    /// in the clear, and the page does not let that leave the machine.
+    /// </summary>
+    private static async Task<IResult> DownloadLinkAsync(
+        int id,
+        HospitalPmDbContext db,
+        BackupService service,
+        DownloadTickets tickets,
+        System.Security.Claims.ClaimsPrincipal principal,
+        ILoggerFactory loggers,
+        CancellationToken ct)
+    {
+        var fileName = await db.BackupRuns.AsNoTracking()
+            .Where(r => r.Id == id && r.Status == BackupStatus.Succeeded && r.FileName != null)
+            .Select(r => r.FileName)
+            .SingleOrDefaultAsync(ct);
+
+        if (fileName is null)
+        {
+            return Results.NotFound(new { error = "No successful backup with that id." });
+        }
+
+        var path = Path.Combine(service.ResolveDirectory(), fileName);
+        if (!File.Exists(path))
+        {
+            return Results.BadRequest(new
+            {
+                error = $"The backup file {fileName} is no longer on this machine. "
+                        + "It may have been removed by retention or moved away.",
+            });
+        }
+
+        if (!BackupVault.LooksEncrypted(path))
+        {
+            return Results.Conflict(new
+            {
+                error = "That backup is not encrypted, so it cannot be downloaded. "
+                        + "Run a new backup with encryption on, and download that one.",
+            });
+        }
+
+        loggers.CreateLogger("HospitalPm.Backups").LogWarning(
+            "{User} asked to download backup {File}", principal.Identity?.Name ?? "someone", fileName);
+
+        return Results.Ok(new { url = $"/api/admin/backups/download/{tickets.Issue(path, fileName)}", fileName });
+    }
+
+    private static IResult DownloadAsync(string token, DownloadTickets tickets, HttpContext http)
+    {
+        var ticket = tickets.Redeem(token);
+        if (ticket is null || !File.Exists(ticket.Value.Path))
+        {
+            // The same answer for a pass never issued, one already used and one that ran out.
+            return Results.NotFound(new { error = "This download link has expired. Go back to the Backups page and ask for a new one." });
+        }
+
+        http.Response.Headers.CacheControl = "no-store";
+        return Results.File(ticket.Value.Path, "application/octet-stream", ticket.Value.DownloadName);
+    }
+
+    /// <summary>
+    /// A backup file brought from somewhere else, to be restored. The body is the file itself, not a form, so a
+    /// large one streams to disk and never sits in memory. The recovery key, when the file was made on another
+    /// machine, travels in a header and is never written down.
+    /// </summary>
+    private static async Task<IResult> UploadAsync(
+        HttpContext http,
+        HttpRequest request,
+        BackupService service,
+        System.Security.Claims.ClaimsPrincipal principal,
+        ILoggerFactory loggers,
+        CancellationToken ct)
+    {
+        // A backup is as large as the database and its photos: the default 30 MB limit is for forms, not for this.
+        // Not every server lets it be changed once reading starts, and the test server does not offer it.
+        var limit = http.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>();
+        if (limit is { IsReadOnly: false })
+        {
+            limit.MaxRequestBodySize = null;
+        }
+
+        var recoveryKey = request.Headers["X-Recovery-Key"].ToString();
+        var name = Uri.UnescapeDataString(request.Headers["X-File-Name"].ToString());
+
+        try
+        {
+            var run = await service.AdoptAsync(request.Body, name, string.IsNullOrWhiteSpace(recoveryKey) ? null : recoveryKey, ct);
+
+            loggers.CreateLogger("HospitalPm.Backups").LogWarning(
+                "{User} brought in backup {File} ({Size} bytes)", principal.Identity?.Name ?? "someone", run.FileName, run.SizeBytes);
+
+            return Results.Ok(new { run.Id, run.FileName, run.SizeBytes });
+        }
+        catch (BackupUploadException e)
+        {
+            return Results.BadRequest(new { error = e.Message });
+        }
+        catch (BackupDecryptionException e)
+        {
+            return Results.BadRequest(new { error = e.Message, needsRecoveryKey = e.NeedsRecoveryKey });
+        }
     }
 
     private static object EncryptionStatus(BackupVault vault, BackupOptions options)

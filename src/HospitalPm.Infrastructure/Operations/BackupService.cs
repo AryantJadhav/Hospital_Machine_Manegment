@@ -295,10 +295,10 @@ public sealed partial class BackupService(
     /// file is whole and has not been touched; then the decrypted bytes are given to pg_restore --list, which
     /// proves the archive inside can be opened. A backup nobody can open is not a backup.
     /// </summary>
-    private async Task VerifyEncryptedAsync(string fullPath, Version? serverVersion, CancellationToken ct)
+    private async Task VerifyEncryptedAsync(string fullPath, Version? serverVersion, CancellationToken ct, string? recoveryKey = null)
     {
         await using (var input = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true))
-        await using (var decryptor = vault.OpenDecryptor(input, leaveOpen: true))
+        await using (var decryptor = vault.OpenDecryptor(input, recoveryKey, leaveOpen: true))
         {
             await decryptor.CopyToAsync(Stream.Null, ct);
         }
@@ -339,7 +339,7 @@ public sealed partial class BackupService(
         try
         {
             await using (var input = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true))
-            await using (var decryptor = vault.OpenDecryptor(input, leaveOpen: true))
+            await using (var decryptor = vault.OpenDecryptor(input, recoveryKey, leaveOpen: true))
             {
                 try
                 {
@@ -639,6 +639,110 @@ public sealed partial class BackupService(
             Log.PruneFailed(logger, directory, e);
         }
     }
+
+    /// <summary>
+    /// Takes in a backup file the administrator carried here (from a USB drive, a download, another machine), so it
+    /// can be restored. The bytes are written to a temporary name and checked before anything is kept: it must be an
+    /// encrypted Hospital PM backup, every part must decrypt (with this machine's key, or the recovery key given),
+    /// and the archive inside must open. Only then is it given its place in the backup folder and a row in the
+    /// history. A file that fails any check is deleted, and nothing about it is recorded.
+    ///
+    /// The file is kept exactly as it came, so it still opens with the recovery key it was made with.
+    /// </summary>
+    /// <exception cref="BackupUploadException">The file is not a usable backup. The message says why.</exception>
+    /// <exception cref="BackupDecryptionException">This machine's key does not open it and no usable recovery key was given.</exception>
+    public async Task<BackupRun> AdoptAsync(Stream content, string? originalName, string? recoveryKey, CancellationToken ct = default)
+    {
+        var started = clock.GetUtcNow().UtcDateTime;
+        var directory = ResolveDirectory();
+        Directory.CreateDirectory(directory);
+
+        var temporary = Path.Combine(directory, $"upload-{Guid.NewGuid():N}.partial");
+        try
+        {
+            await using (var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true))
+            {
+                await content.CopyToAsync(output, ct);
+            }
+
+            if (!BackupVault.LooksEncrypted(temporary))
+            {
+                throw new BackupUploadException(
+                    "That is not an encrypted Hospital PM backup. Choose a file whose name ends in .dump.enc, "
+                    + "as downloaded from the Backups page.");
+            }
+
+            var connectionString = configuration.GetConnectionString("HospitalPm");
+            var serverVersion = string.IsNullOrWhiteSpace(connectionString)
+                ? null
+                : await ReadServerVersionAsync(connectionString, ct);
+
+            try
+            {
+                await VerifyEncryptedAsync(temporary, serverVersion, ct, recoveryKey);
+            }
+            catch (InvalidOperationException e)
+            {
+                throw new BackupUploadException("The file opened, but the archive inside it is damaged: " + Shorten(e.Message));
+            }
+
+            var finalName = UploadedName(directory, originalName);
+            File.Move(temporary, Path.Combine(directory, finalName));
+
+            var run = new BackupRun
+            {
+                StartedAtUtc = started,
+                FinishedAtUtc = clock.GetUtcNow().UtcDateTime,
+                Status = BackupStatus.Succeeded,
+                Trigger = BackupTrigger.Manual,
+                FileName = finalName,
+                SizeBytes = new FileInfo(Path.Combine(directory, finalName)).Length,
+                ServerVersion = serverVersion?.ToString(),
+                DurationMs = (int)(clock.GetUtcNow().UtcDateTime - started).TotalMilliseconds,
+            };
+            db.BackupRuns.Add(run);
+            await db.SaveChangesAsync(ct);
+            return run;
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(temporary);
+            }
+            catch (IOException)
+            {
+                // Already moved into place, or still held: the next startup tidy and retention deal with it.
+            }
+        }
+    }
+
+    /// <summary>
+    /// A name for a file brought in from outside. The original is kept when it is one of ours and is free;
+    /// otherwise a fresh one in the same form. Never a name taken from the request as it came: it is only
+    /// ever used when it matches the pattern of the files this program writes.
+    /// </summary>
+    private string UploadedName(string directory, string? originalName)
+    {
+        var name = Path.GetFileName(originalName ?? string.Empty);
+        if (UploadedFileName().IsMatch(name) && !File.Exists(Path.Combine(directory, name)))
+        {
+            return name;
+        }
+
+        var stamp = clock.GetUtcNow().UtcDateTime.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
+        for (var attempt = 0; ; attempt++)
+        {
+            name = $"hospitalpm-{stamp}-uploaded{(attempt == 0 ? string.Empty : "-" + attempt.ToString(CultureInfo.InvariantCulture))}.dump{BackupVault.EncryptedExtension}";
+            if (!File.Exists(Path.Combine(directory, name)))
+            {
+                return name;
+            }
+        }
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^hospitalpm-[0-9]{8}-[0-9]{6}-[A-Za-z0-9+-]{1,10}\.dump\.enc$", System.Text.RegularExpressions.RegexOptions.CultureInvariant)]
+    private static partial System.Text.RegularExpressions.Regex UploadedFileName();
 
     public string ResolveDirectory() =>
         Path.IsPathRooted(_options.Directory)
