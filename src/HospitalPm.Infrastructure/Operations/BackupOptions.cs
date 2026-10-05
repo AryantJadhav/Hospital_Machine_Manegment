@@ -38,13 +38,9 @@ public sealed class BackupOptions
     /// </summary>
     public int TimeoutMinutes { get; set; } = 30;
 
-    /// <summary>
-    /// Whether backups are encrypted. On, and it should stay on: the file is the part that leaves the machine
-    /// (a USB drive, a shared folder, a cloud account) and it holds the whole hospital's records. Off only to
-    /// keep writing plain dumps, for a hospital that encrypts the backup drive itself and wants the old files.
-    /// See BackupVault for how.
-    /// </summary>
-    public bool Encrypt { get; set; } = true;
+    // There is no setting to turn backup encryption off. A backup is the whole hospital's records in one file, and the
+    // file is the part that leaves the machine (a USB drive, a shared folder, a cloud account), so every backup is
+    // encrypted, always. A "Backup:Encrypt" value in an old settings file is ignored, and the program says so on start.
 
     /// <summary>
     /// Where the backup keys are kept. Left empty it is the "keys" folder of the data directory, beside the

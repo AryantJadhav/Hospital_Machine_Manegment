@@ -126,7 +126,8 @@ public sealed partial class BackupService(
         // clock is ahead of UTC, never behind it.
         var stamp = (run.StartedAtUtc + hospital.Offset).ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
         var plainName = $"hospitalpm-{stamp}-{Reports.ReportTime.Zone(hospital.Offset)}.dump";
-        var fileName = _options.Encrypt ? plainName + BackupVault.EncryptedExtension : plainName;
+        // Always encrypted: there is no setting that writes a plain backup.
+        var fileName = plainName + BackupVault.EncryptedExtension;
         var fullPath = Path.Combine(directory, fileName);
 
         // Custom format: compressed, and pg_restore can pull single tables out
@@ -142,21 +143,14 @@ public sealed partial class BackupService(
             $"--dbname={builder.Database}",
         };
 
-        if (_options.Encrypt)
+        // pg_dump writes to its standard output and the bytes go straight through the encryption into the file. The
+        // plain backup is never on the disk, not even for a moment.
+        vault.EnsureKeys();
+        var written = await DumpEncryptedAsync(pgDump.Path!, arguments, builder.Password, fullPath, ct);
+        if (written == 0)
         {
-            // pg_dump writes to its standard output and the bytes go straight through the encryption into the
-            // file. The plain backup is never on the disk, not even for a moment.
-            vault.EnsureKeys();
-            var written = await DumpEncryptedAsync(pgDump.Path!, arguments, builder.Password, fullPath, ct);
-            if (written == 0)
-            {
-                throw new InvalidOperationException(
-                    "pg_dump reported success but wrote no data. Check free disk space on the backup drive.");
-            }
-        }
-        else
-        {
-            await RunToolAsync(pgDump.Path!, [.. arguments, $"--file={fullPath}"], builder.Password, "pg_dump", ct);
+            throw new InvalidOperationException(
+                "pg_dump reported success but wrote no data. Check free disk space on the backup drive.");
         }
 
         var info = new FileInfo(fullPath);
@@ -171,14 +165,7 @@ public sealed partial class BackupService(
 
         if (_options.VerifyAfterWrite)
         {
-            if (_options.Encrypt)
-            {
-                await VerifyEncryptedAsync(fullPath, serverVersion, ct);
-            }
-            else
-            {
-                await VerifyAsync(fullPath, serverVersion, ct);
-            }
+            await VerifyEncryptedAsync(fullPath, serverVersion, ct);
         }
 
         Prune(directory);
@@ -192,26 +179,6 @@ public sealed partial class BackupService(
         {
             Log.LeftoversFailed(logger, e);
         }
-    }
-
-    /// <summary>
-    /// Reads the finished archive back. A backup nobody can open is not a
-    /// backup, and this is the cheapest moment to find that out.
-    /// </summary>
-    private async Task VerifyAsync(string fullPath, Version? serverVersion, CancellationToken ct)
-    {
-        var pgRestore = locator.FindPgRestore(serverVersion);
-
-        if (!pgRestore.IsUsable)
-        {
-            // The dump itself is written and its size is known. Refusing to
-            // record it because the checker is missing would throw away a good
-            // backup, so this degrades to a warning rather than a failure.
-            Log.NotVerified(logger, pgRestore.Problem);
-            return;
-        }
-
-        await RunToolAsync(pgRestore.Path!, ["--list", fullPath], password: null, "pg_restore", ct);
     }
 
     /// <summary>
@@ -402,11 +369,6 @@ public sealed partial class BackupService(
     /// </summary>
     public async Task<int> EncryptLeftoversAsync(CancellationToken ct = default)
     {
-        if (!_options.Encrypt)
-        {
-            return 0;
-        }
-
         var directory = ResolveDirectory();
         if (!Directory.Exists(directory))
         {
@@ -534,73 +496,6 @@ public sealed partial class BackupService(
         {
             Write(buffer.Span);
             return ValueTask.CompletedTask;
-        }
-    }
-
-    private async Task RunToolAsync(
-        string exePath, string[] arguments, string? password, string toolName, CancellationToken ct)
-    {
-        var startInfo = new ProcessStartInfo(exePath)
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
-
-        foreach (var argument in arguments)
-        {
-            startInfo.ArgumentList.Add(argument);
-        }
-
-        // Through the environment, never the command line. Arguments are
-        // visible to every user on the machine in the process list; a hospital
-        // PC is a shared machine.
-        if (!string.IsNullOrEmpty(password))
-        {
-            startInfo.Environment["PGPASSWORD"] = password;
-        }
-
-        using var process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException($"{toolName} could not be started.");
-
-        var stderr = new StringBuilder();
-        process.ErrorDataReceived += (_, e) =>
-        {
-            if (e.Data is not null) stderr.AppendLine(e.Data);
-        };
-        process.BeginErrorReadLine();
-
-        // Read stdout too, so a chatty tool cannot fill the pipe buffer and
-        // deadlock waiting for someone to drain it.
-        _ = process.StandardOutput.ReadToEndAsync(ct);
-
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(TimeSpan.FromMinutes(_options.TimeoutMinutes));
-
-        try
-        {
-            await process.WaitForExitAsync(timeout.Token);
-        }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-        {
-            TryKill(process);
-            throw new InvalidOperationException(
-                $"{toolName} did not finish within {_options.TimeoutMinutes} minutes and was stopped.");
-        }
-        catch (OperationCanceledException)
-        {
-            TryKill(process);
-            throw;
-        }
-
-        if (process.ExitCode != 0)
-        {
-            var detail = stderr.ToString().Trim();
-            throw new InvalidOperationException(
-                detail.Length > 0
-                    ? $"{toolName} failed: {Shorten(detail)}"
-                    : $"{toolName} failed with exit code {process.ExitCode}.");
         }
     }
 

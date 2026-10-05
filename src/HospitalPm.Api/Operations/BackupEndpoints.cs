@@ -225,7 +225,8 @@ public static class BackupEndpoints
         var keys = vault.Status();
         return new
         {
-            enabled = options.Encrypt,
+            // Always: there is no setting that turns backup encryption off.
+            enabled = true,
             keyPresent = keys.MasterKeyPresent,
             recoveryKeyCreatedAtUtc = keys.RecoveryKeyCreatedAtUtc,
             recoveryKeySaved = keys.RecoveryKeySaved,

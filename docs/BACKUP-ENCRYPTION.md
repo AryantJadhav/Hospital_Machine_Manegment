@@ -111,11 +111,13 @@ folder of its own for the script, and the service empties that folder as it star
 
 ## Settings
 
-All optional. In `appsettings.json` or the environment (`Backup__Encrypt=false`).
+There is no setting to turn encryption off: every backup is encrypted, always. A `Backup:Encrypt=false` left in an old
+settings file is ignored, and the program says so in its log when it starts.
+
+All optional. In `appsettings.json` or the environment.
 
 | Setting | Default | |
 |---|---|---|
-| `Backup:Encrypt` | `true` | `false` writes plain dumps as before. Only for a hospital that encrypts the backup drive itself |
 | `Backup:KeyDirectory` | `<data>/keys` | Where the machine key is kept. Best on a different drive from the backups |
 
 ## The file

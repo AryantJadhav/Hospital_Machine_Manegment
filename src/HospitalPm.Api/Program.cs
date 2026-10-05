@@ -315,6 +315,13 @@ if (hasDatabase)
     }
 }
 
+// An old settings file may still say Backup:Encrypt=false. It is ignored: every backup is encrypted, always.
+if (string.Equals(app.Configuration["Backup:Encrypt"], "false", StringComparison.OrdinalIgnoreCase))
+{
+    app.Logger.LogWarning(
+        "Backup:Encrypt=false is no longer supported and is ignored. Every backup is encrypted; remove the setting.");
+}
+
 // Said out loud rather than left to be discovered. On a developer's machine
 // this is expected; on an installed service it means the signing key sits
 // beside the binary, where Program Files grants every local user read access.

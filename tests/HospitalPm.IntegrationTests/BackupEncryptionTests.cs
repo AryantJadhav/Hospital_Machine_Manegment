@@ -209,30 +209,6 @@ public sealed class BackupEncryptionTests(PostgresFixture fixture) : IDisposable
         return (process.ExitCode, await output, await error);
     }
 
-    [Fact]
-    public async Task With_encryption_switched_off_the_backup_is_a_plain_dump_as_before()
-    {
-        var options = new BackupOptions { Directory = NewDirectory(), Encrypt = false };
-
-        var run = await CreateService(options, TestVault.Create()).RunAsync(BackupTrigger.Manual);
-
-        if (!ToolsUsable(options))
-        {
-            return;
-        }
-
-        Assert.Equal(BackupStatus.Succeeded, run.Status);
-        Assert.EndsWith(".dump", run.FileName!, StringComparison.Ordinal);
-
-        var head = new byte[5];
-        await using (var stream = File.OpenRead(Path.Combine(options.Directory, run.FileName!)))
-        {
-            _ = await stream.ReadAsync(head);
-        }
-
-        Assert.Equal("PGDMP"u8.ToArray(), head);
-    }
-
     // ---------------------------------------------------------------- the plain backups already on the disk
 
     private static void Age(string path, TimeSpan by) => File.SetLastWriteTimeUtc(path, DateTime.UtcNow - by);
@@ -328,22 +304,6 @@ public sealed class BackupEncryptionTests(PostgresFixture fixture) : IDisposable
         // Neither is touched: which of the two is right is not for a tidy-up to decide.
         Assert.Equal([1, 2, 3], await File.ReadAllBytesAsync(plain));
         Assert.Equal([9, 9, 9], await File.ReadAllBytesAsync(plain + ".enc"));
-    }
-
-    [Fact]
-    public async Task With_encryption_switched_off_nothing_is_swept()
-    {
-        var options = new BackupOptions { Directory = NewDirectory(), Encrypt = false };
-        Directory.CreateDirectory(options.Directory);
-        var service = CreateService(options, TestVault.Create());
-
-        var plain = Path.Combine(options.Directory, $"hospitalpm-20200101-{Guid.NewGuid():N}-IST.dump");
-        await File.WriteAllBytesAsync(plain, [1, 2, 3]);
-        Age(plain, TimeSpan.FromMinutes(5));
-
-        Assert.Equal(0, await service.EncryptLeftoversAsync());
-        Assert.True(File.Exists(plain));
-        Assert.False(File.Exists(plain + ".enc"));
     }
 }
 
@@ -672,5 +632,54 @@ public sealed class BackupEncryptionEndpointTests(PostgresFixture fixture) : IAs
             File.Delete(plain);
             File.Delete(sealedPath + ".enc");
         }
+    }
+}
+
+/// <summary>
+/// There is no way to write a plain backup. A settings file that still says Backup:Encrypt=false is ignored, and the
+/// backup that comes out is encrypted all the same.
+/// </summary>
+[Collection(nameof(PostgresCollection))]
+public sealed class NoPlainBackupTests(PostgresFixture fixture) : IDisposable
+{
+    private readonly ApiFactory _factory = new(fixture.ConnectionString, new Dictionary<string, string?> { ["Backup:Encrypt"] = "false" });
+
+    public void Dispose() => _factory.Dispose();
+
+    [Fact]
+    public async Task A_setting_that_asks_for_plain_backups_is_ignored_and_the_backup_is_still_encrypted()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var users = scope.ServiceProvider.GetRequiredService<Microsoft.AspNetCore.Identity.UserManager<Infrastructure.Identity.ApplicationUser>>();
+            var user = new Infrastructure.Identity.ApplicationUser { UserName = $"np-{suffix}", FullName = "No Plain", IsActive = true };
+            Assert.True((await users.CreateAsync(user, "NoPlain2026!")).Succeeded);
+            await users.AddToRoleAsync(user, Roles.Developer);
+        }
+
+        using var client = _factory.CreateClient();
+        var login = await client.PostAsJsonAsync("/api/auth/login", new { userName = $"np-{suffix}", password = "NoPlain2026!" });
+        login.EnsureSuccessStatusCode();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", (await login.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("accessToken").GetString());
+
+        var status = await client.GetFromJsonAsync<JsonElement>("/api/admin/backups");
+        Assert.True(status.GetProperty("encryption").GetProperty("enabled").GetBoolean());
+
+        var run = await client.PostAsync("/api/admin/backups/run", null);
+        Assert.Equal(HttpStatusCode.OK, run.StatusCode);
+        var result = await run.Content.ReadFromJsonAsync<JsonElement>();
+        if (result.GetProperty("status").GetInt32() != (int)BackupStatus.Succeeded)
+        {
+            // No usable pg_dump here: there is no file, and so no plain file either.
+            return;
+        }
+
+        var directory = status.GetProperty("directory").GetString()!;
+        var name = result.GetProperty("fileName").GetString()!;
+        Assert.EndsWith(".dump.enc", name, StringComparison.Ordinal);
+        Assert.True(BackupVault.LooksEncrypted(Path.Combine(directory, name)));
+        Assert.Empty(Directory.GetFiles(directory, "*.dump"));
     }
 }

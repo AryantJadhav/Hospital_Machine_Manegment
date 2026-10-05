@@ -92,11 +92,10 @@ public sealed class BackupTests(PostgresFixture fixture) : IDisposable
     }
 
     [Fact]
-    public async Task A_plain_backup_is_written_and_can_be_read_back()
+    public async Task A_backup_is_written_encrypted_and_can_be_read_back()
     {
-        // Encryption is on by default and is tested in BackupEncryptionTests; this is the plain format, still
-        // available for a hospital that encrypts the backup drive itself.
-        var options = new BackupOptions { Directory = NewDirectory(), Encrypt = false };
+        // The encryption itself is tested in BackupEncryptionTests; this is the ordinary backup run.
+        var options = new BackupOptions { Directory = NewDirectory() };
 
         var service = CreateService(options);
         var run = await service.RunAsync(BackupTrigger.Manual);
@@ -119,16 +118,17 @@ public sealed class BackupTests(PostgresFixture fixture) : IDisposable
         var path = Path.Combine(options.Directory, run.FileName!);
         Assert.True(File.Exists(path), $"no dump at {path}");
 
-        // Custom-format archives start with the magic "PGDMP". VerifyAfterWrite
-        // already ran pg_restore --list over it, so reaching here means the
-        // archive's table of contents parsed as well.
+        // An encrypted backup starts with the program's own header, never the "PGDMP" of a plain archive.
+        // VerifyAfterWrite already decrypted it and ran pg_restore --list over what came out, so reaching here
+        // means the archive's table of contents parsed as well.
         var header = new byte[5];
         await using (var stream = File.OpenRead(path))
         {
             _ = await stream.ReadAsync(header);
         }
 
-        Assert.Equal("PGDMP"u8.ToArray(), header);
+        Assert.EndsWith(".dump.enc", run.FileName!, StringComparison.Ordinal);
+        Assert.Equal("HPBK"u8.ToArray(), header[..4]);
     }
 
     /// <summary>
