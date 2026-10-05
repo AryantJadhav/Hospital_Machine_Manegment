@@ -55,6 +55,7 @@ public static class BackupEndpoints
         PgToolLocator locator,
         IOptions<BackupOptions> options,
         DriveSync drive,
+        HospitalPm.Infrastructure.Maintenance.HospitalClock hospital,
         CancellationToken ct)
     {
         var runs = await db.BackupRuns.AsNoTracking()
@@ -87,6 +88,12 @@ public static class BackupEndpoints
             // Whether backups are kept private, and whether the recovery key has been written down. Nothing here is a key.
             encryption = EncryptionStatus(vault, options.Value),
             drive = drive.Status(),
+            // When the nightly backup runs, on the hospital's own clock, as the page says it.
+            schedule = new
+            {
+                dailyAt = options.Value.DailyAtLocal().ToString(@"hh\:mm", System.Globalization.CultureInfo.InvariantCulture),
+                zone = HospitalPm.Infrastructure.Reports.ReportTime.Zone(hospital.Offset),
+            },
             tool = new
             {
                 found = pgDump.Path is not null,

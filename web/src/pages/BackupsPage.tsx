@@ -41,6 +41,8 @@ type Drive = {
 };
 
 type Status = {
+  /** When the nightly backup runs, on the hospital's own clock. */
+  schedule: { dailyAt: string; zone: string };
   runs: Run[];
   directory: string;
   retainCount: number;
@@ -323,7 +325,7 @@ export function BackupsPage() {
         <div>
           <h1>Backups</h1>
           <p className="muted">
-            The database is dumped every night at 02:30 IST and each dump is read back to confirm it
+            The database is dumped every day at {data.schedule.dailyAt} {data.schedule.zone} and each dump is read back to confirm it
             opens.
           </p>
         </div>

@@ -153,10 +153,14 @@ public sealed class DriveSync(
             return (null, null, null, "This installation is locked.");
         }
 
+        // The licence is needed to name the folder. A folder named in the settings does not need one: that is a
+        // person pointing the program at their own drive, not a hospital using the built-in account.
         var licence = licences.Current();
-        if (licence.State is not (LicenceState.Valid or LicenceState.Expired) || licence.Licence is null)
+        var licensed = licence.State is LicenceState.Valid or LicenceState.Expired && licence.Licence is not null;
+        if (!licensed && string.IsNullOrWhiteSpace(Drive.Folder))
         {
-            return (null, null, null, "Backup to Google Drive needs a licence: the drive folder is named after it.");
+            return (null, null, null,
+                "Backup to Google Drive needs a licence, because the drive folder is named after it. Install one, or set Backup:Drive:Folder.");
         }
 
         var rclone = FindRclone();
@@ -185,7 +189,7 @@ public sealed class DriveSync(
         }
 
         var folder = string.IsNullOrWhiteSpace(Drive.Folder)
-            ? licence.Licence.LicenceId.ToString("N")
+            ? licence.Licence!.LicenceId.ToString("N")
             : Drive.Folder.Trim().TrimEnd('/');
         return (rclone, credentials, folder, null);
     }

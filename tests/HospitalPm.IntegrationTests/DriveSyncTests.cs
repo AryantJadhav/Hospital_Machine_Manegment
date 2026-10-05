@@ -167,6 +167,12 @@ public sealed class DriveSyncTests : IDisposable
         Assert.False(result.Ran);
         Assert.Contains("licence", result.Skipped, StringComparison.Ordinal);
         Assert.Empty(rclone.Calls);
+
+        // A folder named in the settings is a person using their own drive: no licence is needed to name it.
+        var named = await Sync(Licensed(out _, install: false), rclone, d => d.Folder = "my-own-folder").SyncAsync();
+        Assert.True(named.Ran, named.Skipped);
+        Assert.Equal(1, named.Sent);
+        Assert.StartsWith("HPDRIVE:my-own-folder/", rclone.Calls.First(c => c.Args[0] == "copyto").Args[2], StringComparison.Ordinal);
     }
 
     [Fact]

@@ -63,6 +63,33 @@ public sealed class BackupOptions
     /// <summary>Sending the encrypted backups to a cloud drive, with rclone. Off unless switched on.</summary>
     public DriveOptions Drive { get; set; } = new();
 
+    /// <summary>
+    /// When the nightly backup runs, on the hospital's own clock, as "HH:mm". Three in the morning: the quietest
+    /// the PC ever is, and after the day's PM tasks have been generated at a quarter past midnight. A value that
+    /// cannot be read falls back to this rather than switching the backup off.
+    /// </summary>
+    public string DailyAt { get; set; } = DefaultDailyAt;
+
+    public const string DefaultDailyAt = "03:00";
+
+    /// <summary>The time of day from <see cref="DailyAt"/>, or the default when it is not a time.</summary>
+    public TimeSpan DailyAtLocal() =>
+        TimeSpan.TryParseExact(DailyAt?.Trim(), @"h\:mm", System.Globalization.CultureInfo.InvariantCulture, out var time)
+        && time >= TimeSpan.Zero && time < TimeSpan.FromHours(24)
+            ? time
+            : TimeSpan.Parse(DefaultDailyAt, System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// The cron line, in UTC, that fires at <paramref name="local"/> on a clock <paramref name="offset"/> ahead of UTC.
+    /// The scheduler works in UTC because the program carries no OS time zone data; the hospital's offset is applied here.
+    /// </summary>
+    public static string CronFor(TimeSpan local, TimeSpan offset)
+    {
+        var utc = local - offset;
+        var minutes = ((int)utc.TotalMinutes % 1440 + 1440) % 1440;
+        return $"{minutes % 60} {minutes / 60} * * *";
+    }
+
     /// <summary>The backup folder as a full path. A relative one is beside the program, never the working directory.</summary>
     public string ResolveDirectory() =>
         Path.IsPathRooted(Directory) ? Directory : Path.Combine(AppContext.BaseDirectory, Directory);

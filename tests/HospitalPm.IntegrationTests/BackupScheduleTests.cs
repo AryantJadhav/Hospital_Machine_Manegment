@@ -41,9 +41,9 @@ public sealed class BackupScheduleTests(PostgresFixture fixture) : IDisposable
         var job = connection.GetRecurringJobs().SingleOrDefault(j => j.Id == JobId);
 
         Assert.NotNull(job);
-        // 21:00 UTC is 02:30 in India — the middle of the hospital's night.
+        // 21:30 UTC is 03:00 in India — the middle of the hospital's night.
         // At 02:30 UTC it ran at 08:00 India time, as the day shift arrived.
-        Assert.Equal("0 21 * * *", job.Cron);
+        Assert.Equal("30 21 * * *", job.Cron);
         Assert.Equal("UTC", job.TimeZoneId);
 
         // Asserted as the time it will actually fire on the hospital's clock,
@@ -54,8 +54,36 @@ public sealed class BackupScheduleTests(PostgresFixture fixture) : IDisposable
         var hospital = _factory.Services.GetRequiredService<HospitalClock>();
         var fires = job.NextExecution!.Value + hospital.Offset;
 
-        Assert.Equal(2, fires.Hour);
-        Assert.Equal(30, fires.Minute);
+        Assert.Equal(3, fires.Hour);
+        Assert.Equal(0, fires.Minute);
+    }
+
+    [Theory]
+    [InlineData("03:00", 330, "30 21 * * *")] // India: the default
+    [InlineData("3:00", 330, "30 21 * * *")]
+    [InlineData("03:00", 0, "0 3 * * *")]
+    [InlineData("03:00", 60, "0 2 * * *")]
+    [InlineData("01:00", 330, "30 19 * * *")] // before midnight UTC
+    [InlineData("00:15", 330, "45 18 * * *")]
+    [InlineData("23:30", -300, "30 4 * * *")] // west of UTC, past midnight UTC
+    public void The_daily_time_is_turned_into_a_utc_cron_for_the_hospitals_own_offset(string at, int offsetMinutes, string cron)
+    {
+        var options = new Infrastructure.Operations.BackupOptions { DailyAt = at };
+
+        Assert.Equal(cron, Infrastructure.Operations.BackupOptions.CronFor(options.DailyAtLocal(), TimeSpan.FromMinutes(offsetMinutes)));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("soon")]
+    [InlineData("25:00")]
+    [InlineData("-1:00")]
+    [InlineData("3")]
+    public void A_time_that_cannot_be_read_falls_back_to_three_in_the_morning_and_never_switches_the_backup_off(string at)
+    {
+        var options = new Infrastructure.Operations.BackupOptions { DailyAt = at };
+
+        Assert.Equal(TimeSpan.FromHours(3), options.DailyAtLocal());
     }
 
     /// <summary>

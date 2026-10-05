@@ -243,7 +243,7 @@ if (hasDatabase)
             job => job.RunAsync(CancellationToken.None),
             // 18:45 UTC — 00:15 the next morning in India, a quarter of an hour
             // into the hospital's new day, so the day's PM tasks exist before
-            // anyone could look for them and before the 02:30 backup captures
+            // anyone could look for them and before the 03:00 backup captures
             // them. It ran at 00:15 UTC, which is 05:45 in India.
             //
             // Cron runs in UTC because the app deliberately avoids depending on
@@ -253,23 +253,24 @@ if (hasDatabase)
             "45 18 * * *",
             new RecurringJobOptions { TimeZone = TimeZoneInfo.Utc });
 
-    // 21:00 UTC — 02:30 the next morning in India, the middle of the night on
-    // the hospital's own clock and the quietest the PC ever is. It ran at 02:30
-    // UTC, which is 08:00 in India: the start of the day shift, exactly when a
+    // Every day at 03:00 on the hospital's own clock (Backup:DailyAt): the middle of the night and the quietest the PC
+    // ever is. It once ran at 02:30 UTC, which is 08:00 in India: the start of the day shift, exactly when a
     // biomedical department begins writing.
     //
-    // The cron is UTC because the app deliberately carries no OS time zone data;
-    // the offset lives in ScheduleOptions, so a hospital outside India that
-    // changes it must move this line too.
+    // The cron is UTC because the app deliberately carries no OS time zone data; the hospital's offset
+    // (ScheduleOptions) is applied here, so a hospital outside India only changes its offset, not this line.
     //
-    // Two hours and a quarter after PM generation, so a dump holds the tasks
-    // generated for the day that has just started. Both jobs share one Hangfire
-    // worker, and the gap is far wider than either takes.
+    // Two hours and three quarters after PM generation, so a dump holds the tasks generated for the day that
+    // has just started. Both jobs share one Hangfire worker, and the gap is far wider than either takes.
+    var backupOptions = scope.ServiceProvider
+        .GetRequiredService<Microsoft.Extensions.Options.IOptions<HospitalPm.Infrastructure.Operations.BackupOptions>>().Value;
     scope.ServiceProvider.GetRequiredService<IRecurringJobManager>()
         .AddOrUpdate<HospitalPm.Infrastructure.Operations.BackupService>(
             "nightly-backup",
             job => job.RunScheduledAsync(CancellationToken.None),
-            "0 21 * * *",
+            HospitalPm.Infrastructure.Operations.BackupOptions.CronFor(
+                backupOptions.DailyAtLocal(),
+                scope.ServiceProvider.GetRequiredService<HospitalPm.Infrastructure.Maintenance.HospitalClock>().Offset),
             new RecurringJobOptions { TimeZone = TimeZoneInfo.Utc });
 
     // A restore decrypts the backup it is given into a staging folder for its script, and the script writes a
