@@ -1,0 +1,37 @@
+[
+  {
+    "user": "admin",
+    "password": "REPLACE-WITH-THE-ADMIN-PASSWORD",
+    "role": "Developer"
+  },
+  {
+    "user": "s.deshmukh",
+    "password": "Hospital@2026",
+    "role": "BmeHead"
+  },
+  {
+    "user": "a.kulkarni",
+    "password": "Hospital@2026",
+    "role": "BmeEngineer"
+  },
+  {
+    "user": "r.patil",
+    "password": "Hospital@2026",
+    "role": "BmeEngineer"
+  },
+  {
+    "user": "m.shaikh",
+    "password": "Hospital@2026",
+    "role": "BmeEngineer"
+  },
+  {
+    "user": "p.jadhav",
+    "password": "Hospital@2026",
+    "role": "BmeEngineer"
+  },
+  {
+    "user": "v.more",
+    "password": "Hospital@2026",
+    "role": "BmeEngineer"
+  }
+]

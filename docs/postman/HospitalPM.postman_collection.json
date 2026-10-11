@@ -1,0 +1,933 @@
+{
+  "info": {
+    "name": "Hospital PM API",
+    "description": "Checks for the Hospital PM API. Needs a Postman environment with baseUrl (and user, password and role if you run it without a data file).\n\nRun it once per person: Run collection, Data, choose users.json. Every run signs in as that person and expects what their role may do.\n\nFolders: Basics, A service request from start to finish (run in order; it creates a record), What must be refused, Developer only, Several people at once.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Signs in by itself when there is no token, it belongs to someone else, or it is about to run out (15 minutes).",
+          "// {{user}} and {{password}} come from the data file when there is one, so each run (iteration) is a different person.",
+          "if (pm.info.requestName !== \"Login\") {",
+          "  const user = pm.variables.get(\"user\");",
+          "  const expires = Number(pm.environment.get(\"tokenExpires\") || 0);",
+          "  if (!pm.environment.get(\"token\") || pm.environment.get(\"tokenUser\") !== user || Date.now() > expires - 60000) {",
+          "    pm.sendRequest({",
+          "      url: pm.environment.get(\"baseUrl\") + \"/api/auth/login\",",
+          "      method: \"POST\",",
+          "      header: { \"Content-Type\": \"application/json\" },",
+          "      body: { mode: \"raw\", raw: JSON.stringify({ userName: user, password: pm.variables.get(\"password\") }) }",
+          "    }, (err, res) => {",
+          "      if (err || res.code !== 200) { console.log(\"automatic sign-in failed\", err || res.code); return; }",
+          "      const j = res.json();",
+          "      pm.environment.set(\"token\", j.accessToken);",
+          "      pm.environment.set(\"tokenUser\", user);",
+          "      pm.environment.set(\"tokenExpires\", new Date(j.expiresAtUtc.replace(/(\\.\\d{3})\\d+/, \"$1\")).getTime());",
+          "    });",
+          "  }",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Login",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{ \"userName\": \"{{user}}\", \"password\": \"{{password}}\" }",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "auth": {
+          "type": "noauth"
+        },
+        "description": "Signs in with {{user}} and {{password}} from the environment and keeps the token. Every other request signs in by itself when the token has run out."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"login works\", () => pm.response.to.have.status(200));",
+              "const j = pm.response.json();",
+              "pm.test(\"gives an access token\", () => pm.expect(j.accessToken).to.be.a(\"string\").and.not.empty);",
+              "pm.environment.set(\"token\", j.accessToken);",
+              "pm.environment.set(\"tokenUser\", pm.variables.get(\"user\"));",
+              "pm.environment.set(\"tokenExpires\", new Date(j.expiresAtUtc.replace(/(\\.\\d{3})\\d+/, \"$1\")).getTime());",
+              "console.log(\"signed in as \" + pm.variables.get(\"user\") + \" (\" + (pm.variables.get(\"role\") || \"no role given\") + \")\");"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Basics (read only)",
+      "item": [
+        {
+          "name": "Health (no sign-in needed)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"says ok\", () => pm.expect(pm.response.json().status).to.eql(\"ok\"));",
+                  "pm.test(\"fast\", () => pm.expect(pm.response.responseTime).to.be.below(500));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/dashboard"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json();",
+                  "pm.test(\"has the equipment and service request numbers\", () => {",
+                  "  pm.expect(d.equipment.total).to.be.a(\"number\");",
+                  "  pm.expect(d.workOrders.open).to.be.a(\"number\");",
+                  "});",
+                  "pm.test(\"fast\", () => pm.expect(pm.response.responseTime).to.be.below(1500));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Equipment list",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/equipment?page=1&pageSize=5"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json();",
+                  "pm.test(\"has a list and a total\", () => { pm.expect(d.items).to.be.an(\"array\"); pm.expect(d.total).to.be.a(\"number\"); });",
+                  "pm.test(\"page size is respected\", () => pm.expect(d.items.length).to.be.at.most(5));",
+                  "if (d.items.length) { pm.environment.set(\"eqId\", d.items[0].id); pm.environment.set(\"assetTag\", d.items[0].assetTag); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Equipment search",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/equipment?q={{assetTag}}",
+            "description": "Run Equipment list first: it saves a real asset tag to search for."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json();",
+                  "pm.test(\"finds the machine by its tag\", () => pm.expect(d.items.map(i => i.assetTag)).to.include(pm.environment.get(\"assetTag\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Equipment detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/equipment/{{eqId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json();",
+                  "pm.test(\"is the machine asked for\", () => pm.expect(d.id).to.eql(Number(pm.environment.get(\"eqId\"))));",
+                  "pm.test(\"says where it is and what it is\", () => { pm.expect(d.locationName).to.be.a(\"string\"); pm.expect(d.equipmentTypeName).to.be.a(\"string\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Equipment that does not exist (404)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/equipment/999999999"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Service requests list",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/work-orders?pageSize=5"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json();",
+                  "pm.test(\"has items and a total\", () => { pm.expect(d.items).to.be.an(\"array\"); pm.expect(d.total).to.be.a(\"number\"); });",
+                  "if (d.items.length) pm.environment.set(\"openWoId\", d.items[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PM tasks",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/pm/tasks?pageSize=5"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"has items\", () => pm.expect(pm.response.json().items).to.be.an(\"array\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PM summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/pm/summary"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Locations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/locations"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"is a list\", () => pm.expect(pm.response.json()).to.be.an(\"array\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Spare parts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/spare-parts"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Staff list (Developer and Head only)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/users"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const role = pm.variables.get(\"role\") || \"Developer\";",
+                  "const may = [\"Developer\", \"BmeHead\"].includes(role);",
+                  "pm.test(may ? role + \" may see this (200)\" : role + \" is refused (403)\", () => pm.response.to.have.status(may ? 200 : 403));",
+                  "if (may) {",
+                  "pm.test(\"has people\", () => pm.expect(pm.response.json().length).to.be.above(0));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Licence status (Developer only)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/admin/licence"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const role = pm.variables.get(\"role\") || \"Developer\";",
+                  "const may = [\"Developer\"].includes(role);",
+                  "pm.test(may ? role + \" may see this (200)\" : role + \" is refused (403)\", () => pm.response.to.have.status(may ? 200 : 403));",
+                  "if (may) {",
+                  "pm.test(\"has a state and a message\", () => pm.expect(pm.response.json().message).to.be.a(\"string\"));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Downtime report (Developer and Head only)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/reports/downtime"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const role = pm.variables.get(\"role\") || \"Developer\";",
+                  "const may = [\"Developer\", \"BmeHead\"].includes(role);",
+                  "pm.test(may ? role + \" may see this (200)\" : role + \" is refused (403)\", () => pm.response.to.have.status(may ? 200 : 403));",
+                  ""
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "A service request from start to finish (run in order)",
+      "item": [
+        {
+          "name": "1. Report a fault (creates a record)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/work-orders",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"equipmentId\": {{eqId}},\n  \"faultDescription\": \"Postman test fault\",\n  \"priority\": 30\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Needs Equipment list to have run, for a real machine. Priority: 10 Low, 20 Medium, 30 High, 40 Critical. Creates a real service request."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 201\", () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"gives a number\", () => pm.expect(j.number).to.match(/^WO-/));",
+                  "pm.environment.set(\"woId\", j.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Take it: In progress (becomes yours)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/work-orders/{{woId}}/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": 30\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Pressing In progress on a fault nobody has takes it. Status: 10 Reported, 20 Assigned, 30 In progress, 40 On hold, 50 Resolved, 60 Closed, 70 Cancelled."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Add a note",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/work-orders/{{woId}}/notes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"body\": \"Checked by Postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. The service request now",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/work-orders/{{woId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json();",
+                  "pm.test(\"is in progress\", () => pm.expect(d.status).to.eql(30));",
+                  "pm.test(\"is assigned to someone (the person who took it)\", () => pm.expect(d.assignedToUserId).to.be.a(\"number\"));",
+                  "pm.test(\"has the note\", () => pm.expect(d.notes.map(n => n.body)).to.include(\"Checked by Postman\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5. Resolve it",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/work-orders/{{woId}}/resolve",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resolutionNotes\": \"Replaced the board (Postman test)\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"is resolved\", () => pm.expect(pm.response.json().status).to.eql(50));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6. Resolve it again (409, already done)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/work-orders/{{woId}}/resolve",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resolutionNotes\": \"again\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 409\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7. Close it",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/work-orders/{{woId}}/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": 60\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "8. Reopen a closed one (409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/work-orders/{{woId}}/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": 30\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 409\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9. Service report PDF",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/reports/work-orders/{{woId}}/report.pdf"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"is a PDF\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"pdf\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "What must be refused",
+      "item": [
+        {
+          "name": "Fault with no description (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/work-orders",
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"equipmentId\": {{eqId}}, \"faultDescription\": \"   \", \"priority\": 20 }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"says what to fix\", () => pm.expect(pm.response.json().error).to.be.a(\"string\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Fault on a machine that does not exist (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/work-orders",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"equipmentId\": 999999999,\n  \"faultDescription\": \"x\",\n  \"priority\": 20\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "No token (401)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/equipment",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Wrong password (401)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userName\": \"{{user}}\",\n  \"password\": \"this-is-wrong\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "One wrong try is fine. The account locks after several in a row."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Developer only (everyone else must get 403)",
+      "item": [
+        {
+          "name": "Backups: status and schedule (Developer only)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/admin/backups"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const role = pm.variables.get(\"role\") || \"Developer\";",
+                  "const may = [\"Developer\"].includes(role);",
+                  "pm.test(may ? role + \" may see this (200)\" : role + \" is refused (403)\", () => pm.response.to.have.status(may ? 200 : 403));",
+                  "if (may) {",
+                  "const j = pm.response.json();",
+                  "pm.test(\"keeps a fortnight (168) at one every two hours\", () => { pm.expect(j.retainCount).to.eql(168); pm.expect(j.schedule.everyHours).to.eql(2); });",
+                  "pm.test(\"pg_dump is found\", () => pm.expect(j.tool.found).to.be.true);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Back up now (Developer only; makes a real backup)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/admin/backups/run",
+            "description": "Only the Developer may take a backup. Everyone else must get 403."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const role = pm.variables.get(\"role\") || \"Developer\";",
+                  "const may = [\"Developer\"].includes(role);",
+                  "pm.test(may ? role + \" may see this (200)\" : role + \" is refused (403)\", () => pm.response.to.have.status(may ? 200 : 403));",
+                  "if (may) {",
+                  "const j = pm.response.json();",
+                  "pm.test(\"backup finished with no error\", () => pm.expect(j.error).to.be.null);",
+                  "pm.test(\"is a real file\", () => pm.expect(j.sizeBytes).to.be.above(1000));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Several people at once (runs once)",
+      "item": [
+        {
+          "name": "Two engineers take the same fault at once (runs once)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health",
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Signs in as the Head and two engineers (the demo accounts), reports a fault, and has both engineers press In progress together. Needs 'Equipment list' to have run first."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Two engineers press In progress on the same fault at the same moment: exactly one may get it.",
+                  "if (pm.info.iteration > 0) {",
+                  "  pm.test(\"runs once, on the first person in the data file\", () => pm.expect(true).to.be.true);",
+                  "} else {",
+                  "  const base = pm.environment.get(\"baseUrl\");",
+                  "  const post = (url, body, token, done) => pm.sendRequest({",
+                  "    url: base + url, method: \"POST\",",
+                  "    header: Object.assign({ \"Content-Type\": \"application/json\" }, token ? { Authorization: \"Bearer \" + token } : {}),",
+                  "    body: { mode: \"raw\", raw: JSON.stringify(body) }",
+                  "  }, (err, res) => done(err, res));",
+                  "  const login = (user, done) => post(\"/api/auth/login\", { userName: user, password: \"Hospital@2026\" }, null,",
+                  "    (e, r) => done(!e && r.code === 200 ? r.json().accessToken : null));",
+                  "",
+                  "  login(\"s.deshmukh\", head => login(\"a.kulkarni\", anil => login(\"m.shaikh\", sunita => {",
+                  "    pm.test(\"three different people signed in\", () => pm.expect([head, anil, sunita].every(Boolean)).to.be.true);",
+                  "    if (![head, anil, sunita].every(Boolean)) { return; }",
+                  "    post(\"/api/work-orders\", { equipmentId: Number(pm.environment.get(\"eqId\")), faultDescription: \"Two people, one fault\", priority: 30 }, head, (e, r) => {",
+                  "      pm.test(\"the Head reported a fault\", () => pm.expect(r.code).to.eql(201));",
+                  "      const id = r.json().id;",
+                  "      const results = [];",
+                  "      const finish = () => {",
+                  "        if (results.length < 2) { return; }",
+                  "        pm.test(\"exactly one of the two engineers got it\", () => pm.expect(results.map(x => x.code).sort()).to.eql([204, 409]));",
+                  "        const refused = results.find(x => x.code === 409);",
+                  "        pm.test(\"the other was told who has it\", () => pm.expect(refused.json().error).to.include(\"already working on this\"));",
+                  "      };",
+                  "      [anil, sunita].forEach(t => post(\"/api/work-orders/\" + id + \"/status\", { status: 30 }, t, (err, res) => { results.push(res); finish(); }));",
+                  "    });",
+                  "  })));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
