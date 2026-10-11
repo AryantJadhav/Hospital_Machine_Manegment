@@ -3,6 +3,7 @@ using Hangfire.Storage;
 using HospitalPm.Domain.Operations;
 using HospitalPm.Infrastructure.Maintenance;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace HospitalPm.IntegrationTests;
@@ -115,6 +116,37 @@ public sealed class BackupScheduleTests(PostgresFixture fixture) : IDisposable
 
         Assert.Equal(14 * 12, options.RetainCount);
         Assert.Equal(14 * 12, options.Drive.KeepCount);
+    }
+
+    /// <summary>
+    /// The settings file that ships with the program, not the defaults in the code. A value in that file beats the
+    /// code's, and it still said 14 after the code moved to 168 for a backup every two hours, so every install kept
+    /// 28 hours of backups while the tests, which read only the code, said a fortnight.
+    /// </summary>
+    [Fact]
+    public void The_settings_file_that_ships_keeps_a_fortnight_of_backups_like_the_code_says()
+    {
+        var root = new DirectoryInfo(AppContext.BaseDirectory);
+        while (root is not null && !File.Exists(Path.Combine(root.FullName, "HospitalPm.slnx")))
+        {
+            root = root.Parent;
+        }
+
+        Assert.NotNull(root);
+        var file = Path.Combine(root!.FullName, "src", "HospitalPm.Api", "appsettings.json");
+
+        var options = new Infrastructure.Operations.BackupOptions();
+        new ConfigurationBuilder()
+            .AddJsonFile(file)
+            .Build()
+            .GetSection(Infrastructure.Operations.BackupOptions.Section)
+            .Bind(options);
+
+        var code = new Infrastructure.Operations.BackupOptions();
+        Assert.Equal(168, options.RetainCount);
+        Assert.Equal(code.RetainCount, options.RetainCount);
+        Assert.Equal(code.EveryHours, options.EveryHours);
+        Assert.Equal(code.StartsAt, options.StartsAt);
     }
 
     /// <summary>
