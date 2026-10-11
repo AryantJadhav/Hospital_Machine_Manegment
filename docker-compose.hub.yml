@@ -1,35 +1,40 @@
 # Hospital PM - the two Docker Hub images, joined for good
 #
-#   aryant050/hospitalpm-postgres   the database
-#   aryant050/hospitalpm            the backend (API)
+#   aryant050/hospitalpm:DB        the database (PostgreSQL 18, with the hospitalpm database and user made)
+#   aryant050/hospitalpm:v0.0.6    the application: the API and the web screens, on port 5000
 #
 # One command starts both on a network of their own, and they stay connected: each restarts if it stops, and
-# comes back by itself when Docker or the PC restarts. The backend finds the database by the name "db", so there is
-# no address to go stale.
+# comes back by itself when Docker or the PC restarts. The application finds the database by the name "db", so there
+# is no address to go stale. People open the application at http://THIS-MACHINE:APP_PORT in a browser.
 #
 #   docker compose -f docker-compose.hub.yml --env-file .env up -d
 #
 # Settings go in a file called .env beside this one (it is ignored by git, so the password is never committed):
 #
-#   POSTGRES_PASSWORD=...          required. The one the database volume was first created with.
+#   POSTGRES_PASSWORD=...          required. Choose it, and keep it: it is how you reach the database yourself. Letters,
+#                                  numbers, - _ and . are safe; a ; or a quote breaks the application's connection
+#                                  string. It is set when the database is FIRST created: changing it here later does
+#                                  not change the password inside an existing database volume.
 #   HOSPITAL_NAME=...              printed on every report
-#   HOSPITALPM_TAG=b3a08e7         which image version to run
+#   HOSPITALPM_TAG=v0.0.6          which application version to run
+#   APP_PORT=5001                  the port people open in their browser
 #
-# For pgAdmin on this PC: host localhost, port 5435 (DB_PORT), database hospitalpm, user hospitalpm.
-# The port is open to this PC only, not to the network.
+# For pgAdmin on this PC: host localhost, port 5435 (DB_PORT), database hospitalpm, user hospitalpm, and your password.
+# The port is open to this PC only, not to the network. To reach the database from another PC, set
+# DB_BIND=0.0.0.0 in the .env file (and allow the port in the firewall for that PC only).
 #
 # The data lives on two named volumes, so removing the containers does not remove the data.
 
 services:
   db:
-    image: aryant050/hospitalpm-postgres:${DB_TAG:-18.6}
+    image: aryant050/hospitalpm:${DB_TAG:-DB}
     restart: unless-stopped
     environment:
       POSTGRES_DB: hospitalpm
       POSTGRES_USER: hospitalpm
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the .env file}
     ports:
-      - "127.0.0.1:${DB_PORT:-5435}:5432"
+      - "${DB_BIND:-127.0.0.1}:${DB_PORT:-5435}:5432"
     volumes:
       # PostgreSQL 18 keeps its data in a versioned folder under here.
       - pgdata:/var/lib/postgresql
@@ -43,13 +48,14 @@ services:
       - hospitalpm
 
   backend:
-    image: aryant050/hospitalpm:${HOSPITALPM_TAG:-b3a08e7}
+    image: aryant050/hospitalpm:${HOSPITALPM_TAG:-v0.0.6}
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
     ports:
-      # 5001 on this PC: 5000 belongs to the app installed on Windows.
+      # 5001 by default, because 5000 is often already taken on a PC (the app installed on Windows uses it). On a
+      # server of its own, set APP_PORT=5000.
       - "${APP_PORT:-5001}:5000"
     environment:
       ConnectionStrings__HospitalPm: "Host=db;Port=5432;Database=hospitalpm;Username=hospitalpm;Password=${POSTGRES_PASSWORD}"
