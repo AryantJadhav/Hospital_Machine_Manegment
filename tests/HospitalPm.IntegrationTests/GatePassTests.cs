@@ -116,7 +116,7 @@ public sealed class GatePassTests(PostgresFixture fixture) : IAsyncLifetime, IDi
     }
 
     private static string Day(int daysFromToday) =>
-        DateOnly.FromDateTime(DateTime.UtcNow.AddDays(daysFromToday)).ToString("yyyy-MM-dd");
+        DateOnly.FromDateTime(DateTime.UtcNow.AddMinutes(330).AddDays(daysFromToday)).ToString("yyyy-MM-dd");
 
     private string Vendor => $"Bet Medical {_suffix}";
 

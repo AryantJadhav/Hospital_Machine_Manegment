@@ -30,6 +30,7 @@ public static class AuthEndpoints
         UserManager<ApplicationUser> users,
         SignInManager<ApplicationUser> signIn,
         TokenService tokens,
+        HospitalPm.Infrastructure.Persistence.HospitalPmDbContext db,
         TimeProvider clock,
         CancellationToken ct)
     {
@@ -53,8 +54,13 @@ public static class AuthEndpoints
             return Results.Unauthorized();
         }
 
-        user.LastLoginAtUtc = clock.GetUtcNow().UtcDateTime;
-        await users.UpdateAsync(user);
+        // Only the one column, written by the database, not the whole user saved back. Saving the whole row is checked
+        // against the row's version, so two sign-ins of the same account at the same moment (two devices, or a
+        // second tab) made the loser's save fail with an uncaught concurrency error: a 500 for seven of eight in a
+        // test. Nothing here depends on what the row looked like when it was read.
+        var signedInAt = clock.GetUtcNow().UtcDateTime;
+        await db.Users.Where(u => u.Id == user.Id)
+            .ExecuteUpdateAsync(s => s.SetProperty(u => u.LastLoginAtUtc, signedInAt), ct);
 
         var pair = await tokens.IssueAsync(user, ct);
 

@@ -146,7 +146,7 @@ public sealed class IncidentTests(PostgresFixture fixture) : IAsyncLifetime, IDi
     }
 
     private static string Day(int daysFromToday) =>
-        DateOnly.FromDateTime(DateTime.UtcNow.AddDays(daysFromToday)).ToString("yyyy-MM-dd");
+        DateOnly.FromDateTime(DateTime.UtcNow.AddMinutes(330).AddDays(daysFromToday)).ToString("yyyy-MM-dd");
 
     // 10 fall, 20 mishandling, 30 liquid, 40 collision, 50 missing, 90 other. 10 none, 20 minor, 30 major, 40 beyond repair.
     private object Incident(

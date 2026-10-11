@@ -499,6 +499,29 @@ public sealed class WalkthroughFixTests(PostgresFixture fixture) : IAsyncLifetim
         Assert.Equal(HttpStatusCode.BadRequest, moved.StatusCode);
     }
 
+    // ------------------------------------------------------------- the same person signing in twice at once
+
+    [Fact]
+    public async Task Eight_simultaneous_sign_ins_as_the_same_person_all_succeed()
+    {
+        // Found by the stress test: the sign-in saved the whole user row, which is checked against the row's version, so
+        // the loser of two overlapping sign-ins (two devices, a second tab) got an uncaught concurrency error: a 500 for
+        // seven of eight in a test.
+        var userName = $"wk-twice-{_suffix}";
+        await SignedInAsync(userName, Roles.BmeEngineer);
+
+        var results = await Task.WhenAll(Enumerable.Range(0, 8).Select(async _ =>
+        {
+            using var client = _factory.CreateClient();
+            return await client.PostAsJsonAsync("/api/auth/login", new { userName, password = Password });
+        }));
+
+        Assert.All(results, r => Assert.Equal(HttpStatusCode.OK, r.StatusCode));
+
+        await using var db = fixture.CreateContext();
+        Assert.NotNull(await db.Users.AsNoTracking().Where(u => u.UserName == userName).Select(u => u.LastLoginAtUtc).SingleAsync());
+    }
+
     // ------------------------------------------------------------- an address that does not exist
 
     [Theory]
