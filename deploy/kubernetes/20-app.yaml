@@ -1,0 +1,120 @@
+# The application: the API and the web screens in one image, on port 5000.
+#
+# ONE replica, and it must stay one. The program keeps its licence, its signing keys and its backups on its own
+# volume, and runs its scheduled jobs (PM generation, the two-hourly backup) itself; a second copy would run
+# them twice and could not share the volume.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hospitalpm-config
+  namespace: hospitalpm
+data:
+  # Printed at the top of every PM certificate and service report. Change it to the hospital's name.
+  HOSPITAL_NAME: "Hospital"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hospitalpm-data
+  namespace: hospitalpm
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hospitalpm
+  namespace: hospitalpm
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate           # the volume can be held by one pod; never two at once during an upgrade
+  selector:
+    matchLabels:
+      app: hospitalpm
+  template:
+    metadata:
+      labels:
+        app: hospitalpm
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1654
+        fsGroup: 1654        # so the volume is writable by the program's unprivileged user
+      initContainers:
+        # The program migrates its own database on start; it just needs the database to be accepting connections.
+        - name: wait-for-db
+          image: aryant050/hospitalpm:DB
+          command: ["sh", "-c", "until pg_isready -h hospitalpm-db -p 5432 -U hospitalpm -d hospitalpm; do echo waiting for the database; sleep 3; done"]
+          securityContext:
+            runAsUser: 70
+            runAsNonRoot: true
+      containers:
+        - name: hospitalpm
+          image: aryant050/hospitalpm:v0.0.6
+          imagePullPolicy: Always
+          ports:
+            - name: web
+              containerPort: 5000
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: hospitalpm-db
+                  key: password
+            - name: ConnectionStrings__HospitalPm
+              value: "Host=hospitalpm-db;Port=5432;Database=hospitalpm;Username=hospitalpm;Password=$(DB_PASSWORD)"
+            - name: Reports__HospitalName
+              valueFrom:
+                configMapKeyRef:
+                  name: hospitalpm-config
+                  key: HOSPITAL_NAME
+            # Mdns announces "hospitalpm.local" on the network; it cannot cross a pod network, so it is off here.
+            - name: Mdns__Enabled
+              value: "false"
+            # The Backups page is for the Developer only; switched on so it exists.
+            - name: Features__Backups
+              value: "true"
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/hospitalpm
+          startupProbe:
+            httpGet: { path: /health, port: web }
+            periodSeconds: 5
+            failureThreshold: 36     # up to three minutes for the first start, which builds the database
+          readinessProbe:
+            httpGet: { path: /health, port: web }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: web }
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: hospitalpm-data
+---
+# How people reach it. LoadBalancer gives the app its own address on most clusters; where there is none, change the
+# type to NodePort, or leave this ClusterIP and put an Ingress in front of port 5000. The traffic is plain HTTP.
+apiVersion: v1
+kind: Service
+metadata:
+  name: hospitalpm
+  namespace: hospitalpm
+spec:
+  type: LoadBalancer
+  selector:
+    app: hospitalpm
+  ports:
+    - name: web
+      port: 5000
+      targetPort: web

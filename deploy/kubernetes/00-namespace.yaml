@@ -1,0 +1,8 @@
+# Hospital PM on Kubernetes.
+#
+# For a hospital that already runs a cluster. It is not how the product is normally installed (that is the
+# Windows installer, or docker compose on a Linux server) and nothing in the product depends on it.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hospitalpm
