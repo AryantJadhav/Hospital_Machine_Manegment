@@ -9,7 +9,7 @@ Hospital PM holds no patient information: equipment, work orders, engineers and 
 | Image | What it is |
 |---|---|
 | `aryant050/hospitalpm:DB` | The database (PostgreSQL 18, with the `hospitalpm` database and user ready) |
-| `aryant050/hospitalpm:v0.0.8` | The application: the web screens and the API, on port 5000 |
+| `aryant050/hospitalpm:v0.0.9` | The application: the web screens and the API, on port 5000 |
 
 ## What you need
 
@@ -153,7 +153,7 @@ Wait a minute, open the application, and sign in with an account that existed wh
 ## Updating to a newer version
 
 1. Copy the backups out, as above.
-2. In `.env`, set `HOSPITALPM_TAG` to the new version, for example `HOSPITALPM_TAG=v0.0.9`.
+2. In `.env`, set `HOSPITALPM_TAG` to the new version, for example `HOSPITALPM_TAG=v0.0.10`.
 3. Run `docker compose pull`, then `docker compose up -d`.
 
 The application brings its own database up to date when it starts. Your data volumes are kept.

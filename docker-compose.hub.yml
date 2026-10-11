@@ -1,7 +1,7 @@
 # Hospital PM - the two Docker Hub images, joined for good
 #
 #   aryant050/hospitalpm:DB        the database (PostgreSQL 18, with the hospitalpm database and user made)
-#   aryant050/hospitalpm:v0.0.8    the application: the API and the web screens, on port 5000
+#   aryant050/hospitalpm:v0.0.9    the application: the API and the web screens, on port 5000
 #
 # One command starts both on a network of their own, and they stay connected: each restarts if it stops, and
 # comes back by itself when Docker or the PC restarts. The application finds the database by the name "db", so there
@@ -16,7 +16,7 @@
 #                                  string. It is set when the database is FIRST created: changing it here later does
 #                                  not change the password inside an existing database volume.
 #   HOSPITAL_NAME=...              printed on every report
-#   HOSPITALPM_TAG=v0.0.8          which application version to run
+#   HOSPITALPM_TAG=v0.0.9          which application version to run
 #   APP_PORT=5001                  the port people open in their browser
 #
 # For pgAdmin on this PC: host localhost, port 5435 (DB_PORT), database hospitalpm, user hospitalpm, and your password.
@@ -48,7 +48,7 @@ services:
       - hospitalpm
 
   backend:
-    image: aryant050/hospitalpm:${HOSPITALPM_TAG:-v0.0.8}
+    image: aryant050/hospitalpm:${HOSPITALPM_TAG:-v0.0.9}
     restart: unless-stopped
     depends_on:
       db:
