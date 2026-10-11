@@ -54,7 +54,7 @@ spec:
             runAsNonRoot: true
       containers:
         - name: hospitalpm
-          image: aryant050/hospitalpm:v0.0.6
+          image: aryant050/hospitalpm:v0.0.7
           imagePullPolicy: Always
           ports:
             - name: web
