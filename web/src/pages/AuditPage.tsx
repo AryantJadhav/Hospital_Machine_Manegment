@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { StatusPill } from '../StatusPill';
 import type { Tone } from '../statusTones';
 import { formatDate, formatDateTime, todayAtHospital } from '../time';
+import { useSearchBox } from '../useSearchBox';
 
 type Change = { field: string; from: string | null; to: string | null };
 
@@ -66,7 +67,6 @@ export function AuditPage() {
   const q = params.get('q') ?? '';
   const page = Math.max(1, Number(params.get('page')) || 1);
 
-  const [search, setSearch] = useState(q);
   const [data, setData] = useState<Page | null>(null);
   const [tables, setTables] = useState<TableOption[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
@@ -130,11 +130,7 @@ export function AuditPage() {
   }, [period, custom, from, to, table, action, by, q, page]);
 
   // The search box is applied a moment after the typing stops.
-  useEffect(() => {
-    if (search.trim() === q) return;
-    const t = window.setTimeout(() => setParam('q', search.trim()), 300);
-    return () => window.clearTimeout(t);
-  }, [search, q, setParam]);
+  const [search, setSearch] = useSearchBox(q, (typed) => setParam('q', typed));
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
   const filtered = Boolean(table || action || by || q);

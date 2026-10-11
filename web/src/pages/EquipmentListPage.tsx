@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../auth/useAuth';
@@ -70,17 +70,43 @@ export function EquipmentListPage() {
     return () => clearTimeout(t);
   }, [query, debounced]);
 
-  // Said in the address whenever a filter or the page changes. Replaced rather than pushed, so
-  // typing an asset tag is not one history entry per letter.
-  useEffect(() => {
+  // What the address should say for the filters as they are now.
+  const wantedAddress = useMemo(() => {
     const next = new URLSearchParams();
     if (debounced.trim()) next.set('q', debounced.trim());
     if (locationId) next.set('location', locationId);
     if (typeId) next.set('type', typeId);
     if (status) next.set('status', status);
     if (page > 1) next.set('page', String(page));
-    setParams(next, { replace: true });
-  }, [debounced, locationId, typeId, status, page, setParams]);
+    return next.toString();
+  }, [debounced, locationId, typeId, status, page]);
+
+  // Said in the address whenever a filter or the page changes. Replaced rather than pushed, so
+  // typing an asset tag is not one history entry per letter.
+  useEffect(() => {
+    setParams(new URLSearchParams(wantedAddress), { replace: true });
+  }, [wantedAddress, setParams]);
+
+  // And the other way: the address changing by itself. Clicking "Equipment" in the top bar while a
+  // filtered list is showing goes to a bare /equipment on the same, still-mounted page; the filters
+  // held here then wrote their own address straight back, so the filter could not be cleared that way.
+  // Only a change that is not the one written above is taken in.
+  const address = params.toString();
+  const written = useRef(wantedAddress);
+  useEffect(() => {
+    if (address === written.current) return;
+    written.current = address;
+    const fromAddress = new URLSearchParams(address);
+    setQuery(fromAddress.get('q') ?? '');
+    setDebounced(fromAddress.get('q') ?? '');
+    setLocationId(fromAddress.get('location') ?? '');
+    setTypeId(fromAddress.get('type') ?? '');
+    setStatus(fromAddress.get('status') ?? '');
+    setPage(Math.max(1, Number(fromAddress.get('page')) || 1));
+  }, [address]);
+  useEffect(() => {
+    written.current = wantedAddress;
+  }, [wantedAddress]);
 
   useEffect(() => {
     (async () => {

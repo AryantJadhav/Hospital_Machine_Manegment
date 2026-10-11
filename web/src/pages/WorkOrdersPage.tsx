@@ -13,6 +13,7 @@ import { StatusPill } from '../StatusPill';
 import { PRIORITY_LABEL, PRIORITY_LOOK, WORK_ORDER_LABEL, WORK_ORDER_LOOK } from '../statusTones';
 import { formatAge, formatDateTime } from '../time';
 import type { WorkOrderRow } from '../workOrderTypes';
+import { useSearchBox } from '../useSearchBox';
 
 type Paged<T> = { items: T[]; total: number; page: number; pageSize: number };
 
@@ -44,7 +45,6 @@ export function WorkOrdersPage() {
   const requestedByMe = fromAnotherDepartment ? by !== 'all' : by === 'me';
 
   const [data, setData] = useState<Paged<WorkOrderRow> | null>(null);
-  const [search, setSearch] = useState(q);
   const [reporting, setReporting] = useState(false);
   // The machine to report against when we were sent here from its own page, and
   // the page to go back to afterwards. Both are absent when someone simply
@@ -100,11 +100,7 @@ export function WorkOrdersPage() {
 
   // The search box is typed into freely and applied a moment after the typing stops, so each
   // keystroke is not a request.
-  useEffect(() => {
-    if (search.trim() === q) return;
-    const t = window.setTimeout(() => setParam('q', search.trim()), 300);
-    return () => window.clearTimeout(t);
-  }, [search, q, setParam]);
+  const [search, setSearch] = useSearchBox(q, (typed) => setParam('q', typed));
 
   // Arriving from a machine's page with ?report=<id>: open the form with that
   // machine already in it. It used to land on the plain list and leave the

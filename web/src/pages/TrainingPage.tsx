@@ -8,6 +8,7 @@ import { formatDate } from '../time';
 import { describeTrainer, formatMinutes } from '../trainingTypes';
 import type { TrainingPerson, TrainingRow } from '../trainingTypes';
 import { TrainingForm } from './TrainingForm';
+import { useSearchBox } from '../useSearchBox';
 
 type Paged<T> = { items: T[]; total: number; page: number; pageSize: number };
 
@@ -31,7 +32,6 @@ export function TrainingPage() {
   const to = params.get('to') ?? '';
   const page = Math.max(1, Number(params.get('page')) || 1);
 
-  const [search, setSearch] = useState(q);
   const [sessions, setSessions] = useState<Paged<TrainingRow> | null>(null);
   const [people, setPeople] = useState<TrainingPerson[] | null>(null);
   const [adding, setAdding] = useState(false);
@@ -50,11 +50,7 @@ export function TrainingPage() {
   );
 
   // The search box is applied a moment after the typing stops, so each keystroke is not a request.
-  useEffect(() => {
-    if (search.trim() === q) return;
-    const t = window.setTimeout(() => setParam('q', search.trim()), 300);
-    return () => window.clearTimeout(t);
-  }, [search, q, setParam]);
+  const [search, setSearch] = useSearchBox(q, (typed) => setParam('q', typed));
 
   useEffect(() => {
     let cancelled = false;

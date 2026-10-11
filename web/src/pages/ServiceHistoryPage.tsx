@@ -5,6 +5,7 @@ import { PRIORITY_LABEL, PRIORITY_LOOK } from '../statusTones';
 import { StatusPill } from '../StatusPill';
 import { formatHours } from '../hours';
 import { formatDate, formatDateTime, todayAtHospital } from '../time';
+import { useSearchBox } from '../useSearchBox';
 
 type Row = {
   id: number;
@@ -65,7 +66,6 @@ export function ServiceHistoryPage() {
   const mine = params.get('by') === 'me';
   const page = Math.max(1, Number(params.get('page')) || 1);
 
-  const [search, setSearch] = useState(q);
   const [data, setData] = useState<History | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
@@ -123,11 +123,7 @@ export function ServiceHistoryPage() {
   }, [range, query, page]);
 
   // The search box is applied a moment after the typing stops.
-  useEffect(() => {
-    if (search.trim() === q) return;
-    const t = window.setTimeout(() => setParam('q', search.trim()), 300);
-    return () => window.clearTimeout(t);
-  }, [search, q, setParam]);
+  const [search, setSearch] = useSearchBox(q, (typed) => setParam('q', typed));
 
   async function download() {
     setDownloading(true);

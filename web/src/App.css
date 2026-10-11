@@ -272,9 +272,19 @@ a { color: var(--accent); }
   .nav-right .muted { display: none; }
 }
 
+/* A phone: Sign out and the theme switch were 70px past the screen's edge, so they could not be reached without scrolling
+   the whole page sideways. The brand and those buttons keep the first row and the links get a row of their own, which
+   scrolls inside itself as it always has. */
+@media (max-width: 560px) {
+  .nav { flex-wrap: wrap; height: auto; padding: 0.5rem 0.9rem; row-gap: 0.4rem; }
+  .nav-right { order: 2; }
+  .nav-links { order: 3; flex: 0 0 100%; }
+}
+
 /* ---------- layout ---------- */
 
 main { padding: 1.5rem; }
+@media (max-width: 560px) { main { padding: 1rem; } }
 main:focus { outline: none; }
 
 /* Out of sight until it is tabbed to, then the first thing on the page. */
@@ -291,9 +301,14 @@ main:focus { outline: none; }
 }
 .skip-link:focus { top: 0.5rem; }
 
-.page { max-width: 1200px; margin: 0 auto; display: grid; gap: 1rem; }
+.page { max-width: 1200px; margin: 0 auto; display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr); }
 
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+/* On a phone the buttons drop under the title instead of pushing the page wider than the screen. */
+@media (max-width: 700px) {
+  .page-head { flex-wrap: wrap; }
+  .page-head > div:first-child { flex: 1 1 100%; min-width: 0; }
+}
 .page-head h1 { margin: 0; font-size: 1.4rem; letter-spacing: -0.015em; }
 .page-head p { margin: 0.15rem 0 0; }
 
@@ -305,7 +320,8 @@ main:focus { outline: none; }
   box-shadow: var(--shadow-card);
 }
 
-.stack { display: grid; gap: 1rem; }
+/* minmax(0, 1fr): the one column may shrink below its widest child, so a long name cannot widen the page. */
+.stack { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr); }
 .row { display: flex; gap: 0.6rem; flex-wrap: wrap; }
 .muted { color: var(--muted); }
 .mono { font-family: var(--mono); font-size: 0.9em; }
@@ -317,6 +333,8 @@ main:focus { outline: none; }
 
 input, select {
   font: inherit;
+  /* A drop-down is as wide as its longest option unless told otherwise, which pushed a form off a phone's screen. */
+  max-width: 100%;
   height: 40px;
   padding: 0.5rem 0.65rem;
   border: 1px solid var(--border-strong);
@@ -328,7 +346,7 @@ input, select {
 input::placeholder, textarea::placeholder { color: var(--subtle); opacity: 1; }
 input[type="checkbox"], input[type="radio"] { height: auto; accent-color: var(--accent); }
 
-.field { display: grid; gap: 0.3rem; }
+.field { display: grid; gap: 0.3rem; grid-template-columns: minmax(0, 1fr); }
 .field > span { font-size: 0.85rem; color: var(--muted); }
 
 /* ---------- table ---------- */
@@ -558,13 +576,14 @@ input[type="checkbox"], input[type="radio"] { height: auto; accent-color: var(--
 
 .detail {
   display: grid;
-  grid-template-columns: max-content 1fr;
+  /* The label may wrap rather than push the page wider than the screen (the Export page lists several file names in one). */
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
   gap: 0.45rem 1rem;
   margin: 0;
 }
 
-.detail dt { color: var(--muted); font-size: 0.85rem; }
-.detail dd { margin: 0; }
+.detail dt { color: var(--muted); font-size: 0.85rem; overflow-wrap: anywhere; }
+.detail dd { margin: 0; overflow-wrap: anywhere; }
 .detail dd.strong { font-weight: 600; }
 
 /* ---------- reports ---------- */
@@ -652,7 +671,9 @@ a.tile:hover { border-color: var(--border-strong); }
 }
 
 @media (max-width: 980px) {
-  .wo-page { grid-template-columns: 1fr; }
+  /* minmax(0, 1fr), not 1fr: a plain 1fr will not shrink below its widest child, and a person or part with a
+     long name in a drop-down made this page thousands of pixels wide on a phone. */
+  .wo-page { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* The PDF reader, filling the page below the header. */
@@ -672,7 +693,7 @@ a.tile:hover { border-color: var(--border-strong); }
 .truncate { max-width: 22rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; }
-.timeline li { font-size: 0.9rem; }
+.timeline li { font-size: 0.9rem; overflow-wrap: anywhere; }
 
 textarea {
   font: inherit;
@@ -717,7 +738,7 @@ textarea {
 }
 
 @media (max-width: 860px) {
-  .detail-grid { grid-template-columns: 1fr; }
+  .detail-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
 .hist-row {

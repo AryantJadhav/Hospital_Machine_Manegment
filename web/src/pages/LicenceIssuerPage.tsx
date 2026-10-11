@@ -51,7 +51,6 @@ export function LicenceIssuerPage() {
   const [endDate, setEndDate] = useState('');
   const [days, setDays] = useState('84');
   const [cap, setCap] = useState('');
-  const [modules, setModules] = useState('');
   const [notes, setNotes] = useState('');
 
   const load = useCallback(async () => {
@@ -78,13 +77,11 @@ export function LicenceIssuerPage() {
         expiresOn: ends === 'date' && endDate ? endDate : null,
         durationDays: ends === 'days' && days ? Number(days) : null,
         maxEquipment: cap ? Number(cap) : null,
-        modules: modules.split(',').map((m) => m.trim()).filter(Boolean),
         notes: notes || null,
       });
       setMade({ kind: 'licence', hospital: res.licence.hospitalName, text: res.licenceText, fileId: res.licence.id });
       setHospital('');
       setCap('');
-      setModules('');
       setNotes('');
       await load();
     } catch (e) {
@@ -227,11 +224,6 @@ export function LicenceIssuerPage() {
           <label className="field" htmlFor="li-cap">
             <span>Most machines (leave empty for no limit)</span>
             <input id="li-cap" type="number" min={1} value={cap} disabled={!available} onChange={(e) => setCap(e.target.value)} />
-          </label>
-
-          <label className="field" htmlFor="li-modules">
-            <span>Modules, separated by commas (leave empty for core only)</span>
-            <input id="li-modules" value={modules} disabled={!available} onChange={(e) => setModules(e.target.value)} />
           </label>
 
           <label className="field" htmlFor="li-notes">

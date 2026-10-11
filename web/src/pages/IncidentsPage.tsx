@@ -12,6 +12,7 @@ import {
 import type { IncidentCounts, IncidentRow, IncidentSummary } from '../incidentTypes';
 import { StatusPill } from '../StatusPill';
 import { formatDate, todayAtHospital } from '../time';
+import { useSearchBox } from '../useSearchBox';
 
 type Page = { items: IncidentRow[]; total: number; page: number; pageSize: number; counts: IncidentCounts };
 
@@ -55,7 +56,6 @@ export function IncidentsPage() {
   const q = params.get('q') ?? '';
   const page = Math.max(1, Number(params.get('page')) || 1);
 
-  const [search, setSearch] = useState(q);
   const [data, setData] = useState<Page | null>(null);
   const [summary, setSummary] = useState<IncidentSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -72,11 +72,7 @@ export function IncidentsPage() {
   );
 
   // The search box is applied a moment after the typing stops, so each keystroke is not a request.
-  useEffect(() => {
-    if (search.trim() === q) return;
-    const t = window.setTimeout(() => setParam('q', search.trim()), 300);
-    return () => window.clearTimeout(t);
-  }, [search, q, setParam]);
+  const [search, setSearch] = useSearchBox(q, (typed) => setParam('q', typed));
 
   // The period as dates, or nothing for all time. A chosen period waits for both of its dates.
   const days = PERIODS.find((p) => p.key === period)?.days ?? null;

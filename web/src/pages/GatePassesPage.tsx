@@ -7,6 +7,7 @@ import { describeDays, GATE_PASS_LABEL, GATE_PASS_TONE } from '../gatePassTypes'
 import type { GatePassCounts, GatePassRow } from '../gatePassTypes';
 import { StatusPill } from '../StatusPill';
 import { formatDate } from '../time';
+import { useSearchBox } from '../useSearchBox';
 
 type Page = { items: GatePassRow[]; total: number; page: number; pageSize: number; counts: GatePassCounts };
 
@@ -36,7 +37,6 @@ export function GatePassesPage() {
   const q = params.get('q') ?? '';
   const page = Math.max(1, Number(params.get('page')) || 1);
 
-  const [search, setSearch] = useState(q);
   const [data, setData] = useState<Page | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -52,11 +52,7 @@ export function GatePassesPage() {
   );
 
   // The search box is applied a moment after the typing stops, so each keystroke is not a request.
-  useEffect(() => {
-    if (search.trim() === q) return;
-    const t = window.setTimeout(() => setParam('q', search.trim()), 300);
-    return () => window.clearTimeout(t);
-  }, [search, q, setParam]);
+  const [search, setSearch] = useSearchBox(q, (typed) => setParam('q', typed));
 
   useEffect(() => {
     let cancelled = false;
