@@ -75,11 +75,13 @@ ENV Licence__PublicKey=$LICENCE_PUBLIC_KEY
 #  - curl, because the health checks (here and in docker-compose.yml) call it.
 #    Without it every check fails and the container reports unhealthy while
 #    serving perfectly well.
+#  - rclone, because the optional Google Drive backup shells out to it (off unless switched on; the program finds it
+#    on the PATH). From the distribution's own repository, so nothing is fetched from anywhere else.
 #  - pg_dump, because nightly backups shell out to it. Without it a Linux
 #    install has no backups at all. It must be at least as new as the server
 #    (compose runs PostgreSQL 18), and Ubuntu's own client is older, so this
 #    comes from the PostgreSQL project's apt repository.
-RUN apt-get update     && apt-get install -y --no-install-recommends ca-certificates curl gnupg     && install -d /usr/share/keyrings     && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc         | gpg --dearmor -o /usr/share/keyrings/pgdg.gpg     && . /etc/os-release     && echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main"         > /etc/apt/sources.list.d/pgdg.list     && apt-get update     && apt-get install -y --no-install-recommends postgresql-client-18     && apt-get purge -y --auto-remove gnupg     && rm -rf /var/lib/apt/lists/*
+RUN apt-get update     && apt-get install -y --no-install-recommends ca-certificates curl gnupg     && install -d /usr/share/keyrings     && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc         | gpg --dearmor -o /usr/share/keyrings/pgdg.gpg     && . /etc/os-release     && echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main"         > /etc/apt/sources.list.d/pgdg.list     && apt-get update     && apt-get install -y --no-install-recommends postgresql-client-18 rclone     && apt-get purge -y --auto-remove gnupg     && rm -rf /var/lib/apt/lists/*
 
 # The data directory for keys, licence, backups — mounted as a volume.
 ENV HOSPITALPM_DATA=/var/lib/hospitalpm
@@ -98,13 +100,18 @@ ENV Licence__Path=/var/lib/hospitalpm/hospitalpm.licence
 
 RUN mkdir -p /var/lib/hospitalpm/backups \
              /var/lib/hospitalpm/keys \
-             /var/lib/hospitalpm/updates
+             /var/lib/hospitalpm/updates \
+    && chown -R $APP_UID:$APP_UID /var/lib/hospitalpm
 
 COPY --from=publish /app/publish .
 
 # The binary is self-contained and single-file.
 RUN chmod +x hospitalpm
 
+# Not root, like the backend-only image. The base image's own unprivileged user owns the data directory, a new named
+# volume takes its ownership from here, and the port is above 1024, so nothing needs more.
+USER $APP_UID
+VOLUME /var/lib/hospitalpm
 EXPOSE 5000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \

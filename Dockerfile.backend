@@ -74,6 +74,8 @@ ENV Licence__PublicKey=$LICENCE_PUBLIC_KEY
 #
 #  - curl, because the health check calls it. Without it every check fails and
 #    the container reports unhealthy while serving perfectly well.
+#  - rclone, because the optional Google Drive backup shells out to it (off unless switched on; the program finds it
+#    on the PATH). From the distribution's own repository, so it is signed and nothing is fetched from anywhere else.
 #  - pg_dump, because nightly backups shell out to it. It must be at least as new
 #    as the server (PostgreSQL 18), and the distribution's own client is older, so
 #    it comes from the PostgreSQL project's apt repository.
@@ -86,7 +88,7 @@ RUN apt-get update \
     && echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
         > /etc/apt/sources.list.d/pgdg.list \
     && apt-get update \
-    && apt-get install -y --no-install-recommends postgresql-client-18 \
+    && apt-get install -y --no-install-recommends postgresql-client-18 rclone\
     && apt-get purge -y --auto-remove gnupg \
     && rm -rf /var/lib/apt/lists/*
 
