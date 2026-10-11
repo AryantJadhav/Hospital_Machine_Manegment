@@ -499,6 +499,34 @@ public sealed class WalkthroughFixTests(PostgresFixture fixture) : IAsyncLifetim
         Assert.Equal(HttpStatusCode.BadRequest, moved.StatusCode);
     }
 
+    // ------------------------------------------------------------- an address that does not exist
+
+    [Theory]
+    [InlineData("/api/nonexistent")]
+    [InlineData("/api/equipment/abc")]
+    [InlineData("/api/work-orders/%7B%7BwoId%7D%7D")]
+    [InlineData("/api/reports/nothing/here.pdf")]
+    public async Task An_api_address_that_does_not_exist_is_a_404_not_the_front_page(string address)
+    {
+        // The catch-all that serves the web app answered these with 200 and index.html, so a client with a mistyped
+        // address, or an unfilled {{variable}}, was told it had worked.
+        var response = await _head.GetAsync(address);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.DoesNotContain("html", response.Content.Headers.ContentType?.MediaType ?? "", StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task A_web_page_address_is_not_caught_by_the_api_404()
+    {
+        // Only /api is excluded: a browser's deep link or refresh on a screen goes to the web app, which serves
+        // index.html (in a test host with no built screens there is simply no file, and no API message either).
+        var response = await _head.GetAsync("/equipment/123");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.DoesNotContain("There is no such address in the API", body, StringComparison.Ordinal);
+    }
+
     // ------------------------------------------------------------- choosing the wrong file to import
 
     public static TheoryData<string, byte[]> NotWorkbooks() => new()

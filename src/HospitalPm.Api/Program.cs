@@ -396,6 +396,15 @@ app.MapExportEndpoints();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
+// An address under /api that matches nothing is a 404, never the front page. The fallback below answered every
+// unmatched address with index.html and a 200, API addresses included, so a mistyped one (or an unfilled {{variable}}
+// in a client) looked like a success and returned a web page where a client expected data. The comment on the fallback
+// said "non-API"; nothing enforced it.
+// Like every other route under /api it asks for a signed-in person, so a stranger is told to sign in and learns nothing
+// about which addresses exist; a signed-in client is told plainly that there is no such address.
+app.MapFallback("/api/{**path}", () => Results.NotFound(new { error = "There is no such address in the API." }))
+    .RequireAuthorization();
+
 // Client-side routing: any unmatched non-API path returns index.html so a
 // deep link or a browser refresh does not 404.
 app.MapFallbackToFile("index.html");

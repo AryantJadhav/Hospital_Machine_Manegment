@@ -220,6 +220,8 @@ public sealed partial class RouteAccessMatrixTests(PostgresFixture fixture, ITes
         [
             "POST /api/auth/logout", "GET /api/auth/me", "GET /api/access/catalog", "GET /api/people",
             "GET /api/features", "GET /api/licence/banner",
+            // An address that matches nothing under /api: a signed-in person is told 404, anyone else is told to sign in.
+            "GET /api/{**path}",
         ];
 
         var withoutPermission = Routes()
