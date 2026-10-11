@@ -34,6 +34,21 @@ public static class ImportEndpoints
         group.MapPost("/commit", CommitAsync).DisableAntiforgery();
     }
 
+    /// <summary>
+    /// A file that is not a real Excel workbook, however it fails. The reader throws a different type for
+    /// each way a file can be wrong: a CSV or a truncated download raises a FileFormatException (a
+    /// FormatException), a zip with the wrong parts an OpenXmlPackageException, bad XML inside one an
+    /// XmlException. Only two of those were caught, so choosing the wrong file gave a server error on every
+    /// import screen, in the one place the user is most likely to pick the wrong file.
+    /// </summary>
+    internal static bool IsUnreadableWorkbook(Exception ex) =>
+        ex is InvalidOperationException
+            or InvalidDataException
+            or FormatException
+            or System.Xml.XmlException
+            or DocumentFormat.OpenXml.Packaging.OpenXmlPackageException
+            or IOException;
+
     private static IResult GetTemplate()
         => Results.File(
             EquipmentImportService.BuildTemplate(),
@@ -99,7 +114,7 @@ public static class ImportEndpoints
             buffer.Position = 0;
             result = await validate(buffer, ct);
         }
-        catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException)
+        catch (Exception ex) when (IsUnreadableWorkbook(ex))
         {
             return Results.BadRequest(new
             {
@@ -119,7 +134,7 @@ public static class ImportEndpoints
         {
             annotated = ImportErrorReport.Annotate(buffer, result.Errors);
         }
-        catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException)
+        catch (Exception ex) when (IsUnreadableWorkbook(ex))
         {
             return Results.BadRequest(new
             {
@@ -218,7 +233,7 @@ public static class ImportEndpoints
         {
             result = await run(buffer, ct);
         }
-        catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException)
+        catch (Exception ex) when (IsUnreadableWorkbook(ex))
         {
             // A corrupt or non-Excel file renamed to .xlsx lands here. The
             // user needs to know their file is unreadable, not see a 500.

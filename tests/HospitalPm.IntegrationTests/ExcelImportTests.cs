@@ -329,6 +329,33 @@ public sealed class ExcelImportTests(PostgresFixture fixture)
         Assert.True(uncapped.Committed);
     }
 
+    [Fact]
+    public async Task A_tag_with_a_slash_and_impossible_dates_are_each_refused_on_their_own_row_and_column()
+    {
+        await using var db = fixture.CreateContext();
+        var (dept, _) = await SeedLocationAsync(db);
+        var slash = "ICU/" + Guid.NewGuid().ToString("N")[..6];
+        var future = DateTime.UtcNow.AddYears(2).ToString("dd/MM/yyyy");
+
+        var wb = Workbook(
+            [slash, "", "Ventilator", dept, "", "", "", "", "", "", ""],
+            [NewTag(), "", "Ventilator", dept, "", "", "", future, "", "", ""],
+            [NewTag(), "", "Ventilator", dept, "", "", "", "01/06/2024", "01/01/2024", "", ""],
+            [NewTag(), "", "Ventilator", dept, "", "", "", "01/06/2024", "", "01/01/2024", ""],
+            [NewTag(), "", "Ventilator", dept, "", "", "", "", "", "", ""]);
+
+        var result = await new EquipmentImportService(db).ValidateAsync(wb);
+
+        Assert.False(result.Committed);
+        Assert.Contains(result.Errors, e => e.RowNumber == 2 && e.Column == "Asset Tag" && e.Message.Contains('/'));
+        Assert.Contains(result.Errors, e => e.RowNumber == 3 && e.Column == "Purchase Date");
+        Assert.Contains(result.Errors, e => e.RowNumber == 4 && e.Column == "Installation Date");
+        Assert.Contains(result.Errors, e => e.RowNumber == 5 && e.Column == "Warranty Expiry");
+
+        // The last row, with no dates at all, is not a mistake: old registers have blanks.
+        Assert.DoesNotContain(result.Errors, e => e.RowNumber == 6);
+    }
+
     // ---------------- helpers ----------------
 
     private static string NewTag() => "IMP-" + Guid.NewGuid().ToString("N")[..10];

@@ -131,12 +131,12 @@ Console.WriteLine("==> Staff");
 
 (string User, string Name, string Code, string Role)[] staff =
 [
-    ("s.deshmukh", "Dr S Deshmukh", "BME-01", "Admin"),
-    ("a.kulkarni", "A Kulkarni", "BME-02", "Admin"),
-    ("r.patil", "R Patil", "BME-03", "Admin"),
-    ("m.shaikh", "M Shaikh", "BME-04", "Employee"),
-    ("p.jadhav", "P Jadhav", "BME-05", "Employee"),
-    ("v.more", "V More", "BME-06", "Employee"),
+    ("s.deshmukh", "Dr S Deshmukh", "BME-01", "BmeHead"),
+    ("a.kulkarni", "A Kulkarni", "BME-02", "BmeEngineer"),
+    ("r.patil", "R Patil", "BME-03", "BmeEngineer"),
+    ("m.shaikh", "M Shaikh", "BME-04", "BmeEngineer"),
+    ("p.jadhav", "P Jadhav", "BME-05", "BmeEngineer"),
+    ("v.more", "V More", "BME-06", "BmeEngineer"),
 ];
 
 var staffIds = new List<int>();
@@ -154,6 +154,12 @@ foreach (var (user, name, code, role) in staff)
     if (created.IsSuccessStatusCode)
     {
         staffIds.Add((await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32());
+    }
+    else
+    {
+        // Said, not swallowed: this once created nobody (the roles had been renamed) and still ended by printing six
+        // logins that did not exist.
+        Console.WriteLine($"    could not create {user}: {(int)created.StatusCode} {await created.Content.ReadAsStringAsync()}");
     }
 }
 

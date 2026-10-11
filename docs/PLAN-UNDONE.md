@@ -12,12 +12,13 @@ Written 5 October 2026, after the encrypted-backup slice. It replaces the open p
 | 1b. Backups are the Developer's alone | **Done** |
 | 2. Google Drive with rclone | **Built and tested** with a fake rclone and the real rclone on a local folder. **Not tried against your real Drive yet.** Only the 3:00 nightly backup uploads; the page has no Upload now button any more |
 | 3. Licence: equipment cap | **Done** (add and import) |
-| 3. Licence: modules | **Waiting on you**: which sections are modules |
+| 3. Licence: modules | **Dropped by you, 5 October.** No sections are paid modules; the licence has the equipment cap and the lock only |
 | 3. Licence: public key in the Docker builds | **Done in the files**; the images are not rebuilt (deferred to the end) |
 | 3b. Developer licence section, lock and unlock | **Done**; the screens are built but not yet looked at in a browser |
 | 4. Encrypt photos and PM files at rest | **Dropped by you, 5 October** (backup encryption is off, so this no longer applies) |
 | 4. Data-drive encryption check | **Done** (Diagnostics page) |
-| 4. PDFs | **Waiting on you**: a password, or nothing |
+| 4. PDFs | **Dropped by you, 5 October.** Nothing: no password on PDFs |
+| Own Google client id | **Dropped by you, 5 October.** Not needed; the fewer-and-bigger uploads stay as the answer to Google's throttling |
 | Backup every 2 hours | **Done** (`Backup:EveryHours`, `Backup:StartsAt`; keeps a fortnight: 168) |
 | Backup encryption | **Dropped by you, 5 October.** Off by default; the code stays so existing encrypted backups still open |
 | Backups page | One button. The recovery-key box is **gone**: decide whether it comes back |
@@ -189,6 +190,7 @@ product, for the Developer role, and adds a lock.
 1. Commit and push item 0 now?
 2. ~~Licence file inside the backup~~ No. Answered.
 3. Which Google account, and who owns the Cloud project? And rclone: bundled in the installer, or placed by the admin?
-4. Which sections count as licence modules?
-5. PDF: password, or nothing?
+4. ~~Which sections count as licence modules?~~ Dropped.
+5. ~~PDF: password, or nothing?~~ Dropped: nothing.
+7. ~~Own Google client id?~~ Dropped.
 6. Is it all right to fix the dev backend container?

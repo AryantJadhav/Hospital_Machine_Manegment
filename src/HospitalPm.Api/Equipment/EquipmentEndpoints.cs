@@ -376,7 +376,7 @@ public static class EquipmentEndpoints
         }
 
         // Left blank, the software numbers the machine itself.
-        var error = await ValidateAsync(request, db, ct, tagRequired: !string.IsNullOrWhiteSpace(request.AssetTag));
+        var error = await ValidateAsync(request, db, ct, clock, tagRequired: !string.IsNullOrWhiteSpace(request.AssetTag));
         if (error is not null)
         {
             return error;
@@ -491,6 +491,7 @@ public static class EquipmentEndpoints
         HospitalPmDbContext db,
         System.Security.Claims.ClaimsPrincipal principal,
         TimeProvider clock,
+        HospitalClock hospital,
         CancellationToken ct)
     {
         var entity = await db.Equipment.SingleOrDefaultAsync(e => e.Id == id, ct);
@@ -499,7 +500,7 @@ public static class EquipmentEndpoints
             return Results.NotFound();
         }
 
-        var error = await ValidateAsync(request, db, ct);
+        var error = await ValidateAsync(request, db, ct, hospital, existing: entity);
         if (error is not null)
         {
             return error;
@@ -697,11 +698,32 @@ public static class EquipmentEndpoints
     private static bool IsBadAmount(decimal? amount) => amount is < 0 or > MaxCost;
 
     private static async Task<IResult?> ValidateAsync(
-        EquipmentRequest request, HospitalPmDbContext db, CancellationToken ct, bool tagRequired = true)
+        EquipmentRequest request, HospitalPmDbContext db, CancellationToken ct, HospitalPm.Infrastructure.Maintenance.HospitalClock hospital,
+        bool tagRequired = true, Domain.Assets.Equipment? existing = null)
     {
         if (tagRequired && string.IsNullOrWhiteSpace(request.AssetTag))
         {
             return Results.BadRequest(new { error = "Asset tag is required." });
+        }
+
+        // A tag a machine already has is left alone even if it would not be accepted now, so an old record can
+        // still be edited; only a tag being given is checked.
+        var tag = request.AssetTag?.Trim();
+        if (tag != existing?.AssetTag && EquipmentRules.TagProblem(tag) is { } tagProblem)
+        {
+            return Results.BadRequest(new { error = tagProblem });
+        }
+
+        // Likewise the dates: an old record whose dates were already wrong can still have its notes changed.
+        var datesChanged = existing is null
+            || existing.PurchaseDate != request.PurchaseDate
+            || existing.InstallationDate != request.InstallationDate
+            || existing.WarrantyExpiryDate != request.WarrantyExpiryDate;
+
+        if (datesChanged
+            && EquipmentRules.DateProblem(request.PurchaseDate, request.InstallationDate, request.WarrantyExpiryDate, hospital.Today()) is { } dateProblem)
+        {
+            return Results.BadRequest(new { error = dateProblem.Message });
         }
 
         if (request.Status is { } status && !Enum.IsDefined(status))

@@ -20,7 +20,7 @@ namespace HospitalPm.Infrastructure.Import;
 ///      creating a location from a typo is how a register ends up with
 ///      fourteen spellings of "ICU" and a compliance report nobody trusts.
 /// </summary>
-public sealed class EquipmentImportService(HospitalPmDbContext db)
+public sealed class EquipmentImportService(HospitalPmDbContext db, HospitalPm.Infrastructure.Maintenance.HospitalClock? hospital = null)
 {
     /// <summary>
     /// Bounded so a mis-selected file cannot exhaust memory on a hospital PC.
@@ -142,6 +142,17 @@ public sealed class EquipmentImportService(HospitalPmDbContext db)
             else
             {
                 seenTags[row.AssetTag] = row.RowNumber;
+            }
+
+            // The same sense checks as the form: no "/" in a tag, no impossible dates.
+            if (!string.IsNullOrWhiteSpace(row.AssetTag) && EquipmentRules.TagProblem(row.AssetTag.Trim()) is { } tagProblem)
+            {
+                errors.Add(new ImportError(row.RowNumber, "Asset Tag", tagProblem));
+            }
+
+            if (EquipmentRules.DateProblem(row.PurchaseDate, row.InstallationDate, row.WarrantyExpiryDate, hospital?.Today() ?? DateOnly.FromDateTime(DateTime.UtcNow)) is { } dateProblem)
+            {
+                errors.Add(new ImportError(row.RowNumber, dateProblem.Field, dateProblem.Message));
             }
 
             var typeId = Resolve(row.TypeRef, typesByCode, typesByName);

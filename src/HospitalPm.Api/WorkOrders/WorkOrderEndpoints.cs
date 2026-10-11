@@ -1,11 +1,13 @@
 using HospitalPm.Api.Auth;
 using System.Security.Claims;
 using HospitalPm.Api.Maintenance;
+using HospitalPm.Domain.Assets;
 using HospitalPm.Domain.Identity;
 using HospitalPm.Domain.WorkOrders;
 using HospitalPm.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace HospitalPm.Api.WorkOrders;
 
@@ -356,6 +358,8 @@ public static class WorkOrderEndpoints
                 ? []
                 : WorkOrderTransitions.From(order.Status)
                     .Where(s => s != WorkOrderStatus.Cancelled || mayCancel)
+                    // In progress is not offered to someone who may not start it: the fault is someone else's.
+                    .Where(s => s != WorkOrderStatus.InProgress || HeldByAnother(order.Status, order.AssignedToUserId, UserId(principal)) is false)
                     .ToList(),
             notes,
             partsUsed,
@@ -395,9 +399,21 @@ public static class WorkOrderEndpoints
             return Results.BadRequest(new { error = "Describe what is wrong with the machine." });
         }
 
-        if (!await db.Equipment.AnyAsync(e => e.Id == request.EquipmentId, ct))
+        var machineStatus = await db.Equipment.AsNoTracking()
+            .Where(e => e.Id == request.EquipmentId)
+            .Select(e => (EquipmentStatus?)e.Status)
+            .SingleOrDefaultAsync(ct);
+
+        if (machineStatus is null)
         {
             return Results.BadRequest(new { error = "Unknown equipment." });
+        }
+
+        // A condemned machine is withdrawn from service and kept on the register for its history. A fault
+        // on it would sit in "machines down" and "open requests" for ever, with nobody able to repair it.
+        if (machineStatus == EquipmentStatus.Condemned)
+        {
+            return Results.Conflict(new { error = "This machine has been condemned, so a fault cannot be reported on it." });
         }
 
         if (request.BreakdownType is { } kind && !Enum.IsDefined((BreakdownType)kind))
@@ -441,7 +457,9 @@ public static class WorkOrderEndpoints
         TimeProvider clock,
         CancellationToken ct)
     {
-        var order = await db.WorkOrders.SingleOrDefaultAsync(w => w.Id == id, ct);
+        // Held for the whole change: see LockAsync.
+        var (order, transaction) = await LockAsync(db, id, ct);
+        await using var lockScope = transaction;
         if (order is null)
         {
             return Results.NotFound();
@@ -475,6 +493,7 @@ public static class WorkOrderEndpoints
         });
 
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
 
         return Results.NoContent();
     }
@@ -487,7 +506,9 @@ public static class WorkOrderEndpoints
         TimeProvider clock,
         CancellationToken ct)
     {
-        var order = await db.WorkOrders.SingleOrDefaultAsync(w => w.Id == id, ct);
+        // Held for the whole change: see LockAsync.
+        var (order, transaction) = await LockAsync(db, id, ct);
+        await using var lockScope = transaction;
         if (order is null)
         {
             return Results.NotFound();
@@ -527,10 +548,42 @@ public static class WorkOrderEndpoints
 
         AddNote(db, order, request.Note, principal, clock);
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
 
         return Results.NoContent();
     }
 
+
+    /// <summary>
+    /// Opens a transaction and takes the work order's row for the length of it (SELECT ... FOR UPDATE).
+    ///
+    /// Two people acting on the same service request in the same instant, say one cancelling it while the
+    /// other resolves it, both read it as "in progress", both passed the check that the move is allowed, and
+    /// whoever saved last won: the order ended up Resolved over a Cancelled, with two sets of notes. With the
+    /// row held, the second one waits, then reads the state the first left, and gets the ordinary answer
+    /// ("this service request is already resolved"). No schema change, and the message is the usual one.
+    ///
+    /// The caller disposes the transaction (an early return rolls back, having written nothing) and commits it
+    /// after saving.
+    /// </summary>
+    private static async Task<(WorkOrder? Order, IDbContextTransaction Transaction)> LockAsync(
+        HospitalPmDbContext db, int id, CancellationToken ct)
+    {
+        var transaction = await db.Database.BeginTransactionAsync(ct);
+        var order = await db.WorkOrders
+            .FromSqlInterpolated($"SELECT * FROM work_order WHERE id = {id} FOR UPDATE")
+            .SingleOrDefaultAsync(ct);
+        return (order, transaction);
+    }
+
+    /// <summary>
+    /// Whether this fault is someone else's to start. In progress is how an engineer takes a fault: the first
+    /// person to press it on a fault nobody has gets it, and from then on it is theirs. A fault the Head has
+    /// already given to a named person is that person's to start, and nobody else's, until the Head reassigns
+    /// it. Reopening a resolved fault is not taking it, so it is open to the Head and to anyone who may work.
+    /// </summary>
+    private static bool HeldByAnother(WorkOrderStatus status, int? assignedTo, int caller)
+        => status != WorkOrderStatus.Resolved && assignedTo is { } holder && holder != caller;
 
     private static async Task<IResult> ChangeStatusAsync(
         int id,
@@ -541,7 +594,9 @@ public static class WorkOrderEndpoints
         TimeProvider clock,
         CancellationToken ct)
     {
-        var order = await db.WorkOrders.SingleOrDefaultAsync(w => w.Id == id, ct);
+        // Held for the whole change: see LockAsync.
+        var (order, transaction) = await LockAsync(db, id, ct);
+        await using var lockScope = transaction;
         if (order is null)
         {
             return Results.NotFound();
@@ -568,6 +623,25 @@ public static class WorkOrderEndpoints
                 statusCode: StatusCodes.Status403Forbidden);
         }
 
+        // Said before the general check so the second person is told who has it, not just "that move is not
+        // allowed". This runs under the row lock, so "first" is exact: of two people pressing In progress in
+        // the same instant, one gets the fault and the other reads that it is taken.
+        var caller = UserId(principal);
+        if (request.Status == WorkOrderStatus.InProgress && HeldByAnother(order.Status, order.AssignedToUserId, caller))
+        {
+            var holder = await db.Users.AsNoTracking()
+                .Where(u => u.Id == order.AssignedToUserId)
+                .Select(u => u.FullName)
+                .SingleOrDefaultAsync(ct) ?? "someone else";
+
+            return Results.Conflict(new
+            {
+                error = order.Status == WorkOrderStatus.InProgress
+                    ? $"{holder} is already working on this. Ask the Head of Biomedical to reassign it if it should be yours."
+                    : $"This is assigned to {holder}, so only they can start it. Ask the Head of Biomedical to reassign it if it should be yours.",
+            });
+        }
+
         if (!WorkOrderTransitions.CanMove(order.Status, request.Status))
         {
             // The database enforces this too; checking here turns a raised
@@ -576,6 +650,21 @@ public static class WorkOrderEndpoints
         }
 
         var now = clock.GetUtcNow().UtcDateTime;
+
+        // Pressing In progress on a fault nobody has takes it: it is now this person's.
+        if (request.Status == WorkOrderStatus.InProgress && order.AssignedToUserId is null)
+        {
+            order.AssignedToUserId = caller;
+            order.AssignedAtUtc = now;
+            db.WorkOrderNotes.Add(new WorkOrderNote
+            {
+                WorkOrderId = order.Id,
+                TenantId = order.TenantId,
+                Body = "Taken by the engineer who started it.",
+                AuthorUserId = caller,
+                CreatedAtUtc = now,
+            });
+        }
 
         if (request.Status == WorkOrderStatus.InProgress && order.StartedAtUtc is null)
         {
@@ -608,6 +697,7 @@ public static class WorkOrderEndpoints
         order.Status = request.Status;
         AddNote(db, order, request.Note, principal, clock);
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
 
         return Results.NoContent();
     }
@@ -627,7 +717,9 @@ public static class WorkOrderEndpoints
             return Results.BadRequest(new { error = "Say what was wrong and what you did." });
         }
 
-        var order = await db.WorkOrders.SingleOrDefaultAsync(w => w.Id == id, ct);
+        // Held for the whole change: see LockAsync.
+        var (order, transaction) = await LockAsync(db, id, ct);
+        await using var lockScope = transaction;
         if (order is null)
         {
             return Results.NotFound();
@@ -656,6 +748,7 @@ public static class WorkOrderEndpoints
 
         AddNote(db, order, request.ResolutionNotes, principal, clock);
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
 
         return Results.Ok(new { order.Status, order.DowntimeMinutes, DowntimeHours = Downtime.Hours(order.DowntimeMinutes ?? 0) });
     }
@@ -673,7 +766,9 @@ public static class WorkOrderEndpoints
             return Results.BadRequest(new { error = "Quantity used must be at least 1." });
         }
 
-        var order = await db.WorkOrders.SingleOrDefaultAsync(w => w.Id == id, ct);
+        // Held for the whole change: see LockAsync.
+        var (order, transaction) = await LockAsync(db, id, ct);
+        await using var lockScope = transaction;
         if (order is null)
         {
             return Results.NotFound();
@@ -698,15 +793,26 @@ public static class WorkOrderEndpoints
             return Results.BadRequest(new { error = "This part has been retired and can no longer be recorded as used." });
         }
 
-        if (part.QuantityOnHand < request.QuantityUsed)
+        // Taken off the shelf by the database in one statement, not read here, subtracted and written
+        // back. Two engineers recording the last fuse at the same moment both used to read "5", and both
+        // wrote "4": eight uses were recorded and the shelf lost one. The condition stops the count going
+        // below nothing, and the usage row goes in the same transaction so the two can never disagree.
+        var taken = await db.SpareParts
+            .Where(p => p.Id == part.Id && p.QuantityOnHand >= request.QuantityUsed)
+            .ExecuteUpdateAsync(s => s.SetProperty(p => p.QuantityOnHand, p => p.QuantityOnHand - request.QuantityUsed), ct);
+
+        if (taken == 0)
         {
+            var left = await db.SpareParts.AsNoTracking()
+                .Where(p => p.Id == part.Id)
+                .Select(p => p.QuantityOnHand)
+                .SingleAsync(ct);
+
             return Results.BadRequest(new
             {
-                error = $"Only {part.QuantityOnHand} {part.Unit} of {part.Name} left on the shelf.",
+                error = $"Only {left} {part.Unit} of {part.Name} left on the shelf.",
             });
         }
-
-        part.QuantityOnHand -= request.QuantityUsed;
 
         db.WorkOrderParts.Add(new WorkOrderPart
         {
@@ -719,6 +825,7 @@ public static class WorkOrderEndpoints
         });
 
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
 
         return Results.NoContent();
     }
@@ -726,7 +833,9 @@ public static class WorkOrderEndpoints
     private static async Task<IResult> RemovePartAsync(
         int id, int partUsageId, HospitalPmDbContext db, CancellationToken ct)
     {
-        var order = await db.WorkOrders.SingleOrDefaultAsync(w => w.Id == id, ct);
+        // Held for the whole change: see LockAsync.
+        var (order, transaction) = await LockAsync(db, id, ct);
+        await using var lockScope = transaction;
         if (order is null)
         {
             return Results.NotFound();
@@ -747,14 +856,14 @@ public static class WorkOrderEndpoints
         }
 
         // Undo means the shelf gets the quantity back - the part was never really consumed.
-        var part = await db.SpareParts.SingleOrDefaultAsync(p => p.Id == usage.SparePartId, ct);
-        if (part is not null)
-        {
-            part.QuantityOnHand += usage.QuantityUsed;
-        }
+        // Added back by the database, for the same reason a use is taken off by it.
+        await db.SpareParts
+            .Where(p => p.Id == usage.SparePartId)
+            .ExecuteUpdateAsync(s => s.SetProperty(p => p.QuantityOnHand, p => p.QuantityOnHand + usage.QuantityUsed), ct);
 
         db.WorkOrderParts.Remove(usage);
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
 
         return Results.NoContent();
     }

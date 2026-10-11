@@ -179,6 +179,12 @@ public static class UserEndpoints
             return Results.BadRequest(new { error = "Username and full name are required." });
         }
 
+        // Left out, or null, it would reach Identity as a null and come back as a server error.
+        if (string.IsNullOrEmpty(request.Password))
+        {
+            return Results.BadRequest(new { error = "Choose a password for the new account." });
+        }
+
         if (!Roles.All.Contains(request.Role, StringComparer.Ordinal))
         {
             return Results.BadRequest(new
@@ -392,6 +398,11 @@ public static class UserEndpoints
         if (!MayManage(caller, (await users.GetRolesAsync(user)).FirstOrDefault()))
         {
             return Forbidden("You cannot reset the password of that account.");
+        }
+
+        if (string.IsNullOrEmpty(request.Password))
+        {
+            return Results.BadRequest(new { error = "Choose a new password." });
         }
 
         var token = await users.GeneratePasswordResetTokenAsync(user);

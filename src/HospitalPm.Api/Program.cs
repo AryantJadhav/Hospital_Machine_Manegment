@@ -341,6 +341,8 @@ app.MapGet("/health", () => Results.Ok(new
 // This is what makes "one binary" literally true.
 // First, before anyone is even recognised: a locked installation turns everyone away, so nobody signs in.
 app.UseMiddleware<HospitalPm.Api.Hosting.LicenceLockMiddleware>();
+// Wraps everything after it, so a refused save is a plain message, not a server error.
+app.UseMiddleware<HospitalPm.Api.Hosting.DatabaseErrorMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseMiddleware<HospitalPm.Api.Hosting.FeatureSwitchMiddleware>();

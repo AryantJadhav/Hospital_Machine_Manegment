@@ -71,15 +71,15 @@ public sealed class MyWorkTests(PostgresFixture fixture) : IAsyncLifetime, IDisp
         _assigned = await ReportAndAssignAsync(_aliceId);
 
         _inProgress = await ReportAndAssignAsync(_aliceId);
-        await MoveAsync(_inProgress, WorkOrderStatus.InProgress);
+        await MoveAsync(_inProgress, WorkOrderStatus.InProgress, _alice);
 
         _onHold = await ReportAndAssignAsync(_aliceId);
-        await MoveAsync(_onHold, WorkOrderStatus.InProgress);
+        await MoveAsync(_onHold, WorkOrderStatus.InProgress, _alice);
         await MoveAsync(_onHold, WorkOrderStatus.OnHold);
 
         // Alice has fixed this one; what is left is an administrator accepting it.
         _resolved = await ReportAndAssignAsync(_aliceId);
-        await MoveAsync(_resolved, WorkOrderStatus.InProgress);
+        await MoveAsync(_resolved, WorkOrderStatus.InProgress, _alice);
         var resolve = await _alice.PostAsJsonAsync(
             $"/api/work-orders/{_resolved}/resolve",
             new { resolutionNotes = "Replaced the flow sensor" });
@@ -128,9 +128,10 @@ public sealed class MyWorkTests(PostgresFixture fixture) : IAsyncLifetime, IDisp
         return id;
     }
 
-    private async Task MoveAsync(int id, WorkOrderStatus to)
+    // Started by the engineer the fault is assigned to: In progress is that person's to press, not the Head's.
+    private async Task MoveAsync(int id, WorkOrderStatus to, HttpClient? by = null)
     {
-        var moved = await _admin.PostAsJsonAsync(
+        var moved = await (by ?? _admin).PostAsJsonAsync(
             $"/api/work-orders/{id}/status", new { status = (int)to, note = "test" });
         Assert.True(moved.IsSuccessStatusCode, await moved.Content.ReadAsStringAsync());
     }

@@ -281,6 +281,9 @@ public static class LocationEndpoints
             => Results.BadRequest(new { error = "That would move the location inside one of its own descendants." }),
         _ when pg.MessageText.Contains("must be deeper", StringComparison.OrdinalIgnoreCase)
             => Results.BadRequest(new { error = "A child location must sit at a deeper level than its parent." }),
+        // Too long, a character that cannot be stored, and the like: the same plain replies as everywhere else.
+        _ when Hosting.DatabaseErrorMiddleware.Describe(pg) is { } refused
+            => Results.Json(new { error = refused.Message }, statusCode: refused.Status),
         _ => Results.Problem("The location could not be saved."),
     };
 }
