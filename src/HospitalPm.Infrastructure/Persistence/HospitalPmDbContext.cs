@@ -118,6 +118,8 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
 
     public DbSet<IssuedLicence> IssuedLicences => Set<IssuedLicence>();
 
+    public DbSet<ResponseTarget> ResponseTargets => Set<ResponseTarget>();
+
     public DbSet<UserLocation> UserLocations => Set<UserLocation>();
 
     /// <summary>The query filters behind <see cref="RestrictTo"/>. See the note on the fields above.</summary>
@@ -699,6 +701,17 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
                 .HasDatabaseName("ux_pm_completion_client_submission");
         });
 
+        // How quickly an engineer is expected to respond, by priority. One row each; the head edits them.
+        builder.Entity<ResponseTarget>(e =>
+        {
+            e.ToTable("response_target");
+            e.HasKey(x => new { x.TenantId, x.Priority });
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.Priority).HasColumnName("priority").HasConversion<int>();
+            e.Property(x => x.Minutes).HasColumnName("minutes").IsRequired();
+            e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").HasDefaultValueSql("now()");
+        });
+
         builder.Entity<WorkOrder>(e =>
         {
             e.ToTable("work_order");
@@ -964,6 +977,7 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
             e.Property(x => x.PurchaseDate).HasColumnName("purchase_date");
             e.Property(x => x.PurchaseCost).HasColumnName("purchase_cost").HasPrecision(14, 2);
             e.Property(x => x.InstallationDate).HasColumnName("installation_date");
+            e.Property(x => x.ExpectedLifeYears).HasColumnName("expected_life_years");
             e.Property(x => x.WarrantyExpiryDate).HasColumnName("warranty_expiry_date");
             e.Property(x => x.IsInsured).HasColumnName("is_insured").HasDefaultValue(false);
             e.Property(x => x.InsuranceProvider).HasColumnName("insurance_provider").HasMaxLength(200);

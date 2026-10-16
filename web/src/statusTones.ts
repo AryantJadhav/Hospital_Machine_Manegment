@@ -98,6 +98,15 @@ export const WORK_ORDER_LOOK: Record<number, Look> = {
 };
 
 /** Priority: Low, Medium, High, Critical. Only Critical is filled solid. */
+/** A fault's response (raised to In progress) against the time its priority allows, as the server judges it. */
+export const RESPONSE_LOOK: Record<string, Look> = {
+  Waiting: T('info'),
+  Overdue: T('danger', { strong: true }),
+  Met: T('success'),
+  Missed: T('warning'),
+  NotApplicable: T('neutral'),
+};
+
 export const PRIORITY_LOOK: Record<number, Look> = {
   10: T('neutral'),
   20: T('neutral'),

@@ -34,6 +34,7 @@ export type EquipmentDraft = {
   purchaseDate: string | null;
   purchaseCost: number | null;
   installationDate: string | null;
+  expectedLifeYears: number | null;
   warrantyExpiryDate: string | null;
   isInsured: boolean;
   insuranceProvider: string | null;
@@ -105,6 +106,7 @@ export function EquipmentForm({
       purchaseDate: null,
       purchaseCost: null,
       installationDate: null,
+      expectedLifeYears: null,
       warrantyExpiryDate: null,
       isInsured: false,
       insuranceProvider: null,
@@ -180,6 +182,8 @@ export function EquipmentForm({
         purchaseDate: form.purchaseDate || null,
         purchaseCost: form.purchaseCost,
         installationDate: form.installationDate || null,
+        // A blank box is 0, which takes an expected life off; the server leaves it alone only when the field is not sent.
+        expectedLifeYears: form.expectedLifeYears ?? 0,
         warrantyExpiryDate: form.warrantyExpiryDate || null,
         // Not insured means nothing else is sent, and the server clears whatever a
         // machine had before, so a policy cannot outlive the answer "no".
@@ -407,6 +411,21 @@ export function EquipmentForm({
             type="date"
             value={form.installationDate ?? ''}
             onChange={(e) => set('installationDate', e.target.value || null)}
+          />
+        </label>
+
+        <label className="stack">
+          <span>Expected life (years)</span>
+          <input
+            className="field"
+            type="number"
+            min={1}
+            max={60}
+            step={1}
+            inputMode="numeric"
+            placeholder="e.g. 10"
+            value={form.expectedLifeYears ?? ''}
+            onChange={(e) => set('expectedLifeYears', e.target.value === '' ? null : Number(e.target.value))}
           />
         </label>
 

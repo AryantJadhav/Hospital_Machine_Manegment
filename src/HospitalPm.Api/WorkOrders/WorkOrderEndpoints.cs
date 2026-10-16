@@ -241,10 +241,63 @@ public static class WorkOrderEndpoints
                     : db.Users.Where(u => u.Id == w.AssignedToUserId).Select(u => u.FullName).FirstOrDefault(),
                 w.OutOfServiceAtUtc,
                 w.BackInServiceAtUtc,
+                w.StartedAtUtc,
             })
             .ToListAsync(ct);
 
-        return Results.Ok(new { items, total, page, pageSize });
+        var targets = await ResponseTargetEndpoints.LoadAsync(db, ct);
+        var now = clock.GetUtcNow().UtcDateTime;
+
+        var shaped = items.Select(w => new
+        {
+            w.Id,
+            w.Number,
+            w.Status,
+            w.Priority,
+            w.FaultDescription,
+            w.BreakdownType,
+            w.EquipmentId,
+            w.AssetTag,
+            w.EquipmentTypeName,
+            w.LocationName,
+            w.ReportedAtUtc,
+            w.ResolvedAtUtc,
+            w.ReportedByUserId,
+            w.ReportedByName,
+            w.AssignedToUserId,
+            w.AssignedToName,
+            w.OutOfServiceAtUtc,
+            w.BackInServiceAtUtc,
+            response = ResponseOf(w.ReportedAtUtc, w.StartedAtUtc, w.Priority, w.Status, targets, now),
+        }).ToList();
+
+        return Results.Ok(new { items = shaped, total, page, pageSize });
+    }
+
+    /// <summary>
+    /// Where a fault stands against the response time its priority asks for: raised to In progress. The same answer in the
+    /// list and on the fault's own page.
+    /// </summary>
+    private static object ResponseOf(
+        DateTime reportedAtUtc,
+        DateTime? startedAtUtc,
+        WorkOrderPriority priority,
+        WorkOrderStatus status,
+        IReadOnlyDictionary<WorkOrderPriority, int> targets,
+        DateTime nowUtc)
+    {
+        var a = ResponseRules.Assess(
+            reportedAtUtc, startedAtUtc, targets.TryGetValue(priority, out var minutes) ? minutes : null, status, nowUtc);
+
+        return new
+        {
+            state = a.State.ToString(),
+            targetMinutes = a.TargetMinutes,
+            dueAtUtc = a.DueAtUtc,
+            responseMinutes = a.ResponseMinutes,
+            overdueMinutes = a.OverdueMinutes,
+            startedAtUtc,
+        };
     }
 
     private static async Task<IResult> GetAsync(
@@ -315,6 +368,8 @@ public static class WorkOrderEndpoints
                 a.UploadedAtUtc))
             .ToListAsync(ct);
 
+        var responseTargets = await ResponseTargetEndpoints.LoadAsync(db, ct);
+
         return Results.Ok(new
         {
             order.Id,
@@ -323,6 +378,8 @@ public static class WorkOrderEndpoints
             order.Priority,
             order.FaultDescription,
             breakdownType = (int?)order.BreakdownType,
+            response = ResponseOf(
+                order.ReportedAtUtc, order.StartedAtUtc, order.Priority, order.Status, responseTargets, clock.GetUtcNow().UtcDateTime),
             order.EquipmentId,
             assetTag = order.Equipment?.AssetTag,
             // The list endpoint returns these and the detail panel shows the

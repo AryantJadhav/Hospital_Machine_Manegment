@@ -1,5 +1,15 @@
 /** What the work order list and the work order page both ask the server for. */
 
+/** How quickly an engineer answered (or must answer): from the fault being raised to In progress. */
+export type ResponseInfo = {
+  state: 'Waiting' | 'Overdue' | 'Met' | 'Missed' | 'NotApplicable';
+  targetMinutes: number | null;
+  dueAtUtc: string | null;
+  responseMinutes: number | null;
+  overdueMinutes: number | null;
+  startedAtUtc: string | null;
+};
+
 export type WorkOrderRow = {
   id: number;
   number: string;
@@ -21,6 +31,7 @@ export type WorkOrderRow = {
   assignedToName: string | null;
   outOfServiceAtUtc: string | null;
   backInServiceAtUtc: string | null;
+  response: ResponseInfo;
 };
 
 export type WorkOrderPhoto = {

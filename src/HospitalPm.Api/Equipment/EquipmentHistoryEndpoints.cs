@@ -65,6 +65,7 @@ public static class EquipmentHistoryEndpoints
                 e.MaintenanceCost,
                 e.PurchaseDate,
                 e.InstallationDate,
+                e.ExpectedLifeYears,
                 e.WarrantyExpiryDate,
                 e.Notes,
                 e.EquipmentTypeId,
@@ -95,6 +96,9 @@ public static class EquipmentHistoryEndpoints
             .ToListAsync(ct);
 
         var today = clock.Today();
+
+        // How old the machine is and how much of its expected life is left, worked out now and never stored.
+        var machineAge = HospitalPm.Domain.Assets.EquipmentRules.AgeOf(equipment.InstallationDate, equipment.PurchaseDate, today);
 
         var openPm = await db.PmTasks.AsNoTracking()
             .Where(t => t.EquipmentId == id
@@ -214,6 +218,14 @@ public static class EquipmentHistoryEndpoints
         return Results.Ok(new
         {
             equipment,
+            age = machineAge is { } a
+                ? new
+                {
+                    months = a.Months,
+                    from = a.From,
+                    lifeRemainingMonths = HospitalPm.Domain.Assets.EquipmentRules.LifeRemainingMonths(equipment.ExpectedLifeYears, a.Months),
+                }
+                : null,
             breadcrumb = ancestors,
             openPm,
             completedPm,

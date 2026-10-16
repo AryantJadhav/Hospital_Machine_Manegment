@@ -10,6 +10,8 @@ import { HandoffNotice } from '../HandoffNotice';
 import { useHandoff } from '../handoff';
 import { useToast } from '../toast';
 import { StatusPill } from '../StatusPill';
+import { ResponseBadge } from '../ResponseBadge';
+import { ResponseTargetsEditor } from './ResponseTargetsEditor';
 import { PRIORITY_LABEL, PRIORITY_LOOK, WORK_ORDER_LABEL, WORK_ORDER_LOOK } from '../statusTones';
 import { formatAge, formatDateTime } from '../time';
 import type { WorkOrderRow } from '../workOrderTypes';
@@ -154,7 +156,7 @@ export function WorkOrdersPage() {
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
   const hasFilters = Boolean(status || priority || breakdownType || q || down || (requestedByMe && !fromAnotherDepartment));
-  const columns = (mine ? 8 : 9) + (opens ? 0 : 1);
+  const columns = (mine ? 9 : 10) + (opens ? 0 : 1);
 
   return (
     <div className="page">
@@ -172,6 +174,8 @@ export function WorkOrdersPage() {
       </header>
 
       <HandoffNotice handoff={handoff} />
+
+      {may(PERMISSIONS.workOrdersAssign) && !fromAnotherDepartment && <ResponseTargetsEditor />}
 
       {error && <p className="alert alert-error" role="alert">{error}</p>}
 
@@ -287,6 +291,7 @@ export function WorkOrdersPage() {
               <th>Breakdown</th>
               <th>Status</th>
               <th>Reported</th>
+              <th title="From the fault being raised to an engineer pressing In progress">Response</th>
               <th>Requested by</th>
               {!mine && <th>{fromAnotherDepartment ? 'Looked after by' : 'Assigned to'}</th>}
               {!opens && <th>Report</th>}
@@ -336,6 +341,7 @@ export function WorkOrdersPage() {
                   )}
                 </td>
                 <td title={formatDateTime(w.reportedAtUtc)}>{formatAge(w.reportedAtUtc)}</td>
+                <td><ResponseBadge r={w.response} /></td>
                 <td>{w.reportedByName ?? <span className="muted">—</span>}</td>
                 {/* On "my work" every row is the reader's own: a column saying so is noise. */}
                 {!mine && <td>{w.assignedToName ?? <span className="muted">Unassigned</span>}</td>}

@@ -7,6 +7,7 @@ import { EquipmentForm } from './EquipmentForm';
 import { StatusPill } from '../StatusPill';
 import { CRITICALITY_LABEL, CRITICALITY_LOOK, EQUIPMENT_LABEL, EQUIPMENT_LOOK } from '../statusTones';
 import { useFeatures } from '../features';
+import { ageBasis, formatMachineAge } from '../age';
 
 type Equipment = {
   id: number;
@@ -22,6 +23,10 @@ type Equipment = {
   criticality: number | null;
   purchaseDate: string | null;
   warrantyExpiryDate: string | null;
+  ageMonths: number | null;
+  ageFrom: string | null;
+  expectedLifeYears: number | null;
+  lifeRemainingMonths: number | null;
 };
 
 type Paged<T> = { items: T[]; total: number; page: number; pageSize: number };
@@ -304,16 +309,17 @@ export function EquipmentListPage() {
               <th>Serial</th>
               <th>Status</th>
               <th>Criticality</th>
+              <th>Age</th>
             </tr>
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={canPrint ? 8 : 7} className="empty">Loading…</td></tr>
+              <tr><td colSpan={canPrint ? 9 : 8} className="empty">Loading…</td></tr>
             )}
 
             {!loading && data?.items.length === 0 && (
               <tr>
-                <td colSpan={canPrint ? 8 : 7} className="empty">
+                <td colSpan={canPrint ? 9 : 8} className="empty">
                   {hasFilters
                     ? 'No equipment matches these filters.'
                     : features?.import
@@ -352,6 +358,14 @@ export function EquipmentListPage() {
                     </StatusPill>
                   ) : (
                     <span className="muted">Not set</span>
+                  )}
+                </td>
+                <td title={ageBasis(e.ageFrom) ?? undefined}>
+                  {formatMachineAge(e.ageMonths) ?? <span className="muted">—</span>}
+                  {e.lifeRemainingMonths != null && e.lifeRemainingMonths < 0 && (
+                    <div>
+                      <StatusPill look={{ tone: 'danger' }}>Past expected life</StatusPill>
+                    </div>
                   )}
                 </td>
               </tr>

@@ -80,7 +80,10 @@ public sealed record EquipmentRequest(
     decimal? MaintenanceCost = null,
     // Set up the machine's PM in the same request, so it is added and scheduled
     // together or not at all. Left out, no PM is scheduled.
-    NewMachinePmRequest? Pm = null);
+    NewMachinePmRequest? Pm = null,
+    // How many years the machine is expected to stay in service (1 to 60). Left out, a new machine has none and an existing
+    // one keeps what it has. 0 takes it off.
+    int? ExpectedLifeYears = null);
 
 public sealed record EquipmentResponse(
     int Id,
@@ -109,7 +112,14 @@ public sealed record EquipmentResponse(
     string? MaintenanceContractNumber,
     DateOnly? MaintenanceStartDate,
     DateOnly? MaintenanceEndDate,
-    decimal? MaintenanceCost);
+    decimal? MaintenanceCost,
+    int? ExpectedLifeYears,
+    // How old the machine is, in whole months, and whether that was counted from its installation or its purchase.
+    // Worked out from the hospital's today when the answer is made, so it is never stored and never goes stale.
+    int? AgeMonths = null,
+    string? AgeFrom = null,
+    // Months of expected life left: negative once the machine is past it. Null unless both an expected life and an age are known.
+    int? LifeRemainingMonths = null);
 
 public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Total, int Page, int PageSize);
 
@@ -149,6 +159,7 @@ public static class EquipmentEndpoints
 
     private static async Task<IResult> SearchAsync(
         HospitalPmDbContext db,
+        HospitalClock clock,
         [FromQuery] string? q,
         [FromQuery] int? locationId,
         [FromQuery] int? equipmentTypeId,
@@ -240,14 +251,18 @@ public static class EquipmentEndpoints
                 e.MaintenanceContractNumber,
                 e.MaintenanceStartDate,
                 e.MaintenanceEndDate,
-                e.MaintenanceCost))
+                e.MaintenanceCost,
+                e.ExpectedLifeYears))
             .ToListAsync(ct);
 
+        var today = clock.Today();
+        var withAge = items.Select(i => WithAge(i, today)).ToList();
+
         return Results.Ok(new PagedResult<EquipmentResponse>(
-            db.IsScoped ? items.Select(Redact).ToList() : items, total, page, pageSize));
+            db.IsScoped ? withAge.Select(Redact).ToList() : withAge, total, page, pageSize));
     }
 
-    private static async Task<IResult> GetAsync(int id, HospitalPmDbContext db, CancellationToken ct)
+    private static async Task<IResult> GetAsync(int id, HospitalPmDbContext db, HospitalClock clock, CancellationToken ct)
     {
         var item = await db.Equipment.AsNoTracking()
             .Where(e => e.Id == id)
@@ -278,11 +293,28 @@ public static class EquipmentEndpoints
                 e.MaintenanceContractNumber,
                 e.MaintenanceStartDate,
                 e.MaintenanceEndDate,
-                e.MaintenanceCost))
+                e.MaintenanceCost,
+                e.ExpectedLifeYears))
             .SingleOrDefaultAsync(ct);
 
-        return item is null ? Results.NotFound() : Results.Ok(db.IsScoped ? Redact(item) : item);
+        if (item is null)
+        {
+            return Results.NotFound();
+        }
+
+        item = WithAge(item, clock.Today());
+        return Results.Ok(db.IsScoped ? Redact(item) : item);
     }
+
+    private static EquipmentResponse WithAge(EquipmentResponse e, DateOnly today) =>
+        EquipmentRules.AgeOf(e.InstallationDate, e.PurchaseDate, today) is { } age
+            ? e with
+            {
+                AgeMonths = age.Months,
+                AgeFrom = age.From,
+                LifeRemainingMonths = EquipmentRules.LifeRemainingMonths(e.ExpectedLifeYears, age.Months),
+            }
+            : e;
 
     /// <summary>
     /// What a person in another department is not shown about a machine: what it cost, how it is
@@ -343,7 +375,8 @@ public static class EquipmentEndpoints
                 e.MaintenanceContractNumber,
                 e.MaintenanceStartDate,
                 e.MaintenanceEndDate,
-                e.MaintenanceCost))
+                e.MaintenanceCost,
+                e.ExpectedLifeYears))
             .SingleOrDefaultAsync(ct);
 
         return item is null ? Results.NotFound() : Results.Ok(db.IsScoped ? Redact(item) : item);
@@ -415,6 +448,7 @@ public static class EquipmentEndpoints
             Status = request.Status ?? EquipmentStatus.InService,
             PurchaseDate = request.PurchaseDate,
             InstallationDate = request.InstallationDate,
+            ExpectedLifeYears = request.ExpectedLifeYears is > 0 ? request.ExpectedLifeYears : null,
             WarrantyExpiryDate = request.WarrantyExpiryDate,
             Notes = request.Notes,
             Criticality = request.Criticality,
@@ -529,6 +563,8 @@ public static class EquipmentEndpoints
         entity.Status = request.Status ?? entity.Status;
         entity.PurchaseDate = request.PurchaseDate;
         entity.InstallationDate = request.InstallationDate;
+        // Left out keeps what is there; 0 takes it off; 1 to 60 sets it.
+        entity.ExpectedLifeYears = request.ExpectedLifeYears is { } life ? (life == 0 ? null : life) : entity.ExpectedLifeYears;
         entity.WarrantyExpiryDate = request.WarrantyExpiryDate;
         entity.Notes = request.Notes;
         entity.Criticality = request.Criticality ?? entity.Criticality;
@@ -724,6 +760,12 @@ public static class EquipmentEndpoints
             && EquipmentRules.DateProblem(request.PurchaseDate, request.InstallationDate, request.WarrantyExpiryDate, hospital.Today()) is { } dateProblem)
         {
             return Results.BadRequest(new { error = dateProblem.Message });
+        }
+
+        if (request.ExpectedLifeYears is { } expectedLife && expectedLife != 0
+            && EquipmentRules.LifeProblem(expectedLife) is { } lifeProblem)
+        {
+            return Results.BadRequest(new { error = lifeProblem });
         }
 
         if (request.Status is { } status && !Enum.IsDefined(status))

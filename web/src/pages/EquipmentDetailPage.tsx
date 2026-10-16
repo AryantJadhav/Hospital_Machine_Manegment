@@ -28,9 +28,12 @@ import {
   WORK_ORDER_LABEL,
   WORK_ORDER_LOOK,
 } from '../statusTones';
+import { ageBasis, formatLifeLeft, formatMachineAge } from '../age';
 import { formatHours } from '../hours';
 
 type History = {
+  /** How old the machine is, in whole months, from which date, and how much of its expected life is left. Null when no date is known. */
+  age: { months: number; from: string; lifeRemainingMonths: number | null } | null;
   equipment: {
     id: number;
     assetTag: string;
@@ -42,6 +45,7 @@ type History = {
     purchaseDate: string | null;
     purchaseCost: number | null;
     installationDate: string | null;
+    expectedLifeYears: number | null;
     warrantyExpiryDate: string | null;
     isInsured: boolean;
     insuranceProvider: string | null;
@@ -370,6 +374,7 @@ export function EquipmentDetailPage() {
             purchaseDate: e.purchaseDate ?? null,
             purchaseCost: e.purchaseCost ?? null,
             installationDate: e.installationDate ?? null,
+            expectedLifeYears: e.expectedLifeYears ?? null,
             warrantyExpiryDate: e.warrantyExpiryDate ?? null,
             isInsured: e.isInsured,
             insuranceProvider: e.insuranceProvider ?? null,
@@ -436,6 +441,19 @@ export function EquipmentDetailPage() {
             <Row label="Purchased" value={formatDate(e.purchaseDate)} />
             <Row label="Cost of the machine" value={e.purchaseCost == null ? null : formatRupees(e.purchaseCost)} />
             <Row label="Installed" value={formatDate(e.installationDate)} />
+            <Row
+              label="Age"
+              value={data.age == null ? null : `${formatMachineAge(data.age.months)} (${ageBasis(data.age.from)})`}
+            />
+            <Row
+              label="Expected life"
+              value={e.expectedLifeYears == null ? null : `${e.expectedLifeYears} ${e.expectedLifeYears === 1 ? 'year' : 'years'}`}
+            />
+            <Row
+              label="Life left"
+              value={formatLifeLeft(data.age?.lifeRemainingMonths)}
+              strong={(data.age?.lifeRemainingMonths ?? 1) < 0}
+            />
             {e.isInsured && (
               <>
                 <Row label="Insurer" value={e.insuranceProvider} />

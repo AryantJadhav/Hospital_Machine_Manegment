@@ -392,6 +392,7 @@ app.MapDowntimeReportEndpoints();
 app.MapCostReportEndpoints();
 app.MapWorkDoneReportEndpoints();
 app.MapTrainingSummaryEndpoints();
+app.MapResponseTargetEndpoints();
 app.MapStockReportEndpoints();
 app.MapTrainingEndpoints();
 app.MapGatePassEndpoints();

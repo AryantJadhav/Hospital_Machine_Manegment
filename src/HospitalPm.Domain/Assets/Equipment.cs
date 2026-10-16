@@ -65,6 +65,13 @@ public sealed class Equipment
 
     public DateOnly? InstallationDate { get; set; }
 
+    /// <summary>
+    /// How many years the machine is expected to stay in service, from its installation (or its purchase when that is
+    /// not known). Optional: blank is "not set", not "no limit". Whole years, 1 to 60, kept by the database as well.
+    /// With the age, it says how long is left, or that the machine is past it.
+    /// </summary>
+    public int? ExpectedLifeYears { get; set; }
+
     public DateOnly? WarrantyExpiryDate { get; set; }
 
     /// <summary>

@@ -54,6 +54,10 @@ namespace HospitalPm.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("equipment_type_id");
 
+                    b.Property<int?>("ExpectedLifeYears")
+                        .HasColumnType("integer")
+                        .HasColumnName("expected_life_years");
+
                     b.Property<DateOnly?>("InstallationDate")
                         .HasColumnType("date")
                         .HasColumnName("installation_date");
@@ -1773,6 +1777,33 @@ namespace HospitalPm.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_training_session_date");
 
                     b.ToTable("training_session", (string)null);
+                });
+
+            modelBuilder.Entity("HospitalPm.Domain.WorkOrders.ResponseTarget", b =>
+                {
+                    b.Property<int>("TenantId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("tenant_id");
+
+                    b.Property<int>("Priority")
+                        .HasColumnType("integer")
+                        .HasColumnName("priority");
+
+                    b.Property<int>("Minutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("minutes");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc")
+                        .HasDefaultValueSql("now()");
+
+                    b.HasKey("TenantId", "Priority");
+
+                    b.ToTable("response_target", (string)null);
                 });
 
             modelBuilder.Entity("HospitalPm.Domain.WorkOrders.WorkOrder", b =>

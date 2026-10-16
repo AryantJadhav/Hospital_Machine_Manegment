@@ -13,6 +13,7 @@ import { formatBytes } from '../bytes';
 import { formatHours } from '../hours';
 import { formatRupees } from '../money';
 import { formatDateTime } from '../time';
+import { responseSentence } from '../ResponseBadge';
 import { usePageTitle } from '../pageTitle';
 import type { WorkOrderDetail, WorkOrderPhoto } from '../workOrderTypes';
 
@@ -754,6 +755,7 @@ function Facts({ order }: { order: WorkOrderDetail }) {
         <Fact label="Reported" value={formatDateTime(order.reportedAtUtc)} />
         <Fact label="Assigned" value={order.assignedAtUtc ? formatDateTime(order.assignedAtUtc) : null} />
         <Fact label="Started" value={order.startedAtUtc ? formatDateTime(order.startedAtUtc) : null} />
+        <Fact label="Response" value={responseSentence(order.response)} />
         <Fact label="Resolved" value={order.resolvedAtUtc ? formatDateTime(order.resolvedAtUtc) : null} />
         <Fact label="Closed" value={order.closedAtUtc ? formatDateTime(order.closedAtUtc) : null} />
         <Fact label="Out of service" value={order.outOfServiceAtUtc ? formatDateTime(order.outOfServiceAtUtc) : null} />
