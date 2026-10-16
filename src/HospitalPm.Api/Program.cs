@@ -391,6 +391,7 @@ app.MapPmComplianceEndpoints();
 app.MapDowntimeReportEndpoints();
 app.MapCostReportEndpoints();
 app.MapWorkDoneReportEndpoints();
+app.MapTrainingSummaryEndpoints();
 app.MapStockReportEndpoints();
 app.MapTrainingEndpoints();
 app.MapGatePassEndpoints();

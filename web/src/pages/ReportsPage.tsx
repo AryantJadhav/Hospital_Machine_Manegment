@@ -9,7 +9,7 @@ import { PRIORITY_LOOK } from '../statusTones';
 import { StatusPill } from '../StatusPill';
 import { Tile } from '../Tile';
 
-type Kind = 'downtime' | 'cost' | 'work' | 'stock';
+type Kind = 'downtime' | 'cost' | 'work' | 'training' | 'stock';
 
 type DowntimeMachine = {
   equipmentId: number;
@@ -125,22 +125,59 @@ type StockSummary = {
   lowStock: StockLine[];
 };
 
+type TrainingSummary = {
+  from: string;
+  to: string;
+  countedThrough: string;
+  scope: string;
+  held: number;
+  planned: number;
+  attendances: number;
+  peopleTrained: number;
+  hours: number;
+  personHours: number;
+  withoutDuration: number;
+  byType: { equipmentType: string; sessions: number; attendances: number }[];
+  byPerson: { userId: number | null; name: string; designation: string | null; sessions: number; hours: number }[];
+  items: {
+    id: number;
+    title: string;
+    date: string;
+    planned: boolean;
+    equipmentType: string | null;
+    equipmentId: number | null;
+    assetTag: string | null;
+    trainerType: string | null;
+    trainer: string | null;
+    venue: string | null;
+    durationMinutes: number | null;
+    attendees: number;
+    attendeeNames: string[];
+  }[];
+};
+
 type Place = { id: number; name: string; depth: number };
 type Person = { id: number; fullName: string };
 
 const CUSTOM = 'custom';
 
-const TITLES: Record<Kind, string> = { downtime: 'Downtime', cost: 'Cost', work: 'Work done', stock: 'Spare part stock' };
+const TITLES: Record<Kind, string> = {
+  downtime: 'Downtime',
+  cost: 'Cost',
+  work: 'Work done',
+  training: 'Training',
+  stock: 'Spare part stock',
+};
 
 /** Where each report lives on the server. */
-const PATH: Record<Kind, string> = { downtime: 'downtime', cost: 'cost', work: 'work-done', stock: 'stock' };
+const PATH: Record<Kind, string> = { downtime: 'downtime', cost: 'cost', work: 'work-done', training: 'training', stock: 'stock' };
 
 /** The priority names the server sends, as the look each one wears. */
 const PRIORITY_BY_NAME: Record<string, number> = { Low: 10, Medium: 20, High: 30, Critical: 40 };
 
 /**
  * The fleet-wide reports: which machines were down and for how long, what has been spent on each
- * and on what, and what work was done and by whom.
+ * and on what, what work was done and by whom, and what training was given and to whom.
  *
  * Pick a period and, if wanted, a department; see the headline and the detail behind it, and
  * take away the CSV for a spreadsheet. The period and place are shared by the reports, so
@@ -153,16 +190,26 @@ export function ReportsPage() {
   const [params, setParams] = useSearchParams();
   const reportParam = params.get('report');
   const kind: Kind =
-    reportParam === 'cost' ? 'cost' : reportParam === 'work' ? 'work' : reportParam === 'stock' ? 'stock' : 'downtime';
+    reportParam === 'cost'
+      ? 'cost'
+      : reportParam === 'work'
+        ? 'work'
+        : reportParam === 'training'
+          ? 'training'
+          : reportParam === 'stock'
+            ? 'stock'
+            : 'downtime';
 
   // What was done is mostly asked about for a day or a week, so that report offers those first.
   const presets = useMemo(() => (kind === 'work' ? [...recent, ...monthly] : monthly), [kind, recent, monthly]);
 
   // Today for the work report, and this month for the others: a period still running is the one
   // a head asks about while it matters.
+  // Training is occasional and assessed by the year, so it starts with the financial year.
   const initial =
-    (kind === 'work' ? recent.find((p) => p.key === 'today') : monthly.find((p) => p.key === 'this-month')) ??
-    monthly[0];
+    (kind === 'work'
+      ? recent.find((p) => p.key === 'today')
+      : monthly.find((p) => p.key === (kind === 'training' ? 'this-fy' : 'this-month'))) ?? monthly[0];
 
   const [choice, setChoice] = useState(initial.key);
   const [from, setFrom] = useState(initial.from);
@@ -174,6 +221,7 @@ export function ReportsPage() {
   const [downtime, setDowntime] = useState<DowntimeSummary | null>(null);
   const [cost, setCost] = useState<CostSummary | null>(null);
   const [work, setWork] = useState<WorkDoneSummary | null>(null);
+  const [training, setTraining] = useState<TrainingSummary | null>(null);
   const [stock, setStock] = useState<StockSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -211,7 +259,8 @@ export function ReportsPage() {
 
   const query = useMemo(() => {
     const q = new URLSearchParams({ from, to });
-    if (locationId) q.set('locationId', locationId);
+    // A training session is about a kind of machine or a subject, not a ward, so it has no place to choose.
+    if (locationId && kind !== 'training') q.set('locationId', locationId);
     if (kind === 'work' && userId) q.set('userId', userId);
     return q.toString();
   }, [from, to, locationId, userId, kind]);
@@ -236,6 +285,9 @@ export function ReportsPage() {
         } else if (kind === 'cost') {
           const s = await api.get<CostSummary>(`/api/reports/cost?${query}`);
           if (!cancelled) setCost(s);
+        } else if (kind === 'training') {
+          const s = await api.get<TrainingSummary>(`/api/reports/training?${query}`);
+          if (!cancelled) setTraining(s);
         } else {
           const s = await api.get<WorkDoneSummary>(`/api/reports/work-done?${query}`);
           if (!cancelled) setWork(s);
@@ -245,6 +297,7 @@ export function ReportsPage() {
           setDowntime(null);
           setCost(null);
           setWork(null);
+          setTraining(null);
           setStock(null);
           setError(e instanceof Error ? e.message : 'Could not work out the report.');
         }
@@ -273,6 +326,8 @@ export function ReportsPage() {
     // And arriving at it from the untouched default, start with today, which is what it is mostly asked.
     if (next === 'work' && choice === 'this-month') pick('today', [...recent, ...monthly]);
     if (next !== 'work' && recent.some((p) => p.key === choice)) pick('this-month', monthly);
+    // Training is read by the year: arriving from the untouched month, start with the financial year.
+    if (next === 'training' && choice === 'this-month') pick('this-fy', monthly);
   }
 
   async function download() {
@@ -293,7 +348,8 @@ export function ReportsPage() {
   }
 
   // The ones with a period to say; the stock report is simply as of now.
-  const summary = kind === 'downtime' ? downtime : kind === 'cost' ? cost : kind === 'work' ? work : null;
+  const summary =
+    kind === 'downtime' ? downtime : kind === 'cost' ? cost : kind === 'work' ? work : kind === 'training' ? training : null;
 
   return (
     <div className="page">
@@ -307,7 +363,9 @@ export function ReportsPage() {
                 ? 'What has been spent on each machine, and on what.'
                 : kind === 'work'
                   ? 'The faults that were fixed, what was done, and who did it.'
-                  : 'The spare parts that are out of stock, and the ones running low, as they stand now.'}
+                  : kind === 'training'
+                    ? 'The training sessions held, who came, on what, and for how long.'
+                    : 'The spare parts that are out of stock, and the ones running low, as they stand now.'}
           </p>
         </div>
         <button className="btn btn-primary" disabled={!ready || busy} onClick={() => void download()}>
@@ -368,18 +426,20 @@ export function ReportsPage() {
           />
         </label>
 
-        <label className="field grow">
-          <span>Where</span>
-          <select aria-label="Where" value={locationId} onChange={(e) => setLocationId(e.target.value)}>
-            <option value="">Whole hospital</option>
-            {places.map((l) => (
-              <option key={l.id} value={l.id}>
-                {' '.repeat(l.depth * 3)}
-                {l.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        {kind !== 'training' && (
+          <label className="field grow">
+            <span>Where</span>
+            <select aria-label="Where" value={locationId} onChange={(e) => setLocationId(e.target.value)}>
+              <option value="">Whole hospital</option>
+              {places.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {' '.repeat(l.depth * 3)}
+                  {l.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
 
         {kind === 'work' && (
           <label className="field">
@@ -413,6 +473,7 @@ export function ReportsPage() {
       {kind === 'downtime' && downtime && <DowntimeView report={downtime} />}
       {kind === 'cost' && cost && <CostView report={cost} />}
       {kind === 'work' && work && <WorkDoneView report={work} />}
+      {kind === 'training' && training && <TrainingView report={training} />}
       {kind === 'stock' && stock && <StockView report={stock} />}
     </div>
   );
@@ -576,6 +637,129 @@ function WorkDoneView({ report }: { report: WorkDoneSummary }) {
                     </>
                   )}
                 </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+    </>
+  );
+}
+
+function TrainingView({ report }: { report: TrainingSummary }) {
+  if (report.items.length === 0) {
+    return <p className="alert alert-info">No training session was held or planned in this period.</p>;
+  }
+
+  return (
+    <>
+      <div className="tiles">
+        <Tile label="Sessions held" value={report.held} />
+        <Tile label="People trained" value={report.peopleTrained} hint="Each person counted once" />
+        <Tile label="Places taken" value={report.attendances} hint="A person at three sessions is three" />
+        <Tile
+          label="Hours of teaching"
+          value={formatHours(report.hours)}
+          hint={
+            report.withoutDuration > 0
+              ? `${report.withoutDuration} session${report.withoutDuration === 1 ? ' has' : 's have'} no length recorded`
+              : `${formatHours(report.personHours)} counting everyone present`
+          }
+        />
+        {report.planned > 0 && <Tile label="Planned" value={report.planned} hint="Not counted until held" />}
+      </div>
+
+      {report.byType.length > 0 && (
+        <section className="card table-wrap">
+          <table className="table">
+            <caption className="table-caption">Training by kind of machine</caption>
+            <thead>
+              <tr>
+                <th>Kind of machine</th>
+                <th className="num">Sessions</th>
+                <th className="num">Places taken</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.byType.map((t) => (
+                <tr key={t.equipmentType}>
+                  <td>{t.equipmentType}</td>
+                  <td className="num">{t.sessions}</td>
+                  <td className="num">{t.attendances}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+
+      {report.byPerson.length > 0 && (
+        <section className="card table-wrap">
+          <table className="table">
+            <caption className="table-caption">Who has been trained</caption>
+            <thead>
+              <tr>
+                <th>Person</th>
+                <th>Designation</th>
+                <th className="num">Sessions</th>
+                <th className="num">Hours</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.byPerson.map((p) => (
+                <tr key={`${p.userId ?? 'n'}-${p.name}`}>
+                  <td>{p.name}</td>
+                  <td>{p.designation ?? <span className="muted">—</span>}</td>
+                  <td className="num">{p.sessions}</td>
+                  <td className="num">{formatHours(p.hours)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+
+      <section className="card table-wrap">
+        <table className="table">
+          <caption className="table-caption">Sessions, latest first</caption>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Session</th>
+              <th>Machine</th>
+              <th>Trainer</th>
+              <th>Venue</th>
+              <th className="num">Length</th>
+              <th className="num">People</th>
+            </tr>
+          </thead>
+          <tbody>
+            {report.items.map((i) => (
+              <tr key={i.id}>
+                <td>
+                  {formatDate(i.date)}
+                  {i.planned && <div className="muted">Planned</div>}
+                </td>
+                <td>
+                  <Link to={`/training/${i.id}`} state={{ from: '/reports?report=training' }}>{i.title}</Link>
+                </td>
+                <td>
+                  {i.equipmentId != null && i.assetTag ? (
+                    <>
+                      <Link to={`/equipment/${i.equipmentId}`} className="mono">{i.assetTag}</Link>
+                      <div className="muted">{i.equipmentType}</div>
+                    </>
+                  ) : (
+                    (i.equipmentType ?? <span className="muted">—</span>)
+                  )}
+                </td>
+                <td>
+                  {i.trainer ?? <span className="muted">—</span>}
+                  {i.trainerType && <div className="muted">{i.trainerType}</div>}
+                </td>
+                <td>{i.venue ?? <span className="muted">—</span>}</td>
+                <td className="num">{i.durationMinutes == null ? '—' : formatHours(i.durationMinutes / 60)}</td>
+                <td className="num">{i.attendees}</td>
               </tr>
             ))}
           </tbody>
