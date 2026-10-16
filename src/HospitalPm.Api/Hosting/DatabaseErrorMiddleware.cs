@@ -26,6 +26,7 @@ public sealed class DatabaseErrorMiddleware(RequestDelegate next, ILogger<Databa
         catch (Exception ex) when (Describe(ex) is not null && !context.Response.HasStarted)
         {
             var (status, message) = Describe(ex)!.Value;
+            ServerMetrics.DatabaseRefusals.WithLabels(ReasonOf(ex)).Inc();
 
             // Logged at a level that does not page anyone: it is a refused request, not a fault.
             log.LogInformation(
@@ -36,7 +37,77 @@ public sealed class DatabaseErrorMiddleware(RequestDelegate next, ILogger<Databa
             context.Response.StatusCode = status;
             await context.Response.WriteAsJsonAsync(new { error = message }, context.RequestAborted);
         }
+        catch (Exception ex) when (CountFailure(ex))
+        {
+            // Never reached: the filter only counts, then says "not mine", and the error carries on up to be reported as it
+            // always was. A filter rather than a catch and rethrow, so nothing about how it fails changes.
+        }
     }
+
+    /// <summary>Counts a database that could not be reached, or did not answer. Always false: it never handles the error.</summary>
+    private static bool CountFailure(Exception ex)
+    {
+        if (IsTimeout(ex))
+        {
+            ServerMetrics.DatabaseTimeouts.Inc();
+        }
+        else if (IsConnectionFailure(ex))
+        {
+            ServerMetrics.DatabaseConnectionFailures.Inc();
+        }
+
+        return false;
+    }
+
+    internal static bool IsTimeout(Exception ex)
+    {
+        for (var e = ex; e is not null; e = e.InnerException)
+        {
+            if (e is TimeoutException)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// The database was not there: the connection was refused or dropped, the server was starting or shutting down, or
+    /// PostgreSQL said so itself (state class 08, or 57P01 to 57P03).
+    /// </summary>
+    internal static bool IsConnectionFailure(Exception ex)
+    {
+        for (var e = ex; e is not null; e = e.InnerException)
+        {
+            if (e is System.Net.Sockets.SocketException)
+            {
+                return true;
+            }
+
+            if (e is PostgresException pg
+                && (pg.SqlState.StartsWith("08", StringComparison.Ordinal) || pg.SqlState is "57P01" or "57P02" or "57P03"))
+            {
+                return true;
+            }
+
+            if (e is NpgsqlException && e.InnerException is System.IO.IOException)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>A short, fixed name for what the database refused, so the label can only ever be one of four.</summary>
+    internal static string ReasonOf(Exception ex) => StateOf(ex) switch
+    {
+        PostgresErrorCodes.UniqueViolation => "duplicate",
+        PostgresErrorCodes.StringDataRightTruncation => "too_long",
+        PostgresErrorCodes.NumericValueOutOfRange => "number_too_large",
+        _ => "bad_character",
+    };
 
     /// <summary>The status and message for an error the caller can fix, or null for anything else.</summary>
     internal static (int Status, string Message)? Describe(Exception ex) => StateOf(ex) switch

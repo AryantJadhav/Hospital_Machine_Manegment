@@ -339,6 +339,10 @@ app.MapGet("/health", () => Results.Ok(new
 // The React bundle is built into wwwroot and embedded in the published
 // binary, so the UI ships with the app rather than as a second deployment.
 // This is what makes "one binary" literally true.
+// Off unless the person running the server switches it on (Metrics:Enabled). Counts every request by route pattern, never by
+// the address as typed, so an equipment number or a search never becomes a label. The numbers are served on a port of
+// their own, never the one people open: see Hosting/ServerMetrics.cs.
+HospitalPm.Api.Hosting.ServerMetrics.Use(app);
 // First, before anyone is even recognised: a locked installation turns everyone away, so nobody signs in.
 app.UseMiddleware<HospitalPm.Api.Hosting.LicenceLockMiddleware>();
 // Wraps everything after it, so a refused save is a plain message, not a server error.
