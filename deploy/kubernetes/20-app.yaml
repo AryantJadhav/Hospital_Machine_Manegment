@@ -29,7 +29,7 @@ metadata:
   name: hospitalpm
   namespace: hospitalpm
 spec:
-  replicas: 1
+  replicas: 3
   strategy:
     type: Recreate           # the volume can be held by one pod; never two at once during an upgrade
   selector:
@@ -54,11 +54,13 @@ spec:
             runAsNonRoot: true
       containers:
         - name: hospitalpm
-          image: aryant050/hospitalpm:v0.0.9
+          image: aryant050/hospitalpm:v0.0.10
           imagePullPolicy: Always
           ports:
             - name: web
               containerPort: 5000
+            - name: metrics
+              containerPort: 9102
           env:
             - name: DB_PASSWORD
               valueFrom:
@@ -78,6 +80,14 @@ spec:
             # The Backups page is for the Developer only; switched on so it exists.
             - name: Features__Backups
               value: "true"
+            # Numbers for whoever monitors the server (monitoring/README.md). Off unless the ConfigMap has METRICS_ENABLED:
+            # "true". They are served on port 9102, apart from the port people open; keep it to the monitoring namespace.
+            - name: Metrics__Enabled
+              valueFrom:
+                configMapKeyRef:
+                  name: hospitalpm-config
+                  key: METRICS_ENABLED
+                  optional: true
           volumeMounts:
             - name: data
               mountPath: /var/lib/hospitalpm

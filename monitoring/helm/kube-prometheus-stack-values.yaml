@@ -1,0 +1,173 @@
+# Values for prometheus-community/kube-prometheus-stack, chart version 92.3.0 (app v0.94.1). The version is pinned in
+# the install command (monitoring/README.md), not "latest".
+#
+# Written for k3s on one Linux server (Hospital PM's test and pilot server): one node, local-path storage.
+# Release name "kps" in namespace "monitoring". Nothing here is a password: Grafana's login comes from the Secret
+# "grafana-admin" that the README tells you to create first.
+
+fullnameOverride: kps
+
+# ---------------------------------------------------------------------------------------------------------------
+# k3s runs the API server, scheduler, controller manager and proxy inside one process that listens on localhost, so
+# they cannot be scraped from a pod and would only produce "target down" alerts that mean nothing. Their rules go too.
+kubeControllerManager: { enabled: false }
+kubeScheduler: { enabled: false }
+kubeProxy: { enabled: false }
+kubeEtcd: { enabled: false }
+defaultRules:
+  rules:
+    kubeControllerManager: false
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false
+    kubeProxy: false
+    etcd: false
+
+# ---------------------------------------------------------------------------------------------------------------
+prometheus:
+  prometheusSpec:
+    # Our own ServiceMonitors and PrometheusRules (monitoring/prometheus, monitoring/kubernetes) are picked up
+    # without having to carry this release's label.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+
+    # Size and retention are chosen together. 30 days kept, and the disk cap is below the volume so Prometheus
+    # trims old data before the volume fills. Estimate (to be checked against the real figure after a week, see the
+    # README): about 40 000 series on this stack, a sample every 30 s = 2 880 a day, roughly 1.5 bytes a sample, so
+    # 40000 x 2880 x 1.5 B = about 170 MB a day, about 5 GB for 30 days. The volume is six times that, to take a load
+    # test and growth without a surprise.
+    retention: 30d
+    retentionSize: 25GB
+    scrapeInterval: 30s
+    evaluationInterval: 30s
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 30Gi
+
+    # Lets the load test (k6) write its numbers into Prometheus so they sit beside the server's. Reachable only from
+    # inside the cluster, and the network policy lets only the load-test namespace and Grafana in.
+    enableRemoteWriteReceiver: true
+
+    resources:
+      requests: { cpu: 200m, memory: 1Gi }
+      limits: { memory: 3Gi }
+
+    # Leave time to finish writing before the pod is stopped, so a restart does not cost the last block.
+    terminationGracePeriodSeconds: 600
+
+alertmanager:
+  alertmanagerSpec:
+    storage:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 1Gi
+    resources:
+      requests: { cpu: 20m, memory: 64Mi }
+      limits: { memory: 256Mi }
+  # Where alerts go. Until a real channel is configured they are only held and shown in Alertmanager's own page.
+  # "alert-sink" is a test receiver that logs what it is sent (monitoring/kubernetes/alert-sink.yaml); it proves
+  # alerts leave Alertmanager, it does NOT tell anyone. See the README, "Alert delivery", to add email.
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      receiver: alert-sink
+      group_by: [alertname, namespace]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      routes:
+        # The always-firing "I am alive" alert from the chart is not worth sending anywhere.
+        - receiver: "null"
+          matchers: ['alertname = "Watchdog"']
+        - receiver: "null"
+          matchers: ['alertname = "InfoInhibitor"']
+    inhibit_rules:
+      - source_matchers: ['severity = "critical"']
+        target_matchers: ['severity = "warning"']
+        equal: [alertname, namespace]
+    receivers:
+      - name: "null"
+      - name: alert-sink
+        webhook_configs:
+          - url: http://alert-sink.monitoring.svc:8080/
+            send_resolved: true
+
+# ---------------------------------------------------------------------------------------------------------------
+grafana:
+  # The login is in a Secret you make first, never in this file or in Git.
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  persistence:
+    enabled: true
+    size: 2Gi
+  # Private by default: a ClusterIP service, reached through an SSH tunnel or "kubectl port-forward". No Ingress.
+  service:
+    type: ClusterIP
+  ingress:
+    enabled: false
+  defaultDashboardsTimezone: Asia/Kolkata
+  # Dashboards that are ours, provisioned from ConfigMaps labelled grafana_dashboard=1 (monitoring/grafana).
+  sidecar:
+    resources:
+      requests: { cpu: 10m, memory: 50Mi }
+      limits: { memory: 150Mi }
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: monitoring
+      folderAnnotation: grafana_folder
+      provider:
+        foldersFromFilesStructure: true
+  grafana.ini:
+    # A hospital server may have no internet: nothing is sent to Grafana Labs, and no update check.
+    analytics:
+      reporting_enabled: false
+      check_for_updates: false
+      check_for_plugin_updates: false
+    users:
+      allow_sign_up: false
+    auth.anonymous:
+      enabled: false
+    security:
+      disable_gravatar: true
+      cookie_samesite: strict
+      allow_embedding: false
+    snapshots:
+      external_enabled: false
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 512Mi }
+
+# ---------------------------------------------------------------------------------------------------------------
+nodeExporter:
+  enabled: true
+kube-state-metrics:
+  enabled: true
+  resources:
+    requests: { cpu: 10m, memory: 64Mi }
+    limits: { memory: 256Mi }
+prometheus-node-exporter:
+  resources:
+    requests: { cpu: 10m, memory: 32Mi }
+    limits: { memory: 128Mi }
+prometheusOperator:
+  resources:
+    requests: { cpu: 20m, memory: 64Mi }
+    limits: { memory: 256Mi }
+  # The small helper that reloads Prometheus and Alertmanager when their configuration changes.
+  prometheusConfigReloader:
+    resources:
+      requests: { cpu: 10m, memory: 25Mi }
+      limits: { memory: 100Mi }

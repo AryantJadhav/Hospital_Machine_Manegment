@@ -1,0 +1,24 @@
+# Turns the dashboards into ConfigMaps that Grafana's sidecar loads (label grafana_dashboard=1).
+#   kubectl apply -k monitoring/grafana
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: monitoring
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: "Hospital PM"
+configMapGenerator:
+  - name: hpm-dashboard-infrastructure
+    files:
+      - dashboards/infrastructure.json
+  - name: hpm-dashboard-backend
+    files:
+      - dashboards/backend.json
+  - name: hpm-dashboard-postgresql
+    files:
+      - dashboards/postgresql.json
+  - name: hpm-dashboard-kubernetes
+    files:
+      - dashboards/kubernetes.json

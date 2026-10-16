@@ -1,0 +1,112 @@
+# Who may talk to whom. k3s enforces these itself (its built-in network policy controller), so no extra component is needed.
+#
+# Apply them AFTER the monitoring stack is up and Prometheus shows its targets healthy (README, step 7), then look at the
+# targets again: a mistake here shows up as targets going down, and deleting this file's objects puts everything back.
+#
+# What they say:
+#  - Hospital PM (namespace hospitalpm): everything is shut except what is listed. People reach the web port; only
+#    Prometheus reaches the metrics port; only the application and the PostgreSQL exporter reach the database.
+#  - Monitoring (namespace monitoring): everything is shut except traffic inside it, and the load test writing its
+#    numbers into Prometheus. Nobody outside the cluster reaches Grafana, Prometheus or Alertmanager through the network:
+#    an administrator uses "kubectl port-forward" or an SSH tunnel, which these rules do not block (the traffic is
+#    local to the server).
+#  - Outgoing traffic is not restricted by any of this. It is a known gap: a hospital that needs it closed adds
+#    egress rules for its own network.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: hospitalpm
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-web
+  namespace: hospitalpm
+spec:
+  podSelector:
+    matchLabels: { app: hospitalpm }
+  policyTypes: [Ingress]
+  ingress:
+    # Anyone who can reach the cluster's address may use the web screens. (No "from": any source.)
+    - ports:
+        - { port: 5000, protocol: TCP }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-metrics-from-prometheus
+  namespace: hospitalpm
+spec:
+  podSelector:
+    matchLabels: { app: hospitalpm }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: monitoring }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: prometheus }
+      ports:
+        - { port: 9102, protocol: TCP }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-database-from-app-and-exporter
+  namespace: hospitalpm
+spec:
+  podSelector:
+    matchLabels: { app: hospitalpm-db }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { app: hospitalpm }
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: monitoring }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: prometheus-postgres-exporter }
+      ports:
+        - { port: 5432, protocol: TCP }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: monitoring
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-inside-monitoring
+  namespace: monitoring
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-load-test-remote-write
+  namespace: monitoring
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: prometheus }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: loadtest }
+      ports:
+        - { port: 9090, protocol: TCP }

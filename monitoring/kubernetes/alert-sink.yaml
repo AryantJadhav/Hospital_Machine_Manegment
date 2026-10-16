@@ -1,0 +1,41 @@
+# A test receiver: it prints every alert Alertmanager sends it into its own log. It proves that alerts leave
+# Alertmanager and arrive; it tells nobody. Replace it with a real channel (README, "Alert delivery"). Kept because
+# a real channel needs credentials that should not be invented, and "does it route" can still be tested without them.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alert-sink
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: alert-sink }
+  template:
+    metadata:
+      labels: { app: alert-sink }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 1000 }
+      containers:
+        - name: sink
+          image: mendhak/http-https-echo:37
+          ports:
+            - { name: http, containerPort: 8080 }
+          env:
+            - { name: HTTPS_PORT, value: "0" }
+            - { name: LOG_IGNORE_PATH, value: "/healthz" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 5m, memory: 32Mi }
+            limits: { memory: 128Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alert-sink
+  namespace: monitoring
+spec:
+  selector: { app: alert-sink }
+  ports:
+    - { name: http, port: 8080, targetPort: http }

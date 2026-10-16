@@ -1,0 +1,33 @@
+# Values for prometheus-community/prometheus-postgres-exporter, chart 8.2.0 (exporter v0.20.1). Release "pgexporter"
+# in namespace "monitoring".
+#
+# It reaches PostgreSQL through the cluster's own network (hospitalpm-db.hospitalpm.svc), never through the internet,
+# as the read-only login "hospitalpm_monitor" (monitoring/kubernetes/create-monitor-role.sh), which can see how
+# PostgreSQL is doing but cannot read or change a table. Its connection string, password included, is in the Secret
+# "pg-exporter-dsn", made by that script. It is not in this file or in Git.
+fullnameOverride: pgexporter
+
+config:
+  datasourceSecret:
+    name: pg-exporter-dsn
+    key: dsn
+  # The exporter's own settings metrics are on (pg_settings_*), which gives "max_connections" for the saturation alert and
+  # panel. Nothing here reads a row of the product's own tables.
+  disableSettingsMetrics: false
+
+serviceMonitor:
+  enabled: true
+  namespace: monitoring
+  interval: 30s
+
+resources:
+  requests: { cpu: 10m, memory: 32Mi }
+  limits: { memory: 128Mi }
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65534
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: { drop: [ALL] }

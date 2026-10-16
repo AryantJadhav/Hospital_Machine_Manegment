@@ -1,0 +1,38 @@
+# Tells Prometheus to collect Hospital PM's own numbers (port 9102, /metrics). The Service lives in the application's
+# namespace beside the application; the ServiceMonitor in "monitoring" finds it. The metrics port is not the port people
+# open, and network-policies.yaml lets only Prometheus reach it.
+apiVersion: v1
+kind: Service
+metadata:
+  name: hospitalpm-metrics
+  namespace: hospitalpm
+  labels:
+    app: hospitalpm
+    monitoring: hospitalpm
+spec:
+  clusterIP: None
+  selector:
+    app: hospitalpm
+  ports:
+    - name: metrics
+      port: 9102
+      targetPort: metrics
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: hospitalpm
+  namespace: monitoring
+  labels:
+    release: kps
+spec:
+  namespaceSelector:
+    matchNames: [hospitalpm]
+  selector:
+    matchLabels:
+      monitoring: hospitalpm
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s

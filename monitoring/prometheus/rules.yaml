@@ -1,0 +1,205 @@
+# Alert rules for Hospital PM. They sit beside the rules the chart already ships (a pod crash-looping, a node not
+# ready, a target down, a volume filling, replicas that do not match): those are not repeated here. These are the ones
+# about this product, with the number each threshold rests on written beside it. Thresholds are starting points from
+# the load test of 11 October 2026 (tools/stresstest) and are meant to be changed once a week of real figures exists.
+#
+# Severity: "critical" is something that needs a person now; "warning" is something to look at the same day.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: hospitalpm
+  namespace: monitoring
+  labels:
+    release: kps
+spec:
+  groups:
+    # ------------------------------------------------------------------------------------------------- the application
+    - name: hospitalpm-application
+      rules:
+        - alert: HospitalPmBackendDown
+          expr: up{job="hospitalpm-metrics"} == 0 or absent(up{job="hospitalpm-metrics"})
+          for: 2m
+          labels: { severity: critical }
+          annotations:
+            summary: "Hospital PM is not answering the monitor"
+            description: "Prometheus could not collect Hospital PM's numbers for 2 minutes. The application is down, restarting, or its metrics are switched off (ConfigMap hospitalpm-config, METRICS_ENABLED)."
+
+        - alert: HospitalPmHighServerErrorRate
+          # More than 5% of requests failing with a server error, once there is real traffic (over half a request a second,
+          # so one failure on a quiet night does not page anyone). The load test saw 0% on reads to 800 users.
+          expr: |
+            sum(rate(http_request_duration_seconds_count{job="hospitalpm-metrics",code=~"5.."}[5m]))
+              / sum(rate(http_request_duration_seconds_count{job="hospitalpm-metrics"}[5m])) > 0.05
+            and sum(rate(http_request_duration_seconds_count{job="hospitalpm-metrics"}[5m])) > 0.5
+          for: 5m
+          labels: { severity: critical }
+          annotations:
+            summary: "More than 5% of requests are failing with a server error"
+            description: "{{ $value | humanizePercentage }} of Hospital PM requests ended in a 5xx over the last 5 minutes."
+
+        - alert: HospitalPmSlowResponses
+          # 95th percentile over 2 seconds for 10 minutes. Ordinary pages stayed under 1 second to about 50 people sending
+          # flat out; the PDFs and the full export are slow by nature (3 to 35 s) and are left out so they do not alert.
+          expr: |
+            histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{job="hospitalpm-metrics",route!~"/api/admin/export|/api/reports/.*|/api/labels/.*"}[5m]))) > 2
+            and sum(rate(http_request_duration_seconds_count{job="hospitalpm-metrics"}[5m])) > 0.5
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: "Pages are slow: the slowest 5% take over 2 seconds"
+            description: "Ordinary requests (not PDFs or exports) have a 95th percentile of {{ $value | humanizeDuration }} over the last 5 minutes."
+
+        - alert: HospitalPmDatabaseUnreachable
+          # The application itself saw the database refuse or drop a connection. Any is worth a look; several in a row means
+          # the database is down or the network between them is.
+          expr: increase(hospitalpm_database_connection_failures_total[5m]) > 3
+          for: 0m
+          labels: { severity: critical }
+          annotations:
+            summary: "Hospital PM could not reach its database"
+            description: "{{ $value | humanize }} requests in the last 5 minutes failed because the database could not be reached."
+
+        - alert: HospitalPmDatabaseTimeouts
+          expr: increase(hospitalpm_database_timeouts_total[10m]) > 0
+          for: 0m
+          labels: { severity: warning }
+          annotations:
+            summary: "The database took too long to answer"
+            description: "{{ $value | humanize }} requests in the last 10 minutes timed out waiting for the database."
+
+        - alert: HospitalPmMemoryNearLimit
+          # The container limit is 1 GiB (deploy/kubernetes/20-app.yaml). A kill by the kernel would restart it.
+          expr: |
+            max(container_memory_working_set_bytes{namespace="hospitalpm",container="hospitalpm"})
+              / max(kube_pod_container_resource_limits{namespace="hospitalpm",container="hospitalpm",resource="memory"}) > 0.9
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: "Hospital PM is using over 90% of its memory limit"
+            description: "At {{ $value | humanizePercentage }} of its limit it is close to being stopped and restarted."
+
+    # ------------------------------------------------------------------------------------------------------ PostgreSQL
+    - name: hospitalpm-postgresql
+      rules:
+        - alert: PostgresDown
+          expr: pg_up == 0 or absent(pg_up)
+          for: 2m
+          labels: { severity: critical }
+          annotations:
+            summary: "PostgreSQL is not answering the monitor"
+            description: "The PostgreSQL exporter cannot connect to the database, or the exporter itself is gone."
+
+        - alert: PostgresConnectionsNearLimit
+          # Over 80% of max_connections in use, for 5 minutes. Uses the exporter's pg_settings_max_connections; if that
+          # metric does not exist the alert simply never fires, and the README's checklist says to confirm it does.
+          expr: |
+            sum(pg_stat_activity_count) / max(pg_settings_max_connections) > 0.8
+          for: 5m
+          labels: { severity: warning }
+          annotations:
+            summary: "PostgreSQL connections are over 80% of the limit"
+            description: "{{ $value | humanizePercentage }} of the connections PostgreSQL accepts are in use."
+
+        - alert: PostgresDeadlocks
+          expr: increase(pg_stat_database_deadlocks{datname="hospitalpm"}[15m]) > 0
+          for: 0m
+          labels: { severity: warning }
+          annotations:
+            summary: "PostgreSQL detected a deadlock"
+            description: "Two requests waited on each other and one was cancelled."
+
+        - alert: PostgresCacheHitRatioLow
+          # Under 90% of reads from memory, with real read traffic. A small database that fits in memory sits at 99%+.
+          expr: |
+            sum(rate(pg_stat_database_blks_hit{datname="hospitalpm"}[10m]))
+              / (sum(rate(pg_stat_database_blks_hit{datname="hospitalpm"}[10m])) + sum(rate(pg_stat_database_blks_read{datname="hospitalpm"}[10m]))) < 0.9
+            and sum(rate(pg_stat_database_blks_read{datname="hospitalpm"}[10m])) > 10
+          for: 15m
+          labels: { severity: warning }
+          annotations:
+            summary: "PostgreSQL is reading much from disk, not memory"
+            description: "Cache hit ratio {{ $value | humanizePercentage }}. The database may be short of memory."
+
+    # ------------------------------------------------------------------------------------------- the server and the cluster
+    - name: hospitalpm-server
+      rules:
+        - alert: ServerCpuHigh
+          expr: 1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) > 0.85
+          for: 15m
+          labels: { severity: warning }
+          annotations:
+            summary: "The server's CPU has been over 85% for 15 minutes"
+            description: "{{ $labels.instance }} CPU use {{ $value | humanizePercentage }}."
+
+        - alert: ServerMemoryHigh
+          expr: 1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes > 0.9
+          for: 15m
+          labels: { severity: warning }
+          annotations:
+            summary: "The server's memory is over 90% used for 15 minutes"
+            description: "{{ $labels.instance }} memory use {{ $value | humanizePercentage }} (available memory counted, not cache)."
+
+        - alert: ServerDiskLow
+          # Under 15% free is a warning, under 5% is critical, on every real filesystem. (On the test server the root
+          # filesystem was already at 99% when this was written: that is a true alert, not a false one.)
+          expr: |
+            node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs|fuse.*|nsfs|cgroup.*",mountpoint!~"/run.*|/var/lib/kubelet/pods/.*|/boot/efi"}
+              / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs|fuse.*|nsfs|cgroup.*",mountpoint!~"/run.*|/var/lib/kubelet/pods/.*|/boot/efi"} < 0.15
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: "Less than 15% free on {{ $labels.mountpoint }}"
+            description: "{{ $labels.instance }} {{ $labels.mountpoint }} has {{ $value | humanizePercentage }} free."
+
+        - alert: ServerDiskCritical
+          expr: |
+            node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs|fuse.*|nsfs|cgroup.*",mountpoint!~"/run.*|/var/lib/kubelet/pods/.*|/boot/efi"}
+              / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs|fuse.*|nsfs|cgroup.*",mountpoint!~"/run.*|/var/lib/kubelet/pods/.*|/boot/efi"} < 0.05
+          for: 10m
+          labels: { severity: critical }
+          annotations:
+            summary: "Less than 5% free on {{ $labels.mountpoint }}"
+            description: "{{ $labels.instance }} {{ $labels.mountpoint }} has {{ $value | humanizePercentage }} free."
+
+        - alert: HospitalPmWorkloadUnavailable
+          expr: |
+            kube_deployment_status_replicas_unavailable{namespace=~"hospitalpm|monitoring"} > 0
+            or kube_statefulset_status_replicas_ready{namespace=~"hospitalpm|monitoring"} < kube_statefulset_status_replicas{namespace=~"hospitalpm|monitoring"}
+          for: 5m
+          labels: { severity: warning }
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.deployment }}{{ $labels.statefulset }} has replicas that are not available"
+            description: "Not all replicas have been ready for 5 minutes."
+
+        - alert: HospitalPmPodRestarting
+          # Over three restarts in 30 minutes, in our two namespaces. The chart's own rule only fires when a pod is in
+          # CrashLoopBackOff; this notices a pod that is being killed and coming back.
+          expr: increase(kube_pod_container_status_restarts_total{namespace=~"hospitalpm|monitoring"}[30m]) > 3
+          for: 0m
+          labels: { severity: warning }
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.pod }} restarted {{ $value | humanize }} times in 30 minutes"
+            description: "Container {{ $labels.container }} keeps restarting."
+
+    # ------------------------------------------------------------------------------------------------------ monitoring itself
+    - name: hospitalpm-monitoring-itself
+      rules:
+        - alert: PrometheusStorageNearRetentionLimit
+          # Prometheus trims old data at retentionSize (25 GB). Past 90% of that, history is already being cut short, and
+          # the volume (30 Gi) is not far behind. local-path volumes report no usage to Kubernetes, so this is measured
+          # by Prometheus itself.
+          expr: |
+            prometheus_tsdb_storage_blocks_bytes / (prometheus_tsdb_retention_limit_bytes > 0) > 0.9
+          for: 30m
+          labels: { severity: warning }
+          annotations:
+            summary: "Prometheus storage is past 90% of its size limit"
+            description: "History is about to be trimmed before the 30 days are up. Raise retentionSize and the volume, or lower the retention."
+
+        - alert: PrometheusConfigReloadFailed
+          expr: prometheus_config_last_reload_successful == 0
+          for: 5m
+          labels: { severity: warning }
+          annotations:
+            summary: "Prometheus could not load its configuration or rules"
+            description: "A rule or scrape setting is wrong; the old one is still running."

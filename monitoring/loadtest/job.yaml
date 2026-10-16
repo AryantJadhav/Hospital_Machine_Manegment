@@ -1,0 +1,55 @@
+# Runs the load test inside the cluster, against the application's own address, so the numbers measure the application
+# and not a network between a laptop and the server. Everything is in its own namespace and is removed with it.
+#
+# The script is loaded from the file with (README, "Load test"):
+#   kubectl -n loadtest create configmap k6-script --from-file=monitoring/loadtest/k6-hospitalpm.js
+# and the test accounts' sign-ins come from a Secret you make, never from this file:
+#   kubectl -n loadtest create secret generic k6-accounts --from-literal=users='name1,name2,name3' --from-literal=password='...'
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: loadtest
+  labels:
+    name: loadtest
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: k6-hospitalpm
+  namespace: loadtest
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels: { app: k6 }
+    spec:
+      restartPolicy: Never
+      securityContext: { runAsNonRoot: true, runAsUser: 12345 }
+      containers:
+        - name: k6
+          image: grafana/k6:1.3.0
+          # Sends its figures to Prometheus (remote write) as well as printing them, so Grafana can show the load beside
+          # the server's CPU, memory and database connections.
+          args: ["run", "--out", "experimental-prometheus-rw", "--tag", "testid=pilot", "/script/k6-hospitalpm.js"]
+          env:
+            - { name: TARGET, value: "http://hospitalpm.hospitalpm.svc:5000" }
+            - { name: PROFILE, value: "ramp" }          # baseline | ramp | soak
+            - { name: WRITES, value: "0" }              # 1 also reports faults (creates data)
+            - { name: K6_PROMETHEUS_RW_SERVER_URL, value: "http://kps-prometheus.monitoring.svc:9090/api/v1/write" }
+            - { name: K6_PROMETHEUS_RW_TREND_STATS, value: "p(50),p(95),p(99),avg,max" }
+            - name: USERS
+              valueFrom: { secretKeyRef: { name: k6-accounts, key: users } }
+            - name: PASSWORD
+              valueFrom: { secretKeyRef: { name: k6-accounts, key: password } }
+          volumeMounts:
+            - { name: script, mountPath: /script, readOnly: true }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: "2", memory: 2Gi }
+            limits: { memory: 4Gi }
+      volumes:
+        - name: script
+          configMap: { name: k6-script }

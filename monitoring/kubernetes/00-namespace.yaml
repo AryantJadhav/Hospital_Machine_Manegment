@@ -1,0 +1,10 @@
+# Where the monitoring stack lives. Kept apart from "hospitalpm" so the two can be restricted from each other
+# (network-policies.yaml) and removed separately.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    name: monitoring
+    # The node exporter needs the host's network and process view, so this namespace cannot be "restricted".
+    pod-security.kubernetes.io/enforce: privileged

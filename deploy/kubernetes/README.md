@@ -9,7 +9,7 @@ Two workloads, as everywhere else: the database and the application.
 |---|---|
 | `00-namespace.yaml` | The `hospitalpm` namespace |
 | `10-postgres.yaml` | PostgreSQL 18 (`aryant050/hospitalpm:DB`) as a StatefulSet with a 5 Gi volume |
-| `20-app.yaml` | The application (`aryant050/hospitalpm:v0.0.9`, API and web screens on port 5000), its 5 Gi volume, and a `LoadBalancer` service |
+| `20-app.yaml` | The application (`aryant050/hospitalpm:v0.0.10`, API and web screens on port 5000), its 5 Gi volume, and a `LoadBalancer` service |
 
 ## Deploy
 
