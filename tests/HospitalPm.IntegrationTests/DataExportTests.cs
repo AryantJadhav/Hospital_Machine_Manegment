@@ -375,6 +375,29 @@ public sealed class DataExportTests(PostgresFixture fixture) : IAsyncLifetime, I
     }
 
     [Fact]
+    public async Task The_register_says_how_old_each_machine_is_and_how_much_expected_life_is_left()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow.AddMinutes(330));
+        await using (var db = fixture.CreateContext())
+        {
+            await db.Equipment.Where(e => e.AssetTag == _tag).ExecuteUpdateAsync(set => set
+                .SetProperty(e => e.InstallationDate, today.AddMonths(-30))
+                .SetProperty(e => e.ExpectedLifeYears, 2));
+        }
+
+        var csv = (await ExportAsync()).Csv("equipment.csv");
+        var row = Find(csv, "Asset Tag", _tag);
+
+        Assert.Equal("30", Cell(csv, row, "Age (months)"));
+        Assert.Equal("2 years 6 months", Cell(csv, row, "Age"));
+        Assert.Equal("installation", Cell(csv, row, "Age Counted From"));
+        Assert.Equal("2", Cell(csv, row, "Expected Life (years)"));
+        // 24 months of life and 30 months old: nothing left, six months past. Never a minus sign, which a spreadsheet would take for a formula.
+        Assert.Equal("0", Cell(csv, row, "Life Left (months)"));
+        Assert.Equal("6", Cell(csv, row, "Past Expected Life (months)"));
+    }
+
+    [Fact]
     public async Task The_first_columns_of_the_register_match_the_import_template()
     {
         var export = await ExportAsync();

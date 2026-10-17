@@ -76,6 +76,28 @@ public static class Permissions
     public const string PmManage = "pm.manage";
     public const string WorkOrdersAssign = "work-orders.assign";
     public const string WorkOrdersCancel = "work-orders.cancel";
+
+    /// <summary>
+    /// Deciding how quickly an engineer must respond to a fault of each priority. The head of the department's alone: held
+    /// by the BME Head (and the Developer, who holds everything), and deliberately NOT in the permission catalog, so it
+    /// cannot be given to one person by name. Everyone who sees work orders sees the times; only the head changes them.
+    /// </summary>
+    public const string ResponseTimesEdit = "work-orders.response-times";
+
+    /// <summary>
+    /// Reopening or closing a service request that an engineer has resolved. The head of the department's alone, like
+    /// <see cref="ResponseTimesEdit"/>: held by the BME Head (and the Developer), and not in the permission catalog, so it
+    /// cannot be given to one person by name. A resolved request is locked for everyone else.
+    /// </summary>
+    public const string WorkOrdersReview = "work-orders.review";
+
+    /// <summary>
+    /// Answering for the department that asked, once an engineer has resolved a fault: Accept it (it is closed) or say it is
+    /// not fixed (it goes back to the engineer). Held by a department user and the head, for the fault's own department
+    /// only (the department scope already hides every other); not by the engineer who did the work, and not in the
+    /// permission catalog, so it comes with the role, not by name.
+    /// </summary>
+    public const string WorkOrdersAcknowledge = "work-orders.acknowledge";
     public const string AttachmentsDelete = "attachments.delete";
     public const string SparePartsEdit = "spare-parts.edit";
     public const string TrainingEdit = "training.edit";
@@ -120,7 +142,7 @@ public static class Permissions
         RegisterView, SparePartsView, ChecklistsView, TrainingView, PmWork, GatePassView, GatePassEdit, IncidentsView, IncidentsReport, IncidentsManage,
         WorkOrdersView, WorkOrdersReport, WorkOrdersNote, WorkOrdersWork, EquipmentMove, DepartmentView,
         EquipmentEdit, EquipmentTypesEdit, LocationsEdit, LabelsPrint, DataImport, DataExport,
-        ChecklistsEdit, PmManage, WorkOrdersAssign, WorkOrdersCancel, AttachmentsDelete,
+        ChecklistsEdit, PmManage, WorkOrdersAssign, WorkOrdersCancel, ResponseTimesEdit, WorkOrdersReview, WorkOrdersAcknowledge, AttachmentsDelete,
         SparePartsEdit, TrainingEdit, ReportsView,
         StaffManage, AccessManage, SystemBackups, SystemRestore, SystemUpdates, SystemDiagnostics, SystemLicence,
         AuditView, LicenceIssue,

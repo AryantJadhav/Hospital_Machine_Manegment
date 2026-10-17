@@ -70,6 +70,22 @@ public static class EquipmentRules
         return (Math.Max(0, months), from);
     }
 
+    /// <summary>An age in whole months, said as a person says it: "2 years 3 months", "11 months", "1 year", "Under a month".</summary>
+    public static string AgeInWords(int months)
+    {
+        if (months < 1)
+        {
+            return "Under a month";
+        }
+
+        var years = months / 12;
+        var rest = months % 12;
+        var y = years == 1 ? "1 year" : $"{years} years";
+        var m = rest == 1 ? "1 month" : $"{rest} months";
+
+        return years == 0 ? m : rest == 0 ? y : $"{y} {m}";
+    }
+
     /// <summary>The longest expected life a machine can be given, in years. Longer is a typing mistake, not a plan.</summary>
     public const int MaxExpectedLifeYears = 60;
 

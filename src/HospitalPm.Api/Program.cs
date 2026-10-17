@@ -393,6 +393,7 @@ app.MapCostReportEndpoints();
 app.MapWorkDoneReportEndpoints();
 app.MapTrainingSummaryEndpoints();
 app.MapResponseTargetEndpoints();
+app.MapResponseTimeEndpoints();
 app.MapStockReportEndpoints();
 app.MapTrainingEndpoints();
 app.MapGatePassEndpoints();

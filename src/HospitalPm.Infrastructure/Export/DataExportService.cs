@@ -202,7 +202,12 @@ public sealed class DataExportService(
             "Purchase Cost", "Insurance Cost",
             "Maintenance Contract", "Contract Vendor", "Contract Number", "Contract Starts", "Contract Ends",
             "Contract Cost",
+            // How old the machine is today, and how much of its expected life is left, or how far past it. Two columns that are
+            // never negative: a value starting with a minus is written as text, so that a spreadsheet cannot run it.
+            "Age (months)", "Age", "Age Counted From", "Expected Life (years)", "Life Left (months)", "Past Expected Life (months)",
         ]);
+
+        var today = clock.Today();
 
         await EachBatchAsync(
             last => db.Equipment.AsNoTracking()
@@ -219,9 +224,14 @@ public sealed class DataExportService(
                     e.PurchaseCost, e.InsuranceCost,
                     e.MaintenanceContractType, e.MaintenanceVendor, e.MaintenanceContractNumber,
                     e.MaintenanceStartDate, e.MaintenanceEndDate, e.MaintenanceCost,
+                    e.ExpectedLifeYears,
                 }).ToListAsync(ct),
             e => e.Id,
-            e => sheet.Row(
+            e =>
+            {
+                var age = HospitalPm.Domain.Assets.EquipmentRules.AgeOf(e.InstallationDate, e.PurchaseDate, today);
+                var lifeLeft = HospitalPm.Domain.Assets.EquipmentRules.LifeRemainingMonths(e.ExpectedLifeYears, age?.Months);
+                sheet.Row(
                 e.AssetTag, e.SerialNumber, e.Type, e.LocationCode, e.Manufacturer, e.Model, e.Status.ToString(),
                 Day(e.PurchaseDate), Day(e.InstallationDate), Day(e.WarrantyExpiryDate), e.Notes,
                 e.TypeCode, e.LocationName, Instant(e.CreatedAtUtc), Instant(e.UpdatedAtUtc),
@@ -230,7 +240,14 @@ public sealed class DataExportService(
                 Amount(e.PurchaseCost), Amount(e.InsuranceCost),
                 e.MaintenanceContractType?.ToString().ToUpperInvariant(), e.MaintenanceVendor,
                 e.MaintenanceContractNumber, Day(e.MaintenanceStartDate), Day(e.MaintenanceEndDate),
-                Amount(e.MaintenanceCost)));
+                Amount(e.MaintenanceCost),
+                age?.Months.ToString(CultureInfo.InvariantCulture),
+                age is { } a ? HospitalPm.Domain.Assets.EquipmentRules.AgeInWords(a.Months) : null,
+                age?.From,
+                e.ExpectedLifeYears?.ToString(CultureInfo.InvariantCulture),
+                lifeLeft is { } left ? Math.Max(0, left).ToString(CultureInfo.InvariantCulture) : null,
+                lifeLeft is { } past ? Math.Max(0, -past).ToString(CultureInfo.InvariantCulture) : null);
+            });
 
         return new FileNote("equipment.csv", sheet.Rows,
             "The equipment register. The first eleven columns match the import template.");

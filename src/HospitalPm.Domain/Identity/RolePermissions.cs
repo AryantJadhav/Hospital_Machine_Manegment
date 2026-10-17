@@ -46,6 +46,8 @@ public static class RolePermissions
         Permissions.WorkOrdersView,
         Permissions.WorkOrdersReport,
         Permissions.WorkOrdersNote,
+        // The department that asked says whether the repair worked, once an engineer has resolved it.
+        Permissions.WorkOrdersAcknowledge,
         Permissions.IncidentsView,
         Permissions.IncidentsReport,
     };

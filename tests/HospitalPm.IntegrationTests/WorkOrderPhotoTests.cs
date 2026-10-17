@@ -194,7 +194,7 @@ public sealed class WorkOrderPhotoTests(PostgresFixture fixture) : IAsyncLifetim
     {
         (await _employee.PostAsJsonAsync($"/api/work-orders/{_workOrderId}/status", new { status = 30 })).EnsureSuccessStatusCode();
         (await _employee.PostAsJsonAsync($"/api/work-orders/{_workOrderId}/resolve", new { resolutionNotes = "Casing replaced." })).EnsureSuccessStatusCode();
-        (await _employee.PostAsJsonAsync($"/api/work-orders/{_workOrderId}/status", new { status = 60 })).EnsureSuccessStatusCode();
+        (await _admin.PostAsJsonAsync($"/api/work-orders/{_workOrderId}/status", new { status = 60 })).EnsureSuccessStatusCode();
 
         var res = await _employee.PostAsync($"/api/work-orders/{_workOrderId}/photos", Form(("late.jpg", JpegBytes)));
         Assert.Equal(HttpStatusCode.Conflict, res.StatusCode);

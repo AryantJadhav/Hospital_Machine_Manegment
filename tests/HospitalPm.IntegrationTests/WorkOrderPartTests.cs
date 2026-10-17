@@ -89,6 +89,29 @@ public sealed class WorkOrderPartTests(PostgresFixture fixture) : IAsyncLifetime
         _workOrderId = (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
     }
 
+    private async Task<HttpClient> HeadAsync()
+    {
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var users = scope.ServiceProvider
+                .GetRequiredService<Microsoft.AspNetCore.Identity.UserManager<Infrastructure.Identity.ApplicationUser>>();
+            var user = new Infrastructure.Identity.ApplicationUser
+            {
+                UserName = $"wop-head-{_suffix}", FullName = "Work Order Part Head", IsActive = true,
+            };
+            Assert.True((await users.CreateAsync(user, Password)).Succeeded);
+            await users.AddToRoleAsync(user, Domain.Identity.Roles.BmeHead);
+        }
+
+        var client = _factory.CreateClient();
+        var login = await client.PostAsJsonAsync("/api/auth/login", new { userName = $"wop-head-{_suffix}", password = Password });
+        login.EnsureSuccessStatusCode();
+        var tokens = await login.Content.ReadFromJsonAsync<JsonElement>();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", tokens.GetProperty("accessToken").GetString());
+        return client;
+    }
+
     public Task DisposeAsync()
     {
         Dispose();
@@ -197,7 +220,9 @@ public sealed class WorkOrderPartTests(PostgresFixture fixture) : IAsyncLifetime
 
         (await _client.PostAsJsonAsync($"/api/work-orders/{_workOrderId}/status", new { status = 30 })).EnsureSuccessStatusCode();
         (await _client.PostAsJsonAsync($"/api/work-orders/{_workOrderId}/resolve", new { resolutionNotes = "Filter replaced." })).EnsureSuccessStatusCode();
-        (await _client.PostAsJsonAsync($"/api/work-orders/{_workOrderId}/status", new { status = 60 })).EnsureSuccessStatusCode();
+        // Only the head of the department can close a resolved request.
+        using var head = await HeadAsync();
+        (await head.PostAsJsonAsync($"/api/work-orders/{_workOrderId}/status", new { status = 60 })).EnsureSuccessStatusCode();
 
         var blockedAdd = await _client.PostAsJsonAsync(
             $"/api/work-orders/{_workOrderId}/parts", new { sparePartId = _partId, quantityUsed = 1 });

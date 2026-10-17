@@ -56,6 +56,25 @@ public sealed class PermissionTests(PostgresFixture fixture) : IAsyncLifetime, I
     }
 
     [Fact]
+    public void Only_the_head_of_biomedical_and_the_developer_may_set_response_times_and_it_cannot_be_given_by_name()
+    {
+        // The head's two alone: response times, and reopening or closing a solved request.
+        foreach (var permission in new[] { Permissions.ResponseTimesEdit, Permissions.WorkOrdersReview })
+        {
+            Assert.Contains(permission, RolePermissions.For(Roles.BmeHead));
+            Assert.Contains(permission, RolePermissions.For(Roles.Developer));
+
+            foreach (var role in new[] { Roles.BmeEngineer, Roles.ItAdmin, Roles.DepartmentUser })
+            {
+                Assert.DoesNotContain(permission, RolePermissions.For(role));
+            }
+
+            // Not in the catalog, so the access page cannot hand it to one person, whatever else they have been given.
+            Assert.False(PermissionCatalog.IsGrantable(permission));
+        }
+    }
+
+    [Fact]
     public void The_head_of_biomedical_decides_for_the_department_and_does_not_run_the_installation()
     {
         var head = RolePermissions.For(Roles.BmeHead);
@@ -67,6 +86,7 @@ public sealed class PermissionTests(PostgresFixture fixture) : IAsyncLifetime, I
             Permissions.DataImport, Permissions.DataExport, Permissions.ChecklistsEdit, Permissions.PmManage,
             Permissions.WorkOrdersAssign, Permissions.WorkOrdersCancel, Permissions.AttachmentsDelete,
             Permissions.SparePartsEdit, Permissions.TrainingEdit, Permissions.ReportsView, Permissions.StaffManage,
+            Permissions.ResponseTimesEdit, Permissions.WorkOrdersReview,
         ];
         Assert.All(decides, p => Assert.Contains(p, head));
 
@@ -173,11 +193,17 @@ public sealed class PermissionTests(PostgresFixture fixture) : IAsyncLifetime, I
     {
         var ward = RolePermissions.For(Roles.DepartmentUser);
 
+        // "Answer" includes saying whether a resolved fault is really fixed (accept it, or send it back).
         Assert.True(ward.SetEquals(
         [
             Permissions.DepartmentView, Permissions.WorkOrdersView, Permissions.WorkOrdersReport, Permissions.WorkOrdersNote,
-            Permissions.IncidentsView, Permissions.IncidentsReport,
+            Permissions.WorkOrdersAcknowledge, Permissions.IncidentsView, Permissions.IncidentsReport,
         ]));
+
+        // The head holds it too (and so may answer for a department); the engineer who does the work does not.
+        Assert.Contains(Permissions.WorkOrdersAcknowledge, RolePermissions.For(Roles.BmeHead));
+        Assert.DoesNotContain(Permissions.WorkOrdersAcknowledge, RolePermissions.For(Roles.BmeEngineer));
+        Assert.False(PermissionCatalog.IsGrantable(Permissions.WorkOrdersAcknowledge));
 
         // They write incidents up; looking into them and closing them is the biomedical team's.
         Assert.DoesNotContain(Permissions.IncidentsManage, ward);

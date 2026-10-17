@@ -1,7 +1,10 @@
+using System.Security.Claims;
 using HospitalPm.Api.Auth;
 using HospitalPm.Domain.Identity;
 using HospitalPm.Domain.WorkOrders;
+using HospitalPm.Infrastructure.Maintenance;
 using HospitalPm.Infrastructure.Persistence;
+using HospitalPm.Infrastructure.Reports;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -11,10 +14,13 @@ public sealed record ResponseTargetRequest(WorkOrderPriority Priority, int Minut
 
 public sealed record ResponseTargetsRequest(List<ResponseTargetRequest>? Targets);
 
+/// <summary>The time the engineer really started, and why the recorded one is being changed.</summary>
+public sealed record StartedTimeRequest(DateTime StartedAtUtc, string? Reason);
+
 /// <summary>
 /// How quickly an engineer is expected to respond to a fault, by priority: from the fault being raised to the engineer
 /// pressing In progress. Everyone who can see work orders sees the targets (each fault is judged against them); only the
-/// people who assign work change them.
+/// head of the department changes them (<see cref="Permissions.ResponseTimesEdit"/>).
 /// </summary>
 public static class ResponseTargetEndpoints
 {
@@ -25,7 +31,66 @@ public static class ResponseTargetEndpoints
             .RequirePermission(Permissions.WorkOrdersView);
 
         group.MapGet("/", ListAsync);
-        group.MapPut("/", SaveAsync).RequirePermission(Permissions.WorkOrdersAssign);
+        group.MapPut("/", SaveAsync).RequirePermission(Permissions.ResponseTimesEdit);
+
+        // The head corrects the started time of a solved fault, so a late or forgotten In progress click is not held against
+        // the engineer (or hidden). Recorded as a note on the fault, and by the audit log.
+        app.MapPut("/api/work-orders/{id:int}/started-time", CorrectStartedAsync)
+            .WithTags("Work orders")
+            .RequirePermission(Permissions.ResponseTimesEdit);
+    }
+
+    private static async Task<IResult> CorrectStartedAsync(
+        int id,
+        [FromBody] StartedTimeRequest request,
+        HospitalPmDbContext db,
+        ClaimsPrincipal principal,
+        TimeProvider clock,
+        HospitalClock hospital,
+        CancellationToken ct)
+    {
+        if (PermissionService.UserIdOf(principal) is not { } author)
+        {
+            return Results.Unauthorized();
+        }
+
+        var order = await db.WorkOrders.SingleOrDefaultAsync(w => w.Id == id, ct);
+        if (order is null)
+        {
+            return Results.NotFound();
+        }
+
+        // A time with no zone is UTC, as everywhere else; one with an offset is converted.
+        var started = request.StartedAtUtc.Kind == DateTimeKind.Local
+            ? request.StartedAtUtc.ToUniversalTime()
+            : DateTime.SpecifyKind(request.StartedAtUtc, DateTimeKind.Utc);
+        var now = clock.GetUtcNow().UtcDateTime;
+
+        if (ResponseRules.StartedTimeProblem(order.Status, order.ReportedAtUtc, order.ResolvedAtUtc, started, now, request.Reason) is { } problem)
+        {
+            // A fault that is not solved is the caller asking for the wrong thing: a conflict, not bad input.
+            return order.Status is WorkOrderStatus.Resolved or WorkOrderStatus.Closed
+                ? Results.BadRequest(new { error = problem })
+                : Results.Conflict(new { error = problem });
+        }
+
+        var zone = ReportTime.Zone(hospital.Offset);
+        var was = order.StartedAtUtc is { } old
+            ? $"{ReportTime.DateTime(old, hospital.Offset)} {zone}"
+            : "not recorded";
+
+        order.StartedAtUtc = started;
+        order.UpdatedAtUtc = now;
+        db.WorkOrderNotes.Add(new WorkOrderNote
+        {
+            WorkOrderId = order.Id,
+            Body = $"Started time corrected from {was} to {ReportTime.DateTime(started, hospital.Offset)} {zone}. Reason: {request.Reason!.Trim()}",
+            AuthorUserId = author,
+            CreatedAtUtc = now,
+        });
+
+        await db.SaveChangesAsync(ct);
+        return Results.NoContent();
     }
 
     /// <summary>The target for every priority: what is saved, and the starting value for one that has no row.</summary>

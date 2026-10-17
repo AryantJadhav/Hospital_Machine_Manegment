@@ -37,6 +37,9 @@ public sealed record ResolveRequest(string ResolutionNotes);
 
 public sealed record StatusRequest(WorkOrderStatus Status, string? Note);
 
+/// <summary>The department's answer to a resolved fault: it is fixed (accepted), or it is not (a reason is needed).</summary>
+public sealed record AcknowledgeRequest(bool Accepted, string? Note);
+
 public sealed record NoteRequest(string Body);
 
 public static class WorkOrderEndpoints
@@ -57,6 +60,8 @@ public static class WorkOrderEndpoints
         group.MapPost("/", ReportAsync).RequirePermission(Permissions.WorkOrdersReport);
         group.MapPost("/{id:int}/notes", AddNoteAsync).RequirePermission(Permissions.WorkOrdersNote);
         group.MapPost("/{id:int}/status", ChangeStatusAsync).RequirePermission(Permissions.WorkOrdersWork);
+        // After an engineer resolves a fault it goes back to the department that asked, to say whether it is really fixed.
+        group.MapPost("/{id:int}/acknowledge", AcknowledgeAsync).RequirePermission(Permissions.WorkOrdersAcknowledge);
         group.MapPost("/{id:int}/resolve", ResolveAsync).RequirePermission(Permissions.WorkOrdersWork);
 
         // What kind of breakdown it was is the engineer's to say, once they have looked at the machine.
@@ -305,6 +310,8 @@ public static class WorkOrderEndpoints
     {
         var mayCancel = await permissions.CanAsync(principal, Permissions.WorkOrdersCancel, ct);
         var mayWork = await permissions.CanAsync(principal, Permissions.WorkOrdersWork, ct);
+        var mayReview = await permissions.CanAsync(principal, Permissions.WorkOrdersReview, ct);
+        var mayAcknowledge = await permissions.CanAsync(principal, Permissions.WorkOrdersAcknowledge, ct);
 
         var order = await db.WorkOrders.AsNoTracking()
             .Include(w => w.Equipment)!.ThenInclude(e => e!.EquipmentType)
@@ -411,7 +418,9 @@ public static class WorkOrderEndpoints
             // Told to the client so a UI offers only what will actually work -
             // for this caller. Cancelling is left out for anyone but an
             // administrator, so the button is not offered only to be refused.
-            allowedTransitions = !mayWork
+            // The department that asked can answer a resolved fault: accept it or say it is not fixed.
+            canAcknowledge = order.Status == WorkOrderStatus.Resolved && mayAcknowledge,
+            allowedTransitions = !mayWork || (order.Status == WorkOrderStatus.Resolved && !mayReview)
                 ? []
                 : WorkOrderTransitions.From(order.Status)
                     .Where(s => s != WorkOrderStatus.Cancelled || mayCancel)
@@ -522,9 +531,9 @@ public static class WorkOrderEndpoints
             return Results.NotFound();
         }
 
-        if (WorkOrderTransitions.IsTerminal(order.Status))
+        if (WorkOrderTransitions.IsLocked(order.Status))
         {
-            return Results.Conflict(new { error = "A closed or cancelled request can no longer be changed." });
+            return Results.Conflict(new { error = WorkOrderTransitions.LockedBecause(order.Status) });
         }
 
         if (request.BreakdownType is { } kind && !Enum.IsDefined((BreakdownType)kind))
@@ -571,9 +580,9 @@ public static class WorkOrderEndpoints
             return Results.NotFound();
         }
 
-        if (WorkOrderTransitions.IsTerminal(order.Status))
+        if (WorkOrderTransitions.IsLocked(order.Status))
         {
-            return Results.Conflict(new { error = WorkOrderTransitions.Explain(order.Status, order.Status) });
+            return Results.Conflict(new { error = WorkOrderTransitions.LockedBecause(order.Status) });
         }
 
         if (request.AssignedToUserId is { } assignee)
@@ -665,6 +674,23 @@ public static class WorkOrderEndpoints
             {
                 error = "Use the resolve endpoint, which requires resolution notes.",
             });
+        }
+
+        // A resolved request is locked. Only the head of the department can move it on: close it, or reopen it, and
+        // reopening needs a reason, written on the request.
+        if (order.Status == WorkOrderStatus.Resolved)
+        {
+            if (!await permissions.CanAsync(principal, Permissions.WorkOrdersReview, ct))
+            {
+                return Results.Json(
+                    new { error = WorkOrderTransitions.LockedBecause(order.Status) },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            if (request.Status == WorkOrderStatus.InProgress && string.IsNullOrWhiteSpace(request.Note))
+            {
+                return Results.BadRequest(new { error = "Say why it is being reopened, in a few words." });
+            }
         }
 
         // Cancelling throws a reported fault out of the queue, and it is a dead
@@ -759,6 +785,62 @@ public static class WorkOrderEndpoints
         return Results.NoContent();
     }
 
+    /// <summary>
+    /// The department that asked answers a resolved fault. Accepted: it is closed, and locked for good. Not fixed: it goes
+    /// straight back to the engineer, In progress, with the department's reason written on it, and the machine counts as down
+    /// again. The department scope already hides every fault outside the person's own departments (a 404), and an engineer
+    /// does not hold the permission, so nobody marks their own work as accepted.
+    /// </summary>
+    private static async Task<IResult> AcknowledgeAsync(
+        int id,
+        [FromBody] AcknowledgeRequest request,
+        HospitalPmDbContext db,
+        ClaimsPrincipal principal,
+        TimeProvider clock,
+        CancellationToken ct)
+    {
+        // Held for the whole change: see LockAsync.
+        var (order, transaction) = await LockAsync(db, id, ct);
+        await using var lockScope = transaction;
+        if (order is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (order.Status != WorkOrderStatus.Resolved)
+        {
+            return Results.Conflict(new { error = "This service request is not waiting for the department's answer." });
+        }
+
+        var said = request.Note?.Trim() ?? string.Empty;
+        var now = clock.GetUtcNow().UtcDateTime;
+
+        if (request.Accepted)
+        {
+            order.Status = WorkOrderStatus.Closed;
+            order.ClosedAtUtc = now;
+            order.UpdatedAtUtc = now;
+            AddNote(db, order, said.Length > 0 ? $"Accepted by the department. {said}" : "Accepted by the department.", principal, clock);
+        }
+        else
+        {
+            if (said.Length < 3)
+            {
+                return Results.BadRequest(new { error = "Say what is still wrong, in a few words." });
+            }
+
+            // The same as reopening: the machine is down again, counted from the report, not as a second outage.
+            order.Status = WorkOrderStatus.InProgress;
+            order.BackInServiceAtUtc = null;
+            order.UpdatedAtUtc = now;
+            AddNote(db, order, $"Not fixed, says the department: {said}", principal, clock);
+        }
+
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return Results.NoContent();
+    }
+
     private static async Task<IResult> ResolveAsync(
         int id,
         [FromBody] ResolveRequest request,
@@ -831,12 +913,9 @@ public static class WorkOrderEndpoints
             return Results.NotFound();
         }
 
-        if (WorkOrderTransitions.IsTerminal(order.Status))
+        if (WorkOrderTransitions.IsLocked(order.Status))
         {
-            return Results.Conflict(new
-            {
-                error = "This service request is closed. Reopen it, or raise a new one, before recording parts against it.",
-            });
+            return Results.Conflict(new { error = WorkOrderTransitions.LockedBecause(order.Status) });
         }
 
         var part = await db.SpareParts.SingleOrDefaultAsync(p => p.Id == request.SparePartId, ct);
@@ -904,12 +983,9 @@ public static class WorkOrderEndpoints
             return Results.NotFound();
         }
 
-        if (WorkOrderTransitions.IsTerminal(order.Status))
+        if (WorkOrderTransitions.IsLocked(order.Status))
         {
-            return Results.Conflict(new
-            {
-                error = "This service request is closed. Reopen it before correcting parts recorded against it.",
-            });
+            return Results.Conflict(new { error = WorkOrderTransitions.LockedBecause(order.Status) });
         }
 
         // Undo means the shelf gets the quantity back - the part was never really consumed.
@@ -950,12 +1026,9 @@ public static class WorkOrderEndpoints
             return Results.NotFound();
         }
 
-        if (WorkOrderTransitions.IsTerminal(order.Status))
+        if (WorkOrderTransitions.IsLocked(order.Status))
         {
-            return Results.Conflict(new
-            {
-                error = "This service request is closed. Reopen it, or raise a new one, before adding photos.",
-            });
+            return Results.Conflict(new { error = WorkOrderTransitions.LockedBecause(order.Status) });
         }
 
         IFormCollection form;
@@ -1090,6 +1163,11 @@ public static class WorkOrderEndpoints
         if (order is null)
         {
             return Results.NotFound();
+        }
+
+        if (WorkOrderTransitions.IsLocked(order.Status))
+        {
+            return Results.Conflict(new { error = WorkOrderTransitions.LockedBecause(order.Status) });
         }
 
         AddNote(db, order, request.Body, principal, clock, recordStatus: false);

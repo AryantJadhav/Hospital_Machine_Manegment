@@ -70,6 +70,30 @@ public sealed class ResponseAndLifeRuleTests
         Assert.Equal(ResponseState.Met, a.State);
     }
 
+    [Fact]
+    public void A_started_time_can_be_corrected_only_on_a_solved_fault_inside_its_own_story_with_a_reason()
+    {
+        var resolved = Raised.AddHours(5);
+        var now = Raised.AddDays(2);
+
+        string? Problem(WorkOrderStatus status, DateTime started, string? reason = "He reached the ward at once") =>
+            ResponseRules.StartedTimeProblem(status, Raised, resolved, started, now, reason);
+
+        Assert.Null(Problem(WorkOrderStatus.Resolved, Raised.AddMinutes(20)));
+        Assert.Null(Problem(WorkOrderStatus.Closed, Raised));          // at the moment it was raised
+        Assert.Null(Problem(WorkOrderStatus.Closed, resolved));        // at the moment it was resolved
+
+        Assert.NotNull(Problem(WorkOrderStatus.InProgress, Raised.AddMinutes(20)));
+        Assert.NotNull(Problem(WorkOrderStatus.Reported, Raised.AddMinutes(20)));
+        Assert.NotNull(Problem(WorkOrderStatus.Cancelled, Raised.AddMinutes(20)));
+        Assert.NotNull(Problem(WorkOrderStatus.Resolved, Raised.AddMinutes(-1)));    // before it was raised
+        Assert.NotNull(Problem(WorkOrderStatus.Resolved, resolved.AddMinutes(1)));   // after it was resolved
+        Assert.NotNull(ResponseRules.StartedTimeProblem(WorkOrderStatus.Resolved, Raised, null, now.AddMinutes(1), now, "ok then"));  // in the future
+        Assert.NotNull(Problem(WorkOrderStatus.Resolved, Raised.AddMinutes(20), null));
+        Assert.NotNull(Problem(WorkOrderStatus.Resolved, Raised.AddMinutes(20), "  ok "));            // too short once trimmed
+        Assert.NotNull(Problem(WorkOrderStatus.Resolved, Raised.AddMinutes(20), new string('x', 501)));
+    }
+
     [Theory]
     [InlineData(0, false)]
     [InlineData(1, true)]
@@ -232,6 +256,20 @@ public sealed class ResponseAndLifeApiTests(PostgresFixture fixture) : IAsyncLif
         }
     }
 
+    [Fact]
+    public async Task Only_the_head_may_change_the_times_not_the_it_team_nor_someone_who_may_assign_work()
+    {
+        var (it, _) = await SignInAsync("rl-it", Roles.ItAdmin);
+        var attempt = new { targets = new[] { new { priority = 40, minutes = 5 } } };
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await it.PutAsJsonAsync("/api/work-orders/response-targets", attempt)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await _engineer.PutAsJsonAsync("/api/work-orders/response-targets", attempt)).StatusCode);
+
+        // The times are unchanged.
+        var after = await _head.GetFromJsonAsync<JsonElement>("/api/work-orders/response-targets");
+        Assert.Equal(15, after.GetProperty("targets").EnumerateArray().Single(t => t.GetProperty("priority").GetInt32() == 40).GetProperty("minutes").GetInt32());
+    }
+
     [Theory]
     [InlineData(40, 0)]
     [InlineData(40, -1)]
@@ -351,6 +389,108 @@ public sealed class ResponseAndLifeApiTests(PostgresFixture fixture) : IAsyncLif
         Assert.Equal("Overdue", row.GetProperty("response").GetProperty("state").GetString());
         Assert.Equal(overTag, row.GetProperty("assetTag").GetString());
         _ = tag;
+    }
+
+    // ------------------------------------------------------------------------------ correcting a solved fault's started time
+
+    private async Task<int> SolvedFaultAsync(string name, WorkOrderPriority priority, int raisedMinutesAgo, int? startedAfterMinutes, int solvedAfterMinutes)
+    {
+        var (id, _) = await FaultAsync(name, priority, raisedMinutesAgo, startedAfterMinutes, WorkOrderStatus.InProgress);
+        await using var db = fixture.CreateContext();
+        var order = await db.WorkOrders.SingleAsync(w => w.Id == id);
+
+        // A solved fault has always been In progress (the database allows no other way), even where the time was not recorded.
+        if (order.Status == WorkOrderStatus.Reported)
+        {
+            order.Status = WorkOrderStatus.InProgress;
+            await db.SaveChangesAsync();
+        }
+
+        order.Status = WorkOrderStatus.Resolved;
+        order.ResolutionNotes = "Replaced the part";
+        order.ResolvedByUserId = _headId;
+        order.ResolvedAtUtc = order.ReportedAtUtc.AddMinutes(solvedAfterMinutes);
+        await db.SaveChangesAsync();
+        return id;
+    }
+
+    private static object Correction(DateTime startedUtc, string? reason = "He reached the ward at once but forgot to press the button") =>
+        new { startedAtUtc = startedUtc.ToString("O"), reason };
+
+    [Fact]
+    public async Task The_head_corrects_the_started_time_of_a_solved_fault_and_the_response_is_judged_again_with_a_note_saying_why()
+    {
+        // High priority: allowed 60 minutes. Recorded as started after 90, so Late; really started after 20.
+        var id = await SolvedFaultAsync("fix", WorkOrderPriority.High, 600, 90, 300);
+        Assert.Equal("Missed", (await ResponseOfAsync(id)).GetProperty("state").GetString());
+
+        await using (var db = fixture.CreateContext())
+        {
+            var reported = (await db.WorkOrders.AsNoTracking().SingleAsync(w => w.Id == id)).ReportedAtUtc;
+            var res = await _head.PutAsJsonAsync($"/api/work-orders/{id}/started-time", Correction(reported.AddMinutes(20)));
+            Assert.Equal(HttpStatusCode.NoContent, res.StatusCode);
+        }
+
+        var after = await ResponseOfAsync(id);
+        Assert.Equal("Met", after.GetProperty("state").GetString());
+        Assert.Equal(20, after.GetProperty("responseMinutes").GetInt32());
+
+        // Said on the fault itself, with who and why.
+        var detail = await _engineer.GetFromJsonAsync<JsonElement>($"/api/work-orders/{id}");
+        var note = detail.GetProperty("notes").EnumerateArray().Last();
+        Assert.Contains("Started time corrected", note.GetProperty("body").GetString(), StringComparison.Ordinal);
+        Assert.Contains("forgot to press the button", note.GetProperty("body").GetString(), StringComparison.Ordinal);
+        Assert.Equal(_headId, note.GetProperty("authorUserId").GetInt32());
+    }
+
+    [Fact]
+    public async Task A_fault_that_was_never_started_can_be_given_a_started_time_when_it_is_solved()
+    {
+        var id = await SolvedFaultAsync("never", WorkOrderPriority.Critical, 600, null, 300);
+        Assert.Equal("NotApplicable", (await ResponseOfAsync(id)).GetProperty("state").GetString());
+
+        await using var db = fixture.CreateContext();
+        var reported = (await db.WorkOrders.AsNoTracking().SingleAsync(w => w.Id == id)).ReportedAtUtc;
+        var res = await _head.PutAsJsonAsync($"/api/work-orders/{id}/started-time", Correction(reported.AddMinutes(10)));
+        Assert.Equal(HttpStatusCode.NoContent, res.StatusCode);
+
+        Assert.Equal("Met", (await ResponseOfAsync(id)).GetProperty("state").GetString());
+    }
+
+    [Fact]
+    public async Task Nobody_but_the_head_may_correct_it_and_an_open_fault_cannot_be_corrected_at_all()
+    {
+        var solved = await SolvedFaultAsync("who", WorkOrderPriority.High, 600, 30, 300);
+        var open = (await FaultAsync("open", WorkOrderPriority.High, 120, 30, WorkOrderStatus.InProgress)).Id;
+        var when = DateTime.UtcNow.AddMinutes(-590);
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await _engineer.PutAsJsonAsync($"/api/work-orders/{solved}/started-time", Correction(when))).StatusCode);
+        using var anonymous = _factory.CreateClient();
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.PutAsJsonAsync($"/api/work-orders/{solved}/started-time", Correction(when))).StatusCode);
+
+        // The head, but the fault is still open: the engineer's In progress click is what sets it.
+        Assert.Equal(HttpStatusCode.Conflict, (await _head.PutAsJsonAsync($"/api/work-orders/{open}/started-time", Correction(DateTime.UtcNow.AddMinutes(-100)))).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await _head.PutAsJsonAsync("/api/work-orders/2000000000/started-time", Correction(when))).StatusCode);
+    }
+
+    [Fact]
+    public async Task A_time_that_does_not_fit_the_faults_story_or_with_no_reason_is_refused_and_nothing_changes()
+    {
+        var id = await SolvedFaultAsync("bad", WorkOrderPriority.High, 600, 30, 300);
+        await using var db = fixture.CreateContext();
+        var order = await db.WorkOrders.AsNoTracking().SingleAsync(w => w.Id == id);
+
+        async Task<HttpStatusCode> TryAsync(DateTime at, string? reason = "A good reason") =>
+            (await _head.PutAsJsonAsync($"/api/work-orders/{id}/started-time", Correction(at, reason))).StatusCode;
+
+        Assert.Equal(HttpStatusCode.BadRequest, await TryAsync(order.ReportedAtUtc.AddMinutes(-5)));        // before it was raised
+        Assert.Equal(HttpStatusCode.BadRequest, await TryAsync(order.ResolvedAtUtc!.Value.AddMinutes(5)));  // after it was resolved
+        Assert.Equal(HttpStatusCode.BadRequest, await TryAsync(order.ReportedAtUtc.AddMinutes(10), null));  // no reason
+        Assert.Equal(HttpStatusCode.BadRequest, await TryAsync(order.ReportedAtUtc.AddMinutes(10), "no"));  // too short
+
+        var still = await db.WorkOrders.AsNoTracking().SingleAsync(w => w.Id == id);
+        Assert.Equal(order.StartedAtUtc, still.StartedAtUtc);
+        Assert.Equal(0, await db.WorkOrderNotes.CountAsync(n => n.WorkOrderId == id && n.Body.StartsWith("Started time corrected")));
     }
 
     // ------------------------------------------------------------------------------------------------- expected life

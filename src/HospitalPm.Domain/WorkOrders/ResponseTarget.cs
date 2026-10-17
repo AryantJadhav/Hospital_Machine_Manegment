@@ -64,6 +64,57 @@ public static class ResponseRules
         [WorkOrderPriority.Low] = 1440,
     };
 
+    public const int MinReasonLength = 3;
+
+    public const int MaxReasonLength = 500;
+
+    /// <summary>
+    /// Why a solved fault's started time cannot be changed to this, or null when it can. Only the head corrects it, and only
+    /// once the fault is solved: while it is open, the engineer's In progress click is what sets it. The time has to fit
+    /// the fault's own story (after it was raised, not after it was resolved, not in the future) and the head has to say why.
+    /// </summary>
+    public static string? StartedTimeProblem(
+        WorkOrderStatus status,
+        DateTime reportedAtUtc,
+        DateTime? resolvedAtUtc,
+        DateTime newStartedAtUtc,
+        DateTime nowUtc,
+        string? reason)
+    {
+        if (status is not (WorkOrderStatus.Resolved or WorkOrderStatus.Closed))
+        {
+            return "Only a solved fault can have its started time corrected. While it is open, pressing In progress sets it.";
+        }
+
+        var why = reason?.Trim() ?? string.Empty;
+        if (why.Length < MinReasonLength)
+        {
+            return "Say why the time is being corrected, in a few words.";
+        }
+
+        if (why.Length > MaxReasonLength)
+        {
+            return $"Keep the reason to {MaxReasonLength} characters or fewer.";
+        }
+
+        if (newStartedAtUtc < reportedAtUtc)
+        {
+            return "The work cannot have started before the fault was raised.";
+        }
+
+        if (resolvedAtUtc is { } resolved && newStartedAtUtc > resolved)
+        {
+            return "The work cannot have started after the fault was resolved.";
+        }
+
+        if (newStartedAtUtc > nowUtc)
+        {
+            return "The started time cannot be in the future.";
+        }
+
+        return null;
+    }
+
     public static string? Problem(int minutes) =>
         minutes is < MinMinutes or > MaxMinutes
             ? $"A response time must be between {MinMinutes} minute and {MaxMinutes / 1440} days."

@@ -52,6 +52,17 @@ public sealed class MachineAgeRuleTests
         Assert.Null(EquipmentRules.AgeOf(Today.AddDays(30), new DateOnly(2020, 1, 1), Today));
     }
 
+    [Theory]
+    [InlineData(0, "Under a month")]
+    [InlineData(1, "1 month")]
+    [InlineData(11, "11 months")]
+    [InlineData(12, "1 year")]
+    [InlineData(13, "1 year 1 month")]
+    [InlineData(30, "2 years 6 months")]
+    [InlineData(36, "3 years")]
+    public void An_age_is_said_in_years_and_months_the_way_a_person_says_it(int months, string words) =>
+        Assert.Equal(words, EquipmentRules.AgeInWords(months));
+
     [Fact]
     public void The_end_of_a_short_month_does_not_count_a_month_early()
     {
