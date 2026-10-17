@@ -150,13 +150,32 @@ export function WorkOrdersPage() {
     open(id);
   }
 
-  // A person from another department reads the row and opens nothing: the page of a request is the
-  // biomedical team's to work. What they are given is the printed report, from the row itself.
-  const opens = !fromAnotherDepartment;
+  // Everyone who can see a request can open it. A person from another department opens it to read what was done and, once
+  // the engineer has resolved it, to say whether it is really fixed. They are not sent to the machine's own page, which is
+  // the biomedical team's.
+  const opens = true;
+
+  // How many resolved repairs are waiting for this person's department to answer. Only asked of them.
+  const [waiting, setWaiting] = useState(0);
+  useEffect(() => {
+    if (!fromAnotherDepartment) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const s = await api.get<{ awaitingClosure: number }>('/api/work-orders/summary');
+        if (!cancelled) setWaiting(s.awaitingClosure);
+      } catch {
+        // The banner is a convenience; the list is the real thing.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [fromAnotherDepartment, data]);
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
   const hasFilters = Boolean(status || priority || breakdownType || q || down || (requestedByMe && !fromAnotherDepartment));
-  const columns = (mine ? 9 : 10) + (opens ? 0 : 1);
+  const columns = (mine ? 9 : 10) + (fromAnotherDepartment ? 1 : 0);
 
   return (
     <div className="page">
@@ -175,7 +194,29 @@ export function WorkOrdersPage() {
 
       <HandoffNotice handoff={handoff} />
 
-      {may(PERMISSIONS.workOrdersAssign) && !fromAnotherDepartment && <ResponseTargetsEditor />}
+      {!fromAnotherDepartment && <ResponseTargetsEditor canEdit={may(PERMISSIONS.responseTimesEdit)} />}
+
+      {/* The department that asked has repairs to check: said first, with a way to them. */}
+      {fromAnotherDepartment && waiting > 0 && status !== '50' && (
+        <p className="alert alert-info" role="status" style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <span>
+            {waiting === 1 ? '1 repair is' : `${waiting} repairs are`} waiting for you to check and answer.
+          </span>
+          <button
+            className="btn"
+            onClick={() => {
+              // Anyone in the department may answer, so this is every request in it, not only the ones this person raised.
+              const next = new URLSearchParams(params);
+              next.set('status', '50');
+              next.set('by', 'all');
+              next.delete('page');
+              setParams(next);
+            }}
+          >
+            Show {waiting === 1 ? 'it' : 'them'}
+          </button>
+        </p>
+      )}
 
       {error && <p className="alert alert-error" role="alert">{error}</p>}
 
@@ -325,7 +366,7 @@ export function WorkOrdersPage() {
                 </td>
                 <td><StatusPill look={PRIORITY_LOOK[w.priority]}>{PRIORITY_LABEL[w.priority]}</StatusPill></td>
                 <td className="mono">
-                  {opens
+                  {!fromAnotherDepartment
                     ? <Link to={`/equipment/${w.equipmentId}`} state={{ from: here }}>{w.assetTag}</Link>
                     : w.assetTag}
                 </td>
@@ -334,9 +375,15 @@ export function WorkOrdersPage() {
                 <td>
                   <StatusPill look={WORK_ORDER_LOOK[w.status]}>{WORK_ORDER_LABEL[w.status]}</StatusPill>
                   {/* For the department that asked: when the repair was done, so the answer is easy to find. */}
-                  {!opens && w.resolvedAtUtc && (
+                  {fromAnotherDepartment && w.resolvedAtUtc && (
                     <div className="muted" style={{ fontSize: '0.8rem' }} title={formatDateTime(w.resolvedAtUtc)}>
                       Repair done {formatAge(w.resolvedAtUtc)}
+                    </div>
+                  )}
+                  {/* A resolved request goes back to the department that asked, to say whether it is really fixed. */}
+                  {w.status === 50 && (
+                    <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>
+                      {fromAnotherDepartment ? 'Please check it and answer' : 'Waiting for the department'}
                     </div>
                   )}
                 </td>
@@ -345,7 +392,7 @@ export function WorkOrdersPage() {
                 <td>{w.reportedByName ?? <span className="muted">—</span>}</td>
                 {/* On "my work" every row is the reader's own: a column saying so is noise. */}
                 {!mine && <td>{w.assignedToName ?? <span className="muted">Unassigned</span>}</td>}
-                {!opens && (
+                {fromAnotherDepartment && (
                   <td>
                     <a href={`/work-orders/${w.id}/report`} target="_blank" rel="noopener">View report</a>
                   </td>
@@ -410,44 +457,70 @@ function ReportForm({
 
   return (
     <form className="card stack" onSubmit={submit}>
-      <h2 className="section-h" style={{ margin: 0 }}>Report a fault</h2>
-
-      <div className="filters">
-        <EquipmentPicker value={equipmentId} onChange={setEquipmentId} initialLabel={initial?.label} />
+      <div>
+        <h2 className="section-h" style={{ margin: 0 }}>Report a fault</h2>
+        <p className="muted" style={{ margin: '0.25rem 0 0' }}>
+          Tell us which machine, and what is wrong. The biomedical team sees it straight away and sends an engineer.
+        </p>
       </div>
 
+      <div className="filters">
+        <EquipmentPicker
+          value={equipmentId}
+          onChange={setEquipmentId}
+          initialLabel={initial?.label}
+          label="1. Which machine?"
+        />
+      </div>
+      <p className="muted" style={{ margin: '-0.5rem 0 0' }}>
+        Type the asset tag from the label stuck on the machine, or search by its name or make.
+      </p>
+
       <label className="field">
-        <span>What is wrong</span>
+        <span>2. What is wrong?</span>
         <textarea
           rows={3}
           value={fault}
           onChange={(e) => setFault(e.target.value)}
-          placeholder="Describe the fault as the ward reported it"
+          placeholder="For example: the alarm keeps sounding, the screen is blank, it will not switch on"
           required
         />
+        <span className="muted">Say what you see or hear. You do not need technical words.</span>
       </label>
 
-      <label className="field">
-        <span>Breakdown type (optional)</span>
-        <select value={breakdown} onChange={(e) => setBreakdown(e.target.value)}>
-          <option value="">Not sure yet</option>
-          {BREAKDOWN_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-        </select>
-        <span className="muted">If you are not sure, leave it. The engineer will say once they have looked at the machine.</span>
-      </label>
+      {/* Most people do not know the kind of breakdown, and are not asked to: it is there for whoever does. */}
+      <details>
+        <summary>More details (optional)</summary>
+        <label className="field" style={{ marginTop: '0.6rem' }}>
+          <span>Kind of breakdown</span>
+          <select value={breakdown} onChange={(e) => setBreakdown(e.target.value)}>
+            <option value="">Not sure yet</option>
+            {BREAKDOWN_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+          </select>
+          <span className="muted">If you are not sure, leave it. The engineer will say once they have looked at the machine.</span>
+        </label>
+      </details>
 
       {/* Reporting a fault is saying the machine is not working: its downtime is counted from this
           moment, not from when an engineer arrives, until it is resolved and back in use. */}
       <p className="muted" style={{ margin: 0 }}>
-        The machine is counted as down from the moment you report it, until it is fixed and back in use.
+        While the machine is faulty it is counted as out of use, from the moment you send this until it is fixed and back
+        in use.
       </p>
 
       <div className="row">
         <button className="btn btn-primary" type="submit" disabled={busy || equipmentId === null || !fault.trim()}>
-          {busy ? 'Reporting…' : 'Report fault'}
+          {busy ? 'Sending…' : 'Send fault report'}
         </button>
         <button className="btn" type="button" onClick={onCancel}>Cancel</button>
       </div>
+
+      {/* Why the button is grey, said in words: a greyed button with no reason is a dead end for someone new. */}
+      {!busy && (equipmentId === null || !fault.trim()) && (
+        <p className="muted" role="status" style={{ margin: 0 }}>
+          {equipmentId === null ? 'Choose the machine first.' : 'Say what is wrong, then you can send it.'}
+        </p>
+      )}
     </form>
   );
 }

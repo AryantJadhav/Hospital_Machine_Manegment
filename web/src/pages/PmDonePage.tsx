@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../api/client';
+import { useDialogs } from '../dialogs';
 import { useAuth } from '../auth/useAuth';
 import { formatDate, formatDateTime } from '../time';
 import { StatusPill } from '../StatusPill';
@@ -225,10 +226,16 @@ export function PmDonePage({
     }
   }
 
+  const dialogs = useDialogs();
   async function removeFile(f: ReportFile) {
-    if (!window.confirm(`Remove "${f.fileName}"? It is deleted from the system. The removal is recorded in the audit log.`)) {
-      return;
-    }
+    const ok = await dialogs.confirm({
+      title: `Remove "${f.fileName}"?`,
+      message: 'The file is deleted from the system. The removal is recorded in the audit log, with who did it and when.',
+      confirmLabel: 'Yes, remove it',
+      cancelLabel: 'No, keep it',
+      danger: true,
+    });
+    if (!ok) return;
     setError(null);
     try {
       await api.del(`/api/pm/attachments/${f.id}`);

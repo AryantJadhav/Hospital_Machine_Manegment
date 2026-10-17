@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, Navigate, useLocation, useParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
+import { useDialogs } from '../dialogs';
 import { PERMISSIONS } from '../auth/context';
 import { useAuth } from '../auth/useAuth';
 import { HandoffNotice } from '../HandoffNotice';
@@ -251,8 +252,15 @@ function ReviewForm({
     }
   }
 
+  const dialogs = useDialogs();
   async function close() {
-    if (!window.confirm(`Close ${incident.reference}? A closed incident can no longer be changed.`)) return;
+    const ok = await dialogs.confirm({
+      title: `Close ${incident.reference}?`,
+      message: 'A closed incident can no longer be changed.',
+      confirmLabel: 'Yes, close it',
+      cancelLabel: 'Not yet',
+    });
+    if (!ok) return;
     onError(null);
     setBusy('close');
     try {

@@ -5,7 +5,7 @@ const PRODUCT = 'Hospital PM';
 /** What each page is called in the browser tab and in a screen reader's page list. */
 const TITLES: [prefix: string, title: string][] = [
   ['/dashboard', 'Today'],
-  ['/pm', 'Preventive maintenance'],
+  ['/pm', 'Planned maintenance'],
   ['/work-orders', 'Request Service'],
   ['/service-history', 'Service history'],
   ['/equipment', 'Equipment'],
@@ -28,6 +28,7 @@ const TITLES: [prefix: string, title: string][] = [
   ['/licence', 'Licence'],
   ['/developer/licences', 'Issue licences'],
   ['/updates', 'Updates'],
+  ['/help', 'Help'],
 ];
 
 export function titleForPath(pathname: string): string {

@@ -14,10 +14,11 @@ type Targets = {
  * How quickly an engineer is expected to respond to a fault, by priority: from the fault being raised until an
  * engineer has reached the machine and pressed In progress. Not the time to fix it.
  *
- * Shown to the people who assign work, folded away until wanted. The times run all day and night; a fault
- * raised at 2 a.m. is judged at 2 a.m.
+ * Everyone who works on faults can read the times, folded away until wanted. Only the head of the department can change
+ * them: for anyone else the boxes are plain text and there is no Save. The times run all day and night; a fault raised at
+ * 2 a.m. is judged at 2 a.m.
  */
-export function ResponseTargetsEditor() {
+export function ResponseTargetsEditor({ canEdit }: { canEdit: boolean }) {
   const toast = useToast();
   const [data, setData] = useState<Targets | null>(null);
   const [draft, setDraft] = useState<Record<number, string>>({});
@@ -82,6 +83,7 @@ export function ResponseTargetsEditor() {
         <p className="muted">
           The time from a fault being raised until an engineer reaches the machine and presses <strong>In progress</strong>.
           It is not the time to fix the fault. The clock runs day and night.
+          {!canEdit && ' Only the head of the department can change these times.'}
         </p>
 
         <div className="table-wrap">
@@ -89,8 +91,8 @@ export function ResponseTargetsEditor() {
             <thead>
               <tr>
                 <th>Priority</th>
-                <th>Allowed, in minutes</th>
-                <th>That is</th>
+                <th>{canEdit ? 'Allowed, in minutes' : 'Allowed'}</th>
+                {canEdit && <th>That is</th>}
               </tr>
             </thead>
             <tbody>
@@ -100,19 +102,25 @@ export function ResponseTargetsEditor() {
                   <tr key={t.priority}>
                     <td>{PRIORITY_LABEL[t.priority]}</td>
                     <td>
-                      <input
-                        className="field mono"
-                        type="number"
-                        min={data.minMinutes}
-                        max={data.maxMinutes}
-                        step={1}
-                        inputMode="numeric"
-                        aria-label={`Minutes allowed for ${PRIORITY_LABEL[t.priority]} priority`}
-                        value={draft[t.priority] ?? ''}
-                        onChange={(e) => setDraft((d) => ({ ...d, [t.priority]: e.target.value }))}
-                      />
+                      {canEdit ? (
+                        <input
+                          className="field mono"
+                          type="number"
+                          min={data.minMinutes}
+                          max={data.maxMinutes}
+                          step={1}
+                          inputMode="numeric"
+                          aria-label={`Minutes allowed for ${PRIORITY_LABEL[t.priority]} priority`}
+                          value={draft[t.priority] ?? ''}
+                          onChange={(e) => setDraft((d) => ({ ...d, [t.priority]: e.target.value }))}
+                        />
+                      ) : (
+                        formatMinutes(t.minutes)
+                      )}
                     </td>
-                    <td>{n === null ? <span className="muted">Use 1 to {data.maxMinutes} minutes</span> : formatMinutes(n)}</td>
+                    {canEdit && (
+                      <td>{n === null ? <span className="muted">Use 1 to {data.maxMinutes} minutes</span> : formatMinutes(n)}</td>
+                    )}
                   </tr>
                 );
               })}
@@ -122,11 +130,13 @@ export function ResponseTargetsEditor() {
 
         {error && <p className="alert alert-error" role="alert">{error}</p>}
 
-        <div className="row">
-          <button className="btn btn-primary" disabled={busy || !allValid || !changed} onClick={() => void save()}>
-            {busy ? 'Saving…' : 'Save response times'}
-          </button>
-        </div>
+        {canEdit && (
+          <div className="row">
+            <button className="btn btn-primary" disabled={busy || !allValid || !changed} onClick={() => void save()}>
+              {busy ? 'Saving…' : 'Save response times'}
+            </button>
+          </div>
+        )}
       </div>
     </details>
   );

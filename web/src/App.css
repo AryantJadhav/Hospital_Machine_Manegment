@@ -428,6 +428,8 @@ input[type="checkbox"], input[type="radio"] { height: auto; accent-color: var(--
 .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 .btn-primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
 .btn-quiet { border-color: transparent; color: var(--muted); background: transparent; }
+.btn-danger { background: var(--err); border-color: var(--err); color: var(--err-on); }
+.btn-danger:hover:not(:disabled) { background: var(--err-hover); border-color: var(--err-hover); }
 
 @media (prefers-reduced-motion: reduce) {
   .btn { transition: none; }
@@ -817,3 +819,69 @@ textarea {
 .setup-done .muted {
   margin: 0 0 1rem;
 }
+
+
+/* ---- Dialogs: the app's own "Are you sure?" and "Why?" boxes (dialogs.tsx), in place of the browser's pop-ups. */
+.dialog {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-pop);
+  padding: 0;
+  width: min(32rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+}
+.dialog::backdrop { background: rgba(12, 42, 67, 0.5); }
+.dialog-body { display: grid; gap: 1rem; padding: 1.25rem; }
+.dialog-title { margin: 0; font-size: 1.2rem; line-height: 1.3; }
+.dialog-message { display: grid; gap: 0.6rem; color: var(--text); line-height: 1.5; }
+.dialog-message p { margin: 0; }
+.dialog-message ul { margin: 0; padding-left: 1.2rem; display: grid; gap: 0.3rem; }
+.dialog-tick { display: flex; gap: 0.6rem; align-items: flex-start; padding: 0.7rem 0.8rem; background: var(--warn-bg); color: var(--warn-text); border-radius: 6px; }
+.dialog-tick input { margin-top: 0.2rem; width: 1.1rem; height: 1.1rem; flex: none; }
+.dialog-copy { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; }
+.dialog-code { font-family: var(--mono); font-size: 1.3rem; padding: 0.5rem 0.8rem; background: var(--surface-sunken); border-radius: 6px; word-break: break-all; }
+.dialog-actions { display: flex; gap: 0.6rem; justify-content: flex-end; flex-wrap: wrap; }
+@media (max-width: 560px) {
+  .dialog-actions { flex-direction: column-reverse; }
+  .dialog-actions .btn { width: 100%; }
+}
+
+/* ---- Help (HelpButton.tsx, pages/HelpPage.tsx) */
+.help-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.help-steps { margin: 0; padding-left: 1.4rem; display: grid; gap: 0.5rem; line-height: 1.5; }
+.help-glossary { margin: 0; display: grid; gap: 0.9rem; }
+.help-glossary > div { display: grid; gap: 0.15rem; }
+.help-glossary dt { font-weight: 600; }
+.help-glossary dd { margin: 0; color: var(--muted); line-height: 1.5; }
+details.card > summary { cursor: pointer; padding: 0.15rem 0; }
+details.card[open] > summary { margin-bottom: 0.75rem; }
+
+/* ---- Waiting for the department to answer */
+.nav-badge {
+  display: inline-block;
+  margin-left: 0.4rem;
+  min-width: 1.3rem;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: var(--err);
+  color: var(--err-on);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.3rem;
+  text-align: center;
+}
+.ack-card { border-color: var(--accent); background: var(--accent-tint); color: var(--accent-ink); }
+.ack-card .section-h { color: var(--accent-ink); }

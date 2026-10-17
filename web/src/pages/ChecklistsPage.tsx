@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../api/client';
+import { useDialogs } from '../dialogs';
 import { useAuth } from '../auth/useAuth';
 import { PERMISSIONS } from '../auth/context';
 import { formatDate, todayAtHospital } from '../time';
@@ -745,21 +746,23 @@ function DraftEditor({
     }
   }
 
+  const dialogs = useDialogs();
   async function publish() {
-    // Typed, not clicked. Publishing is irreversible: the version freezes and
-    // every PM recorded from now on is tied to it.
-    const typed = prompt(
-      [
-        `Publish ${template.name}?`,
-        '',
-        'A published checklist can never be edited. Changing it later means a',
-        'new version, and past records stay tied to the version they were',
-        'filled under.',
-        '',
-        'Type PUBLISH to continue:',
-      ].join('\n'),
-    );
-    if (typed !== 'PUBLISH') return;
+    // Publishing is irreversible: the version freezes and every PM recorded from now on is tied to it. So it is
+    // asked in words, with a tick that has to be given, not a button that is easy to press by habit.
+    const ok = await dialogs.confirm({
+      title: `Publish "${template.name}"?`,
+      message: (
+        <>
+          <p>Once it is published, this checklist can never be edited.</p>
+          <p>To change it later you make a new version. Records already filled in stay with the version they were filled under.</p>
+        </>
+      ),
+      acknowledge: 'I understand it cannot be edited after this.',
+      confirmLabel: 'Yes, publish it',
+      cancelLabel: 'No, not yet',
+    });
+    if (!ok) return;
 
     setBusy('publish');
     setError(null);

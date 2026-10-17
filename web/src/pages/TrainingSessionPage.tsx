@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
+import { useDialogs } from '../dialogs';
 import { useAuth } from '../auth/useAuth';
 import { PERMISSIONS } from '../auth/context';
 import { HandoffNotice } from '../HandoffNotice';
@@ -47,11 +48,17 @@ export function TrainingSessionPage() {
     if (valid) void load();
   }, [valid, load]);
 
+  const dialogs = useDialogs();
   async function remove() {
     if (!session) return;
-    if (!window.confirm(`Remove "${session.title}" and its list of attendees? The removal is recorded in the audit log.`)) {
-      return;
-    }
+    const ok = await dialogs.confirm({
+      title: `Remove "${session.title}"?`,
+      message: 'The session and its list of people who came are removed. The removal is recorded in the audit log.',
+      confirmLabel: 'Yes, remove it',
+      cancelLabel: 'No, keep it',
+      danger: true,
+    });
+    if (!ok) return;
     setError(null);
     try {
       await api.del(`/api/training/${session.id}`);

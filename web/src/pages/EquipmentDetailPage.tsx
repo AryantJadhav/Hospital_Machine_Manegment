@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
+import { useDialogs } from '../dialogs';
 import { useAuth } from '../auth/useAuth';
 import { PERMISSIONS } from '../auth/context';
 import { EquipmentForm } from './EquipmentForm';
@@ -187,25 +188,24 @@ export function EquipmentDetailPage() {
     void load();
   }, [load]);
 
+  const dialogs = useDialogs();
   async function condemn() {
-    // Typed, not clicked. Condemning ends this machine's PM programme: the
-    // generator stops producing tasks for it from the next run. Reversible by
-    // correcting the status afterwards, but a technician should not discover
-    // it by finding the work gone.
-    const typed = prompt(
-      [
-        `Condemn ${data?.equipment.assetTag}?`,
-        '',
-        'The machine stays on the register so its PM certificates and service request',
-        'history remain readable — nothing is deleted.',
-        '',
-        'But its preventive maintenance stops: no further PM tasks will be',
-        'generated for it.',
-        '',
-        'Type CONDEMN to continue:',
-      ].join('\n'),
-    );
-    if (typed !== 'CONDEMN') return;
+    // Condemning ends this machine's PM programme: the generator stops producing tasks for it from the next run.
+    // Reversible by correcting the status afterwards, but a technician should not discover it by finding the work gone.
+    const ok = await dialogs.confirm({
+      title: `Retire machine ${data?.equipment.assetTag}?`,
+      message: (
+        <>
+          <p>The machine stays on the register, so its maintenance certificates and service history can still be read. Nothing is deleted.</p>
+          <p>But its planned maintenance stops: no more tasks will be made for it.</p>
+        </>
+      ),
+      acknowledge: 'I understand that planned maintenance for this machine will stop.',
+      confirmLabel: 'Yes, retire this machine',
+      cancelLabel: 'No, keep it',
+      danger: true,
+    });
+    if (!ok) return;
 
     setActionError(null);
     try {
@@ -304,8 +304,12 @@ export function EquipmentDetailPage() {
               for it - and that is not something to do by mis-clicking a
               select. Admin and biomedical head only. */}
           {canCondemn && e.status !== 40 && e.status !== 50 && (
-            <button className="btn btn-quiet" onClick={() => void condemn()}>
-              Condemn…
+            <button
+              className="btn btn-quiet"
+              title="Take this machine out of service for good. Nothing is deleted; its history stays readable."
+              onClick={() => void condemn()}
+            >
+              Retire this machine…
             </button>
           )}
         </div>

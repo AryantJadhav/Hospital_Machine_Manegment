@@ -56,6 +56,8 @@ export type WorkOrderDetail = WorkOrderRow & {
   downtimeHours: number | null;
   stillDown: boolean;
   allowedTransitions: number[];
+  /** The department that asked may answer this resolved request: accept it, or say it is not fixed. */
+  canAcknowledge: boolean;
   notes: {
     id: number;
     body: string;

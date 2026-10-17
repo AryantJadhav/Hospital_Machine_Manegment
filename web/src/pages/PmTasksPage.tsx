@@ -132,9 +132,11 @@ export function PmTasksPage() {
     <div className="page">
       <header className="page-head">
         <div>
-          <h1>Preventive maintenance</h1>
+          <h1>Planned maintenance</h1>
           <p className="muted">
-            {data ? `${data.total.toLocaleString('en-IN')} task${data.total === 1 ? '' : 's'}` : ' '}
+            {data ? `${data.total.toLocaleString('en-IN')} task${data.total === 1 ? '' : 's'}. ` : ' '}
+            Planned maintenance (PM) is the regular check-up each machine is due for. Open a task to do it, or to see what
+            was done.
           </p>
         </div>
       </header>

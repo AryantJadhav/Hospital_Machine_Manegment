@@ -228,8 +228,13 @@ export function EquipmentListPage() {
             <button className="btn" disabled={printing} onClick={() => void print('sheet')}>
               Print label sheet
             </button>
-            <button className="btn" disabled={printing} onClick={() => void print('zpl')}>
-              Zebra (ZPL)
+            <button
+              className="btn"
+              disabled={printing}
+              title="A file for a Zebra label printer, to print the tags straight onto sticky labels"
+              onClick={() => void print('zpl')}
+            >
+              Label printer file (Zebra)
             </button>
             <button className="btn btn-quiet" onClick={() => setSelected(new Set())}>
               Clear

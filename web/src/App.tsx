@@ -4,6 +4,9 @@ import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation } from 're
 import { api } from './api/client';
 import { AuthProvider } from './auth/AuthContext';
 import { ToastProvider } from './toast';
+import { DialogProvider } from './dialogs';
+import { HelpButton } from './HelpButton';
+import { HelpPage } from './pages/HelpPage';
 import { useAuth } from './auth/useAuth';
 import { PERMISSIONS, ROLE_LABEL } from './auth/context';
 import { LoginPage } from './pages/LoginPage';
@@ -108,6 +111,32 @@ function Shell() {
   const { pathname } = useLocation();
   usePageTitle(titleForPath(pathname));
 
+  // A person from another department has resolved repairs to check and answer: a count beside Request Service says so
+  // wherever they are, so it is not forgotten.
+  const answers = may(PERMISSIONS.workOrdersAcknowledge) && !may(PERMISSIONS.registerView);
+  const [toAnswer, setToAnswer] = useState(0);
+  useEffect(() => {
+    if (!answers) return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const s = await api.get<{ awaitingClosure: number }>('/api/work-orders/summary');
+        if (!cancelled) setToAnswer(s.awaitingClosure);
+      } catch {
+        // Not worth interrupting anyone for.
+      }
+    };
+    void load();
+    const timer = window.setInterval(() => void load(), 60_000);
+    // After the person answers a repair, so the count drops at once.
+    window.addEventListener('work-orders-changed', load);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener('work-orders-changed', load);
+    };
+  }, [answers, pathname]);
+
   return (
     <div className="shell">
       {/* First thing a keyboard user reaches: past the dozen menu links, to the page itself. */}
@@ -117,33 +146,38 @@ function Shell() {
 
         <div className="nav-links">
           {may(PERMISSIONS.registerView) && (
-            <NavLink to="/dashboard" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+            <NavLink to="/dashboard" title="What needs attention today" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
               Today
             </NavLink>
           )}
 
           {may(PERMISSIONS.pmWork) && (
-            <NavLink to="/pm" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-              PM
+            <NavLink to="/pm" title="Planned maintenance: the regular check-ups each machine is due for" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+              Maintenance
             </NavLink>
           )}
 
           {may(PERMISSIONS.workOrdersView) && (
-            <NavLink to="/work-orders" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+            <NavLink to="/work-orders" title="Report a fault and follow the repair" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
               Request Service
+              {answers && toAnswer > 0 && (
+                <span className="nav-badge" title={`${toAnswer} repair${toAnswer === 1 ? '' : 's'} waiting for you to check`}>
+                  {toAnswer}
+                </span>
+              )}
             </NavLink>
           )}
 
           {/* For a person from another department: the repairs done on their machines. Those who work
               on the equipment have the full lists and the Reports pages instead. */}
           {may(PERMISSIONS.workOrdersView) && !may(PERMISSIONS.registerView) && (
-            <NavLink to="/service-history" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+            <NavLink to="/service-history" title="Past repairs and maintenance, machine by machine" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
               Service history
             </NavLink>
           )}
 
           {may(PERMISSIONS.registerView, PERMISSIONS.departmentView) && (
-            <NavLink to="/equipment" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+            <NavLink to="/equipment" title="Every machine in the hospital" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
               Equipment
             </NavLink>
           )}
@@ -152,13 +186,13 @@ function Shell() {
               Checklists: an engineer checking the shelf before promising a
               repair date is the reason this page exists. */}
           {may(PERMISSIONS.sparePartsView) && (
-            <NavLink to="/spare-parts" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+            <NavLink to="/spare-parts" title="Parts in stock, and what is running low" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
               Spare parts
             </NavLink>
           )}
 
           {may(PERMISSIONS.registerView) && (
-            <NavLink to="/locations" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+            <NavLink to="/locations" title="Buildings, departments and rooms" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
               Locations
             </NavLink>
           )}
@@ -167,21 +201,21 @@ function Shell() {
               the checklist they are about to work from is reasonable; the
               server enforces who may change it. */}
           {may(PERMISSIONS.checklistsView) && (
-            <NavLink to="/checklists" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+            <NavLink to="/checklists" title="The step-by-step checks used in planned maintenance" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
               Checklists
             </NavLink>
           )}
 
           {/* A drop, a fall or mishandling of a machine: written up by the department, looked into by Biomedical. */}
           {may(PERMISSIONS.incidentsView) && (
-            <NavLink to="/incidents" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+            <NavLink to="/incidents" title="Drops, falls and damage to machines" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
               Incidents
             </NavLink>
           )}
 
           {/* Machines sent out of the hospital to a vendor for repair, and when they are due back. */}
           {may(PERMISSIONS.gatePassView) && (
-            <NavLink to="/gate-passes" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+            <NavLink to="/gate-passes" title="Machines going out of the hospital, and coming back" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
               Gate passes
             </NavLink>
           )}
@@ -189,7 +223,7 @@ function Shell() {
           {/* Visible to everyone, editable only by an Admin: who has been trained on what is a
               question anyone handing a machine over wants answered. */}
           {may(PERMISSIONS.trainingView) && (
-            <NavLink to="/training" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+            <NavLink to="/training" title="Training sessions held, and who came" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
               Training
             </NavLink>
           )}
@@ -210,6 +244,7 @@ function Shell() {
           </span>
           {/* For whoever does PM work: the reminders are about the department's PMs. */}
           {may(PERMISSIONS.pmWork) && <NotificationBell />}
+          <HelpButton />
           <ThemeToggle />
           <button
             className="btn btn-quiet"
@@ -229,6 +264,7 @@ function Shell() {
 
         <Routes>
           <Route path="/" element={<Landing />} />
+          <Route path="/help" element={<HelpPage />} />
           <Route path="/dashboard" element={needs(PERMISSIONS.registerView, <DashboardPage />)} />
           <Route path="/pm" element={needs(PERMISSIONS.pmWork, <PmTasksPage />)} />
           <Route path="/pm/:taskId/do" element={needs(PERMISSIONS.pmWork, <PmDoPage />)} />
@@ -246,7 +282,7 @@ function Shell() {
           <Route path="/gate-passes/:id/pdf" element={needs(PERMISSIONS.gatePassView, <GatePassPreviewPage />)} />
           <Route path="/work-orders" element={needs(PERMISSIONS.workOrdersView, <WorkOrdersPage />)} />
           <Route path="/service-history" element={needs(PERMISSIONS.workOrdersView, <ServiceHistoryPage />)} />
-          <Route path="/work-orders/:id" element={needs(PERMISSIONS.registerView, <WorkOrderPage />)} />
+          <Route path="/work-orders/:id" element={needsAny([PERMISSIONS.registerView, PERMISSIONS.departmentView], <WorkOrderPage />)} />
           <Route path="/work-orders/:id/report" element={needs(PERMISSIONS.workOrdersView, <ServiceReportPreviewPage />)} />
           <Route path="/equipment" element={needsAny([PERMISSIONS.registerView, PERMISSIONS.departmentView], <EquipmentListPage />)} />
           {/* The pages of one machine and of one request are for those who work on them. A person from
@@ -345,9 +381,11 @@ export default function App() {
     <LockGuard>
       <AuthProvider>
         <ToastProvider>
-          <BrowserRouter>
-            <Gate />
-          </BrowserRouter>
+          <DialogProvider>
+            <BrowserRouter>
+              <Gate />
+            </BrowserRouter>
+          </DialogProvider>
         </ToastProvider>
       </AuthProvider>
     </LockGuard>

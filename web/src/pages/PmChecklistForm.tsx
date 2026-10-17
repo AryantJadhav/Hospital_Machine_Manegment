@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError } from '../api/client';
+import { useDialogs } from '../dialogs';
 import { useAuth } from '../auth/useAuth';
 import { formatDate } from '../time';
 import { AnswerControl } from './ChecklistAnswerControl';
@@ -202,20 +203,19 @@ export function PmChecklistForm({
     }
   }
 
+  const dialogs = useDialogs();
   async function skip() {
-    const reason = prompt(
-      [
-        'Why is this PM not being done?',
-        '',
-        'A skip is a permanent gap in the maintenance record and cannot be',
-        'undone. It is kept, with this reason, for audit.',
-      ].join('\n'),
-    );
+    const reason = await dialogs.ask({
+      title: 'Why is this maintenance not being done?',
+      message: 'A skip is a permanent gap in the maintenance record and cannot be undone. It is kept with your reason.',
+      label: 'Reason',
+      placeholder: 'For example: the machine is out of the hospital for repair',
+      multiline: true,
+      minLength: 3,
+      confirmLabel: 'Skip it, with this reason',
+      cancelLabel: 'Go back',
+    });
     if (reason === null) return;
-    if (reason.trim().length === 0) {
-      setError('A skip needs a reason.');
-      return;
-    }
 
     setBusy(true);
     setError(null);

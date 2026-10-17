@@ -2,14 +2,15 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { presetPeriods, recentPeriods } from '../compliancePeriods';
+import { formatMinutes } from '../age';
 import { formatHours } from '../hours';
 import { formatRupees, formatRupeesCompact } from '../money';
 import { formatDate, formatDateTime, todayAtHospital } from '../time';
-import { PRIORITY_LOOK } from '../statusTones';
+import { PRIORITY_LOOK, RESPONSE_LOOK } from '../statusTones';
 import { StatusPill } from '../StatusPill';
 import { Tile } from '../Tile';
 
-type Kind = 'downtime' | 'cost' | 'work' | 'training' | 'stock';
+type Kind = 'downtime' | 'cost' | 'work' | 'response' | 'training' | 'stock';
 
 type DowntimeMachine = {
   equipmentId: number;
@@ -125,6 +126,52 @@ type StockSummary = {
   lowStock: StockLine[];
 };
 
+type ResponseSummary = {
+  from: string;
+  to: string;
+  countedThrough: string;
+  scope: string;
+  raised: number;
+  responded: number;
+  onTime: number;
+  late: number;
+  waiting: number;
+  overdue: number;
+  notJudged: number;
+  onTimePercent: number | null;
+  averageMinutes: number | null;
+  medianMinutes: number | null;
+  longestMinutes: number | null;
+  byPriority: {
+    priority: string;
+    targetMinutes: number | null;
+    raised: number;
+    onTime: number;
+    late: number;
+    waiting: number;
+    overdue: number;
+    averageMinutes: number | null;
+    longestMinutes: number | null;
+  }[];
+  byPerson: { userId: number | null; name: string; answered: number; onTime: number; late: number; averageMinutes: number | null }[];
+  items: {
+    workOrderId: number;
+    number: string;
+    equipmentId: number;
+    assetTag: string;
+    equipmentType: string;
+    location: string;
+    priority: string;
+    reportedAtUtc: string;
+    startedAtUtc: string | null;
+    responder: string | null;
+    responseMinutes: number | null;
+    targetMinutes: number | null;
+    overdueMinutes: number | null;
+    result: string;
+  }[];
+};
+
 type TrainingSummary = {
   from: string;
   to: string;
@@ -165,12 +212,13 @@ const TITLES: Record<Kind, string> = {
   downtime: 'Downtime',
   cost: 'Cost',
   work: 'Work done',
+  response: 'Response time',
   training: 'Training',
   stock: 'Spare part stock',
 };
 
 /** Where each report lives on the server. */
-const PATH: Record<Kind, string> = { downtime: 'downtime', cost: 'cost', work: 'work-done', training: 'training', stock: 'stock' };
+const PATH: Record<Kind, string> = { downtime: 'downtime', cost: 'cost', work: 'work-done', response: 'response-time', training: 'training', stock: 'stock' };
 
 /** The priority names the server sends, as the look each one wears. */
 const PRIORITY_BY_NAME: Record<string, number> = { Low: 10, Medium: 20, High: 30, Critical: 40 };
@@ -194,11 +242,13 @@ export function ReportsPage() {
       ? 'cost'
       : reportParam === 'work'
         ? 'work'
-        : reportParam === 'training'
-          ? 'training'
-          : reportParam === 'stock'
-            ? 'stock'
-            : 'downtime';
+        : reportParam === 'response'
+          ? 'response'
+          : reportParam === 'training'
+            ? 'training'
+            : reportParam === 'stock'
+              ? 'stock'
+              : 'downtime';
 
   // What was done is mostly asked about for a day or a week, so that report offers those first.
   const presets = useMemo(() => (kind === 'work' ? [...recent, ...monthly] : monthly), [kind, recent, monthly]);
@@ -222,6 +272,7 @@ export function ReportsPage() {
   const [cost, setCost] = useState<CostSummary | null>(null);
   const [work, setWork] = useState<WorkDoneSummary | null>(null);
   const [training, setTraining] = useState<TrainingSummary | null>(null);
+  const [response, setResponse] = useState<ResponseSummary | null>(null);
   const [stock, setStock] = useState<StockSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -285,6 +336,9 @@ export function ReportsPage() {
         } else if (kind === 'cost') {
           const s = await api.get<CostSummary>(`/api/reports/cost?${query}`);
           if (!cancelled) setCost(s);
+        } else if (kind === 'response') {
+          const s = await api.get<ResponseSummary>(`/api/reports/response-time?${query}`);
+          if (!cancelled) setResponse(s);
         } else if (kind === 'training') {
           const s = await api.get<TrainingSummary>(`/api/reports/training?${query}`);
           if (!cancelled) setTraining(s);
@@ -298,6 +352,7 @@ export function ReportsPage() {
           setCost(null);
           setWork(null);
           setTraining(null);
+          setResponse(null);
           setStock(null);
           setError(e instanceof Error ? e.message : 'Could not work out the report.');
         }
@@ -349,7 +404,17 @@ export function ReportsPage() {
 
   // The ones with a period to say; the stock report is simply as of now.
   const summary =
-    kind === 'downtime' ? downtime : kind === 'cost' ? cost : kind === 'work' ? work : kind === 'training' ? training : null;
+    kind === 'downtime'
+      ? downtime
+      : kind === 'cost'
+        ? cost
+        : kind === 'work'
+          ? work
+          : kind === 'response'
+            ? response
+            : kind === 'training'
+              ? training
+              : null;
 
   return (
     <div className="page">
@@ -363,9 +428,11 @@ export function ReportsPage() {
                 ? 'What has been spent on each machine, and on what.'
                 : kind === 'work'
                   ? 'The faults that were fixed, what was done, and who did it.'
-                  : kind === 'training'
-                    ? 'The training sessions held, who came, on what, and for how long.'
-                    : 'The spare parts that are out of stock, and the ones running low, as they stand now.'}
+                  : kind === 'response'
+                    ? 'How quickly engineers responded: from a fault being raised until an engineer pressed In progress.'
+                    : kind === 'training'
+                      ? 'The training sessions held, who came, on what, and for how long.'
+                      : 'The spare parts that are out of stock, and the ones running low, as they stand now.'}
           </p>
         </div>
         <button className="btn btn-primary" disabled={!ready || busy} onClick={() => void download()}>
@@ -473,6 +540,7 @@ export function ReportsPage() {
       {kind === 'downtime' && downtime && <DowntimeView report={downtime} />}
       {kind === 'cost' && cost && <CostView report={cost} />}
       {kind === 'work' && work && <WorkDoneView report={work} />}
+      {kind === 'response' && response && <ResponseView report={response} />}
       {kind === 'training' && training && <TrainingView report={training} />}
       {kind === 'stock' && stock && <StockView report={stock} />}
     </div>
@@ -636,6 +704,154 @@ function WorkDoneView({ report }: { report: WorkDoneSummary }) {
                       </div>
                     </>
                   )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+    </>
+  );
+}
+
+/** The result words the server sends, as the look each one wears. */
+const RESULT_LOOK: Record<string, (typeof RESPONSE_LOOK)[string]> = {
+  'On time': RESPONSE_LOOK.Met,
+  Late: RESPONSE_LOOK.Missed,
+  Waiting: RESPONSE_LOOK.Waiting,
+  Overdue: RESPONSE_LOOK.Overdue,
+  'Not judged': RESPONSE_LOOK.NotApplicable,
+};
+
+function ResponseView({ report }: { report: ResponseSummary }) {
+  if (report.items.length === 0) {
+    return <p className="alert alert-info">No fault was raised in this period.</p>;
+  }
+
+  return (
+    <>
+      <p className="muted">
+        The response is the time from a fault being raised until an engineer pressed <strong>In progress</strong>, not the time to
+        fix it. Each fault is judged against the time its priority allows now.
+      </p>
+
+      <div className="tiles">
+        <Tile label="Faults raised" value={report.raised} hint={`${report.responded} started by an engineer`} />
+        <Tile
+          label="Started in time"
+          value={report.onTimePercent == null ? '—' : `${report.onTimePercent}%`}
+          hint={`${report.onTime} on time, ${report.late} late`}
+          tone={report.onTimePercent != null && report.onTimePercent < 80 ? 'danger' : undefined}
+        />
+        <Tile label="Average response" value={formatMinutes(report.averageMinutes) ?? '—'} hint="Raised to In progress" />
+        <Tile label="Typical (median)" value={formatMinutes(report.medianMinutes) ?? '—'} hint={`Slowest ${formatMinutes(report.longestMinutes) ?? '—'}`} />
+        <Tile
+          label="Not started, overdue"
+          value={report.overdue}
+          hint={`${report.waiting} still within their time`}
+          tone={report.overdue > 0 ? 'danger' : undefined}
+        />
+      </div>
+
+      <section className="card table-wrap">
+        <table className="table">
+          <caption className="table-caption">By priority</caption>
+          <thead>
+            <tr>
+              <th>Priority</th>
+              <th className="num">Allowed</th>
+              <th className="num">Raised</th>
+              <th className="num">On time</th>
+              <th className="num">Late</th>
+              <th className="num">Waiting</th>
+              <th className="num">Overdue</th>
+              <th className="num">Average</th>
+              <th className="num">Slowest</th>
+            </tr>
+          </thead>
+          <tbody>
+            {report.byPriority.map((p) => (
+              <tr key={p.priority}>
+                <td>
+                  <StatusPill look={PRIORITY_LOOK[PRIORITY_BY_NAME[p.priority] ?? 20]}>{p.priority}</StatusPill>
+                </td>
+                <td className="num">{formatMinutes(p.targetMinutes) ?? '—'}</td>
+                <td className="num">{p.raised}</td>
+                <td className="num">{p.onTime}</td>
+                <td className="num">{p.late}</td>
+                <td className="num">{p.waiting}</td>
+                <td className="num">{p.overdue}</td>
+                <td className="num">{formatMinutes(p.averageMinutes) ?? '—'}</td>
+                <td className="num">{formatMinutes(p.longestMinutes) ?? '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+
+      {report.byPerson.length > 0 && (
+        <section className="card table-wrap">
+          <table className="table">
+            <caption className="table-caption">By engineer</caption>
+            <thead>
+              <tr>
+                <th>Engineer</th>
+                <th className="num">Started</th>
+                <th className="num">On time</th>
+                <th className="num">Late</th>
+                <th className="num">Average response</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.byPerson.map((p) => (
+                <tr key={`${p.userId ?? 'n'}-${p.name}`}>
+                  <td>{p.name}</td>
+                  <td className="num">{p.answered}</td>
+                  <td className="num">{p.onTime}</td>
+                  <td className="num">{p.late}</td>
+                  <td className="num">{formatMinutes(p.averageMinutes) ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+
+      <section className="card table-wrap">
+        <table className="table">
+          <caption className="table-caption">Faults, latest first</caption>
+          <thead>
+            <tr>
+              <th>Service request</th>
+              <th>Machine</th>
+              <th>Raised</th>
+              <th>Started (In progress)</th>
+              <th>Started by</th>
+              <th className="num">Response</th>
+              <th>Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            {report.items.map((i) => (
+              <tr key={i.workOrderId}>
+                <td>
+                  <Link to={`/work-orders/${i.workOrderId}`} state={{ from: '/reports?report=response' }} className="mono">
+                    {i.number}
+                  </Link>
+                  <div>
+                    <StatusPill look={PRIORITY_LOOK[PRIORITY_BY_NAME[i.priority] ?? 20]}>{i.priority}</StatusPill>
+                  </div>
+                </td>
+                <MachineCell id={i.equipmentId} tag={i.assetTag} type={i.equipmentType} />
+                <td>{formatDateTime(i.reportedAtUtc)}</td>
+                <td>{i.startedAtUtc ? formatDateTime(i.startedAtUtc) : <span className="muted">Not started</span>}</td>
+                <td>{i.responder ?? <span className="muted">—</span>}</td>
+                <td className="num">{formatMinutes(i.responseMinutes) ?? <span className="muted">—</span>}</td>
+                <td>
+                  <StatusPill look={RESULT_LOOK[i.result] ?? RESPONSE_LOOK.NotApplicable}>
+                    {i.result === 'Overdue' && i.overdueMinutes != null ? `Overdue by ${formatMinutes(i.overdueMinutes)}` : i.result}
+                  </StatusPill>
+                  {i.targetMinutes != null && <div className="muted" style={{ fontSize: '0.8rem' }}>Allowed {formatMinutes(i.targetMinutes)}</div>}
                 </td>
               </tr>
             ))}

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
+import { useDialogs } from '../dialogs';
 import { StatusPill } from '../StatusPill';
 import { formatDate, formatDateTime } from '../time';
 
@@ -91,20 +92,24 @@ export function LicenceIssuerPage() {
     }
   }
 
+  const dialogs = useDialogs();
   async function command(l: Item, action: 'lock' | 'unlock') {
     if (action === 'lock') {
-      // Typed, not clicked: a locked installation turns every user away until the code to open it is entered.
-      const typed = prompt(
-        [
-          `Make a lock code for ${l.hospitalName}?`,
-          '',
-          'Once their IT team enters it, NOBODY at that hospital can sign in or open any record',
-          'until they enter an unlock code from you. Nothing happens until they enter it.',
-          '',
-          'Type LOCK to make the code:',
-        ].join('\n'),
-      );
-      if (typed !== 'LOCK') return;
+      // A locked installation turns every user away until the code to open it is entered.
+      const ok = await dialogs.confirm({
+        title: `Make a lock code for ${l.hospitalName}?`,
+        message: (
+          <>
+            <p>Once their IT team enters it, nobody at that hospital can sign in or open any record until they enter an unlock code from you.</p>
+            <p>Nothing happens until they enter it.</p>
+          </>
+        ),
+        acknowledge: 'I understand that nobody there can sign in once the code is entered.',
+        confirmLabel: 'Yes, make the lock code',
+        cancelLabel: 'No, cancel',
+        danger: true,
+      });
+      if (!ok) return;
     }
 
     setBusy(`${action}-${l.id}`);

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../api/client';
+import { useDialogs } from '../dialogs';
 import { useAuth } from '../auth/useAuth';
 import { PERMISSIONS } from '../auth/context';
 import { suggestCode, suggestNames } from '../locationSuggestions';
@@ -163,8 +164,16 @@ export function LocationsPage() {
     });
   }
 
+  const dialogs = useDialogs();
   async function remove(loc: Location) {
-    if (!confirm(`Delete "${loc.name}"? This cannot be undone.`)) return;
+    const ok = await dialogs.confirm({
+      title: `Delete "${loc.name}"?`,
+      message: 'This cannot be undone.',
+      confirmLabel: 'Yes, delete it',
+      cancelLabel: 'No, keep it',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.del(`/api/locations/${loc.id}`);
       await load();

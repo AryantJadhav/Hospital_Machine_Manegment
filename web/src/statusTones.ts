@@ -41,7 +41,7 @@ export const EQUIPMENT_LABEL: Record<number, string> = {
   10: 'In store',
   20: 'In use',
   30: 'Under repair',
-  40: 'Condemned',
+  40: 'Retired (condemned)',
   50: 'Disposed',
 };
 

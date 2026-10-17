@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
+import { useDialogs } from '../dialogs';
 import { useAuth } from '../auth/useAuth';
 import { PERMISSIONS } from '../auth/context';
 import { GatePassNotice } from '../GatePassNotice';
@@ -12,7 +13,7 @@ import { PRIORITY_LABEL, PRIORITY_LOOK, WORK_ORDER_LABEL, WORK_ORDER_LOOK } from
 import { formatBytes } from '../bytes';
 import { formatHours } from '../hours';
 import { formatRupees } from '../money';
-import { formatDateTime } from '../time';
+import { formatDateTime, fromHospitalInput, toHospitalInput, ZONE_LABEL } from '../time';
 import { responseSentence } from '../ResponseBadge';
 import { usePageTitle } from '../pageTitle';
 import type { WorkOrderDetail, WorkOrderPhoto } from '../workOrderTypes';
@@ -31,9 +32,21 @@ const CLOSED = 60;
 const CANCELLED = 70;
 
 /** What a person is asked before one of the two changes that cannot be taken back. */
-const CONFIRM: Record<number, string> = {
-  [CLOSED]: 'Close this service request? A closed service request cannot be changed afterwards.',
-  [CANCELLED]: 'Cancel this service request? A cancelled service request cannot be reopened.',
+const CONFIRM: Record<number, { title: string; message: string; yes: string; no: string; danger: boolean }> = {
+  [CLOSED]: {
+    title: 'Close this service request?',
+    message: 'A closed service request is locked for everyone and cannot be changed afterwards.',
+    yes: 'Yes, close it',
+    no: 'Not yet',
+    danger: false,
+  },
+  [CANCELLED]: {
+    title: 'Cancel this service request?',
+    message: 'A cancelled service request cannot be reopened. If the fault is real, raise a new request instead.',
+    yes: 'Yes, cancel it',
+    no: 'No, keep it',
+    danger: true,
+  },
 };
 
 /**
@@ -139,8 +152,9 @@ export function WorkOrderPage() {
   }
 
   // Judged by the request's own state, not by what this person may do to it: someone who may do
-  // nothing to an open request must not be told it is closed.
-  const isTerminal = order.status === CLOSED || order.status === CANCELLED;
+  // nothing to an open request must not be told it is locked. A request is locked from the moment it is
+  // resolved: nothing on it can be changed, and only the head of the department can reopen or close it.
+  const isTerminal = order.status === RESOLVED || order.status === CLOSED || order.status === CANCELLED;
 
   return (
     <div className="page">
@@ -155,7 +169,7 @@ export function WorkOrderPage() {
         </div>
 
         <div className="row">
-          {canSendOut && order.status !== 60 && order.status !== 70 && (
+          {canSendOut && !isTerminal && (
             <button
               className="btn"
               onClick={() =>
@@ -200,10 +214,11 @@ export function WorkOrderPage() {
             <BreakdownType order={order} editable={canWork && !isTerminal} act={act} />
           </section>
 
+          {order.canAcknowledge && <Acknowledge order={order} act={act} />}
           <Solution order={order} isTerminal={isTerminal} canWork={canWork} />
           <Parts order={order} isTerminal={isTerminal} canWork={canWork} act={act} />
           <Photos order={order} isTerminal={isTerminal} canRemove={canAssign} act={act} />
-          <History order={order} act={act} />
+          <History order={order} act={act} locked={isTerminal} />
           {/* Last, because it is the last thing done: the job is finished, then it is resolved. */}
           <ResolveForm order={order} act={act} onResolved={() => resolved(order.number)} />
         </div>
@@ -211,6 +226,9 @@ export function WorkOrderPage() {
         <div className="stack">
           <Actions order={order} canAssign={canAssign} isTerminal={isTerminal} act={act} />
           <Facts order={order} />
+          {may(PERMISSIONS.responseTimesEdit) && (order.status === 50 || order.status === 60) && (
+            <CorrectStarted order={order} act={act} />
+          )}
         </div>
       </div>
     </div>
@@ -511,10 +529,16 @@ function Photos({
     setUploading(false);
   }
 
-  function removePhoto(photo: WorkOrderPhoto) {
-    if (!window.confirm(`Remove "${photo.fileName}"? It is deleted from the system. The removal is recorded in the audit log.`)) {
-      return;
-    }
+  const dialogs = useDialogs();
+  async function removePhoto(photo: WorkOrderPhoto) {
+    const ok = await dialogs.confirm({
+      title: `Remove "${photo.fileName}"?`,
+      message: 'The photo is deleted from the system. The removal is recorded in the audit log, with who did it and when.',
+      confirmLabel: 'Yes, remove it',
+      cancelLabel: 'No, keep it',
+      danger: true,
+    });
+    if (!ok) return;
     void act(() => api.del(`/api/work-orders/photos/${photo.id}`));
   }
 
@@ -603,7 +627,7 @@ function Photos({
   );
 }
 
-function History({ order, act }: { order: WorkOrderDetail; act: Act }) {
+function History({ order, act, locked }: { order: WorkOrderDetail; act: Act; locked: boolean }) {
   const [note, setNote] = useState('');
 
   return (
@@ -631,26 +655,77 @@ function History({ order, act }: { order: WorkOrderDetail; act: Act }) {
         </ul>
       )}
 
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!note.trim()) return;
-          void act(async () => {
-            await api.post(`/api/work-orders/${order.id}/notes`, { body: note });
-            setNote('');
-          });
-        }}
-      >
-        <input
-          className="grow"
-          placeholder="Add a note"
-          aria-label="Add a note"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-        />
-        <button className="btn" type="submit" disabled={!note.trim()}>Add</button>
-      </form>
+      {!locked && (
+        <form
+          className="row"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!note.trim()) return;
+            void act(async () => {
+              await api.post(`/api/work-orders/${order.id}/notes`, { body: note });
+              setNote('');
+            });
+          }}
+        >
+          <input
+            className="grow"
+            placeholder="Add a note"
+            aria-label="Add a note"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+          />
+          <button className="btn" type="submit" disabled={!note.trim()}>Add</button>
+        </form>
+      )}
+    </section>
+  );
+}
+
+/**
+ * After an engineer resolves a fault it goes back to the department that asked. Anyone there can say whether the machine
+ * really works now: yes, and it is closed; or no, and it goes back to the engineer with what is still wrong.
+ */
+function Acknowledge({ order, act }: { order: WorkOrderDetail; act: Act }) {
+  const dialogs = useDialogs();
+  // The count beside Request Service in the top bar is told at once, not on its next refresh.
+  const told = () => window.dispatchEvent(new Event('work-orders-changed'));
+
+  async function accept() {
+    const ok = await dialogs.confirm({
+      title: 'Is the machine working properly?',
+      message: 'If you accept, this service request is closed. It cannot be changed afterwards.',
+      confirmLabel: 'Yes, it is fixed',
+      cancelLabel: 'Not yet',
+    });
+    if (!ok) return;
+    void act(() => api.post(`/api/work-orders/${order.id}/acknowledge`, { accepted: true })).then(told);
+  }
+
+  async function notFixed() {
+    const why = await dialogs.ask({
+      title: 'What is still wrong?',
+      message: 'This sends the request back to the engineer. Say what you see, in your own words.',
+      label: 'What is still wrong?',
+      placeholder: 'For example: the alarm still sounds at night',
+      multiline: true,
+      minLength: 3,
+      confirmLabel: 'Send it back to the engineer',
+      cancelLabel: 'Go back',
+    });
+    if (why === null) return;
+    void act(() => api.post(`/api/work-orders/${order.id}/acknowledge`, { accepted: false, note: why })).then(told);
+  }
+
+  return (
+    <section className="card stack ack-card" aria-labelledby="ack-title">
+      <h2 id="ack-title" className="section-h">Is it fixed?</h2>
+      <p style={{ margin: 0 }}>
+        The engineer says this fault has been fixed. Please check the machine, then answer. What was done is written below.
+      </p>
+      <div className="row">
+        <button className="btn btn-primary" onClick={() => void accept()}>Yes, it is fixed</button>
+        <button className="btn" onClick={() => void notFixed()}>No, it is not fixed</button>
+      </div>
     </section>
   );
 }
@@ -669,6 +744,10 @@ function Actions({
 }) {
   const [staff, setStaff] = useState<{ id: number; fullName: string }[]>([]);
   const [note, setNote] = useState('');
+  // A resolved request is the head's to reopen or close. Reopening needs a reason, which is written on the request.
+  const solved = order.status === RESOLVED;
+  const label = (s: number) => (solved && s === 30 ? 'Reopen' : solved && s === 60 ? 'Close' : WORK_ORDER_LABEL[s]);
+  const needsReason = (s: number) => solved && s === 30 && !note.trim();
 
   // Only for someone who may assign: the staff list is an Admin route, so asking as an
   // Employee is a guaranteed 403.
@@ -686,9 +765,21 @@ function Actions({
   // Resolving has its own place under Solution, because it needs the words that go on the report.
   const transitions = order.allowedTransitions.filter((s) => s !== RESOLVED);
 
-  function move(status: number) {
+  const dialogs = useDialogs();
+  async function move(status: number) {
     const question = CONFIRM[status];
-    if (question && !window.confirm(question)) return;
+    if (
+      question &&
+      !(await dialogs.confirm({
+        title: question.title,
+        message: question.message,
+        confirmLabel: question.yes,
+        cancelLabel: question.no,
+        danger: question.danger,
+      }))
+    ) {
+      return;
+    }
     void act(async () => {
       await api.post(`/api/work-orders/${order.id}/status`, { status, note: note.trim() || undefined });
       setNote('');
@@ -706,21 +797,33 @@ function Actions({
       <h2 className="section-h">Actions</h2>
 
       {isTerminal && (
-        <p className="muted" style={{ margin: 0 }}>
-          This service request is {WORK_ORDER_LABEL[order.status].toLowerCase()}, so it can no longer be changed.
+        <p className="alert alert-info" style={{ margin: 0 }}>
+          {solved
+            ? order.canAcknowledge
+              ? 'This service request is resolved and waiting for the department to check it. Nothing else can be changed.'
+              : order.allowedTransitions.length > 0
+                ? 'This service request is resolved and waiting for the department to check it. As the head of the department you can also reopen it, or close it.'
+                : 'This service request is resolved and waiting for the department to check it. Only the head of the department can reopen or close it.'
+            : `This service request is ${WORK_ORDER_LABEL[order.status].toLowerCase()}, so it can no longer be changed.`}
         </p>
       )}
 
       {transitions.length > 0 && (
         <>
           <label className="field">
-            <span>Note with the change (optional)</span>
+            <span>{solved ? 'Why is it being reopened? (needed to reopen)' : 'Note with the change (optional)'}</span>
             <input value={note} onChange={(e) => setNote(e.target.value)} />
           </label>
           <div className="row">
             {transitions.map((s) => (
-              <button key={s} className={s === CANCELLED ? 'btn btn-quiet' : 'btn'} onClick={() => move(s)}>
-                {WORK_ORDER_LABEL[s]}
+              <button
+                key={s}
+                className={s === CANCELLED ? 'btn btn-quiet' : 'btn'}
+                disabled={needsReason(s)}
+                title={needsReason(s) ? 'Say why it is being reopened first' : undefined}
+                onClick={() => move(s)}
+              >
+                {label(s)}
               </button>
             ))}
           </div>
@@ -741,6 +844,90 @@ function Actions({
           </select>
         </label>
       )}
+    </section>
+  );
+}
+
+/**
+ * The head of the department corrects the started time of a solved fault: the moment the engineer really reached the machine,
+ * when the In progress click came late or was forgotten. The response time is judged from it. A reason is required, and is
+ * written on the fault as a note and kept by the audit log.
+ */
+function CorrectStarted({ order, act }: { order: WorkOrderDetail; act: Act }) {
+  const [open, setOpen] = useState(false);
+  const [when, setWhen] = useState('');
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const instant = fromHospitalInput(when);
+  const ready = instant !== null && reason.trim().length >= 3;
+
+  if (!open) {
+    return (
+      <section className="card stack">
+        <h2 className="section-h">Response time</h2>
+        <p className="muted">
+          Judged from when the fault was raised to when the engineer pressed In progress. If that click was late or forgotten,
+          the head can correct the time.
+        </p>
+        <button
+          className="btn"
+          onClick={() => {
+            setWhen(toHospitalInput(order.startedAtUtc ?? order.reportedAtUtc));
+            setOpen(true);
+          }}
+        >
+          Correct the started time
+        </button>
+      </section>
+    );
+  }
+
+  async function save() {
+    if (!instant) return;
+    setBusy(true);
+    const ok = await act(() => api.put(`/api/work-orders/${order.id}/started-time`, { startedAtUtc: instant, reason: reason.trim() }));
+    setBusy(false);
+    if (ok) {
+      setOpen(false);
+      setReason('');
+    }
+  }
+
+  return (
+    <section className="card stack">
+      <h2 className="section-h">Correct the started time</h2>
+      <label className="stack">
+        <span>When did the engineer really start? ({ZONE_LABEL})</span>
+        <input
+          className="field"
+          type="datetime-local"
+          value={when}
+          min={toHospitalInput(order.reportedAtUtc)}
+          max={toHospitalInput(order.resolvedAtUtc ?? undefined)}
+          onChange={(e) => setWhen(e.target.value)}
+        />
+      </label>
+      <label className="stack">
+        <span>Why is it being corrected?</span>
+        <textarea
+          className="field"
+          rows={3}
+          maxLength={500}
+          placeholder="For example: reached the ward at once but pressed the button later"
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+        />
+      </label>
+      <p className="muted">
+        It cannot be before the fault was raised or after it was resolved. The correction is written on the fault, with your name.
+      </p>
+      <div className="row">
+        <button className="btn btn-primary" disabled={!ready || busy} onClick={() => void save()}>
+          {busy ? 'Saving…' : 'Save the corrected time'}
+        </button>
+        <button className="btn" disabled={busy} onClick={() => setOpen(false)}>Cancel</button>
+      </div>
     </section>
   );
 }

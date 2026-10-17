@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../api/client';
+import { suggestPassword, useDialogs } from '../dialogs';
 import { useAuth } from '../auth/useAuth';
 import { ROLE_HELP, ROLE_LABEL, ROLES } from '../auth/context';
 import type { AccessView, CatalogItem } from '../accessTypes';
@@ -66,27 +67,38 @@ export function StaffPage() {
     void load();
   }, [load]);
 
-  async function act(work: () => Promise<unknown>, done: string) {
+  /** Does the work, then says so. True when it worked, so a caller can go on to tell the person something. */
+  async function act(work: () => Promise<unknown>, done: string): Promise<boolean> {
     setError(null);
     setNotice(null);
     try {
       await work();
       setNotice(done);
       await load();
+      return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'That did not work.');
+      return false;
     }
   }
 
+  const dialogs = useDialogs();
   async function deactivate(person: Staff) {
     // Named, not just confirmed. "Are you sure?" on a list of similar rows is
     // how the wrong person loses their access.
-    if (!confirm(
-      `Stop ${person.fullName} signing in?\n\n`
-      + 'Their PM records, signatures and service requests stay exactly as they are — '
-      + 'nothing is deleted. Any session they have open ends immediately.\n\n'
-      + 'You can let them back in later.',
-    )) return;
+    const ok = await dialogs.confirm({
+      title: `Stop ${person.fullName} from signing in?`,
+      message: (
+        <>
+          <p>Their records, signatures and service requests stay exactly as they are. Nothing is deleted.</p>
+          <p>If they are signed in now, they are signed out straight away. You can let them back in later.</p>
+        </>
+      ),
+      confirmLabel: 'Yes, stop them signing in',
+      cancelLabel: 'No, leave them',
+      danger: true,
+    });
+    if (!ok) return;
 
     await act(
       () => api.post(`/api/users/${person.id}/deactivate`, {}),
@@ -95,17 +107,31 @@ export function StaffPage() {
   }
 
   async function resetPassword(person: Staff) {
-    const password = prompt(
-      `New password for ${person.fullName}:\n\n`
-      + 'They will be signed out everywhere, and will need this to sign back in.\n'
-      + 'Write it down before continuing — it cannot be recovered from here.',
-    );
-    if (password === null || password.trim().length === 0) return;
+    const password = await dialogs.ask({
+      title: `New password for ${person.fullName}`,
+      message: 'They will be signed out everywhere, and will need this password to sign in again.',
+      label: 'New password',
+      placeholder: 'At least 5 characters, with a capital letter, a small letter and a number',
+      suggest: { label: 'Make a password for me', make: suggestPassword },
+      minLength: 5,
+      confirmLabel: 'Change the password',
+    });
+    if (password === null) return;
 
-    await act(
+    const changed = await act(
       () => api.post(`/api/users/${person.id}/reset-password`, { password }),
       `${person.fullName}'s password has been changed and their sessions ended.`,
     );
+
+    // Shown once, so it can be written down or copied: the system cannot show it again.
+    if (changed) {
+      await dialogs.tell({
+        title: `Give ${person.fullName} this password`,
+        message: 'Write it down or copy it now. It cannot be shown again.',
+        copyable: password,
+        okLabel: 'I have noted it',
+      });
+    }
   }
 
   if (loading) return <div className="page"><p className="muted">Loading…</p></div>;
