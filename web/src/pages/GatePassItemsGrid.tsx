@@ -137,6 +137,7 @@ export function GatePassItemsGrid({
                       placeholder: i === 0 ? 'e.g. Meniscus positioning device' : '',
                     })}
                     {machine && <div className="muted">From the register</div>}
+                    {r.sparePartId !== null && <div className="muted">Spare part from the register</div>}
                   </td>
                   <td>
                     {cell(r, i, 'assetCode', 'Asset code', {

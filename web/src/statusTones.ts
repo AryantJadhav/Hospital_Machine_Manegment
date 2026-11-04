@@ -43,6 +43,7 @@ export const EQUIPMENT_LABEL: Record<number, string> = {
   30: 'Under repair',
   40: 'Retired (condemned)',
   50: 'Disposed',
+  60: 'Lost',
 };
 
 /** What each PM status is called. */
@@ -61,6 +62,7 @@ export const EQUIPMENT_LOOK: Record<number, Look> = {
   30: T('warning'),
   40: T('danger'),
   50: T('neutral'),
+  60: T('danger'),
 };
 
 /** Preventive maintenance: Scheduled, Due, Overdue, Completed, Skipped. */

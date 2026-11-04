@@ -1,6 +1,8 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
+import { PERMISSIONS } from '../auth/context';
+import { useAuth } from '../auth/useAuth';
 import { presetPeriods, recentPeriods } from '../compliancePeriods';
 import { formatMinutes } from '../age';
 import { formatHours } from '../hours';
@@ -10,7 +12,7 @@ import { PRIORITY_LOOK, RESPONSE_LOOK } from '../statusTones';
 import { StatusPill } from '../StatusPill';
 import { Tile } from '../Tile';
 
-type Kind = 'downtime' | 'cost' | 'work' | 'response' | 'training' | 'stock';
+type Kind = 'downtime' | 'cost' | 'work' | 'response' | 'training' | 'losses' | 'stock';
 
 type DowntimeMachine = {
   equipmentId: number;
@@ -203,6 +205,42 @@ type TrainingSummary = {
   }[];
 };
 
+type LossesSummary = {
+  from: string;
+  to: string;
+  countedThrough: string;
+  scope: string;
+  total: number;
+  open: number;
+  recovered: number;
+  writtenOff: number;
+  withPoliceComplaint: number;
+  valueReported: number;
+  valueLost: number;
+  valueRecovered: number;
+  withoutValue: number;
+  byKind: { label: string; count: number }[];
+  byLocation: { label: string; count: number }[];
+  repeatMachines: { equipmentId: number; assetTag: string; equipmentType: string | null; losses: number }[];
+  items: {
+    id: number;
+    reference: string;
+    equipmentId: number;
+    assetTag: string;
+    equipmentType: string | null;
+    location: string | null;
+    kind: string;
+    status: string;
+    statusLabel: string;
+    noticedOn: string;
+    lastSeenOn: string | null;
+    recoveredOn: string | null;
+    daysMissing: number | null;
+    value: number | null;
+    policeReportNumber: string | null;
+  }[];
+};
+
 type Place = { id: number; name: string; depth: number };
 type Person = { id: number; fullName: string };
 
@@ -214,11 +252,12 @@ const TITLES: Record<Kind, string> = {
   work: 'Work done',
   response: 'Response time',
   training: 'Training',
+  losses: 'Loss of equipment',
   stock: 'Spare part stock',
 };
 
 /** Where each report lives on the server. */
-const PATH: Record<Kind, string> = { downtime: 'downtime', cost: 'cost', work: 'work-done', response: 'response-time', training: 'training', stock: 'stock' };
+const PATH: Record<Kind, string> = { downtime: 'downtime', cost: 'cost', work: 'work-done', response: 'response-time', training: 'training', losses: 'losses', stock: 'stock' };
 
 /** The priority names the server sends, as the look each one wears. */
 const PRIORITY_BY_NAME: Record<string, number> = { Low: 10, Medium: 20, High: 30, Critical: 40 };
@@ -232,6 +271,9 @@ const PRIORITY_BY_NAME: Record<string, number> = { Low: 10, Medium: 20, High: 30
  * switching between them keeps the question the same.
  */
 export function ReportsPage() {
+  const { may } = useAuth();
+  // Lost equipment is for the department, the engineers and the head: a person who may see reports but not losses gets no tab.
+  const showLosses = may(PERMISSIONS.lossesView);
   const today = useMemo(() => todayAtHospital(), []);
   const monthly = useMemo(() => presetPeriods(today), [today]);
   const recent = useMemo(() => recentPeriods(today), [today]);
@@ -246,20 +288,22 @@ export function ReportsPage() {
           ? 'response'
           : reportParam === 'training'
             ? 'training'
-            : reportParam === 'stock'
-              ? 'stock'
-              : 'downtime';
+            : reportParam === 'losses' && showLosses
+              ? 'losses'
+              : reportParam === 'stock'
+                ? 'stock'
+                : 'downtime';
 
   // What was done is mostly asked about for a day or a week, so that report offers those first.
   const presets = useMemo(() => (kind === 'work' ? [...recent, ...monthly] : monthly), [kind, recent, monthly]);
 
   // Today for the work report, and this month for the others: a period still running is the one
   // a head asks about while it matters.
-  // Training is occasional and assessed by the year, so it starts with the financial year.
+  // Training and losses are occasional and assessed by the year, so they start with the financial year.
   const initial =
     (kind === 'work'
       ? recent.find((p) => p.key === 'today')
-      : monthly.find((p) => p.key === (kind === 'training' ? 'this-fy' : 'this-month'))) ?? monthly[0];
+      : monthly.find((p) => p.key === (kind === 'training' || kind === 'losses' ? 'this-fy' : 'this-month'))) ?? monthly[0];
 
   const [choice, setChoice] = useState(initial.key);
   const [from, setFrom] = useState(initial.from);
@@ -272,6 +316,7 @@ export function ReportsPage() {
   const [cost, setCost] = useState<CostSummary | null>(null);
   const [work, setWork] = useState<WorkDoneSummary | null>(null);
   const [training, setTraining] = useState<TrainingSummary | null>(null);
+  const [losses, setLosses] = useState<LossesSummary | null>(null);
   const [response, setResponse] = useState<ResponseSummary | null>(null);
   const [stock, setStock] = useState<StockSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -342,6 +387,9 @@ export function ReportsPage() {
         } else if (kind === 'training') {
           const s = await api.get<TrainingSummary>(`/api/reports/training?${query}`);
           if (!cancelled) setTraining(s);
+        } else if (kind === 'losses') {
+          const s = await api.get<LossesSummary>(`/api/reports/losses?${query}`);
+          if (!cancelled) setLosses(s);
         } else {
           const s = await api.get<WorkDoneSummary>(`/api/reports/work-done?${query}`);
           if (!cancelled) setWork(s);
@@ -352,6 +400,7 @@ export function ReportsPage() {
           setCost(null);
           setWork(null);
           setTraining(null);
+          setLosses(null);
           setResponse(null);
           setStock(null);
           setError(e instanceof Error ? e.message : 'Could not work out the report.');
@@ -382,7 +431,7 @@ export function ReportsPage() {
     if (next === 'work' && choice === 'this-month') pick('today', [...recent, ...monthly]);
     if (next !== 'work' && recent.some((p) => p.key === choice)) pick('this-month', monthly);
     // Training is read by the year: arriving from the untouched month, start with the financial year.
-    if (next === 'training' && choice === 'this-month') pick('this-fy', monthly);
+    if ((next === 'training' || next === 'losses') && choice === 'this-month') pick('this-fy', monthly);
   }
 
   async function download() {
@@ -414,7 +463,9 @@ export function ReportsPage() {
             ? response
             : kind === 'training'
               ? training
-              : null;
+              : kind === 'losses'
+                ? losses
+                : null;
 
   return (
     <div className="page">
@@ -432,7 +483,9 @@ export function ReportsPage() {
                     ? 'How quickly engineers responded: from a fault being raised until an engineer pressed In progress.'
                     : kind === 'training'
                       ? 'The training sessions held, who came, on what, and for how long.'
-                      : 'The spare parts that are out of stock, and the ones running low, as they stand now.'}
+                      : kind === 'losses'
+                        ? 'The machines that were lost, stolen or went missing: what they were worth, and how each case ended.'
+                        : 'The spare parts that are out of stock, and the ones running low, as they stand now.'}
           </p>
         </div>
         <button className="btn btn-primary" disabled={!ready || busy} onClick={() => void download()}>
@@ -441,7 +494,7 @@ export function ReportsPage() {
       </header>
 
       <div className="row" role="tablist" aria-label="Report">
-        {(Object.keys(TITLES) as Kind[]).map((k) => (
+        {(Object.keys(TITLES) as Kind[]).filter((k) => k !== 'losses' || showLosses).map((k) => (
           <button
             key={k}
             role="tab"
@@ -542,6 +595,7 @@ export function ReportsPage() {
       {kind === 'work' && work && <WorkDoneView report={work} />}
       {kind === 'response' && response && <ResponseView report={response} />}
       {kind === 'training' && training && <TrainingView report={training} />}
+      {kind === 'losses' && losses && <LossesView report={losses} />}
       {kind === 'stock' && stock && <StockView report={stock} />}
     </div>
   );
@@ -976,6 +1030,133 @@ function TrainingView({ report }: { report: TrainingSummary }) {
                 <td>{i.venue ?? <span className="muted">—</span>}</td>
                 <td className="num">{i.durationMinutes == null ? '—' : formatHours(i.durationMinutes / 60)}</td>
                 <td className="num">{i.attendees}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+    </>
+  );
+}
+
+function LossesView({ report }: { report: LossesSummary }) {
+  if (report.total === 0) {
+    return <p className="alert alert-info">No machine was recorded as lost in this period.</p>;
+  }
+
+  return (
+    <>
+      <div className="tiles">
+        <Tile label="Machines lost" value={report.total} to="/losses?status=all" />
+        <Tile
+          label="Still missing"
+          value={report.open}
+          tone={report.open > 0 ? 'warn' : 'ok'}
+          to="/losses"
+        />
+        <Tile label="Found again" value={report.recovered} />
+        <Tile label="Written off" value={report.writtenOff} tone={report.writtenOff > 0 ? 'danger' : undefined} />
+        <Tile
+          label="Worth, not recovered"
+          value={formatRupees(report.valueLost)}
+          hint={
+            report.withoutValue > 0
+              ? `${report.withoutValue} machine${report.withoutValue === 1 ? ' has' : 's have'} no value recorded`
+              : `${formatRupees(report.valueReported)} in all, ${formatRupees(report.valueRecovered)} recovered`
+          }
+        />
+        {report.withPoliceComplaint > 0 && (
+          <Tile label="Police complaints made" value={report.withPoliceComplaint} />
+        )}
+      </div>
+
+      <div className="row" style={{ alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <section className="card table-wrap grow">
+          <table className="table">
+            <caption className="table-caption">How they were lost</caption>
+            <thead>
+              <tr>
+                <th>How</th>
+                <th className="num">Machines</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.byKind.map((k) => (
+                <tr key={k.label}>
+                  <td>{k.label}</td>
+                  <td className="num">{k.count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+
+        {report.byLocation.length > 0 && (
+          <section className="card table-wrap grow">
+            <table className="table">
+              <caption className="table-caption">Where they went from</caption>
+              <thead>
+                <tr>
+                  <th>Place</th>
+                  <th className="num">Machines</th>
+                </tr>
+              </thead>
+              <tbody>
+                {report.byLocation.map((l) => (
+                  <tr key={l.label}>
+                    <td>{l.label}</td>
+                    <td className="num">{l.count}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        )}
+      </div>
+
+      {report.repeatMachines.length > 0 && (
+        <p className="alert alert-warn" role="status">
+          Lost more than once:{' '}
+          {report.repeatMachines.map((m, n) => (
+            <Fragment key={m.equipmentId}>
+              {n > 0 && ', '}
+              <Link to={`/equipment/${m.equipmentId}`} className="mono">{m.assetTag}</Link> ({m.losses})
+            </Fragment>
+          ))}
+        </p>
+      )}
+
+      <section className="card table-wrap">
+        <table className="table">
+          <caption className="table-caption">Each loss, latest first</caption>
+          <thead>
+            <tr>
+              <th>Loss</th>
+              <th>Machine</th>
+              <th>How</th>
+              <th>Status</th>
+              <th className="num">Days missing</th>
+              <th className="num">Worth</th>
+            </tr>
+          </thead>
+          <tbody>
+            {report.items.map((i) => (
+              <tr key={i.id}>
+                <td>
+                  <Link to={`/losses/${i.id}`} state={{ from: '/reports?report=losses' }} className="mono">{i.reference}</Link>
+                  <div className="muted">{formatDate(i.noticedOn)}</div>
+                </td>
+                <MachineCell id={i.equipmentId} tag={i.assetTag} type={[i.equipmentType, i.location].filter(Boolean).join(' · ')} />
+                <td>
+                  {i.kind}
+                  {i.policeReportNumber && <div className="muted">Police: {i.policeReportNumber}</div>}
+                </td>
+                <td>
+                  {i.statusLabel}
+                  {i.recoveredOn && <div className="muted">Found {formatDate(i.recoveredOn)}</div>}
+                </td>
+                <td className="num">{i.daysMissing === null ? '—' : i.daysMissing}</td>
+                <td className="num">{i.value === null ? <span className="muted">—</span> : formatRupees(i.value)}</td>
               </tr>
             ))}
           </tbody>

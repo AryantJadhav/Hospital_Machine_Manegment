@@ -18,6 +18,7 @@ const TABS: { key: string; label: string; count: (c: GatePassCounts) => number |
   { key: 'out', label: 'Out now', count: (c) => c.out },
   { key: 'overdue', label: 'Overdue', count: (c) => c.overdue },
   { key: 'returned', label: 'Returned', count: (c) => c.returned },
+  { key: 'issued', label: 'Not returnable', count: (c) => c.issued },
   { key: 'cancelled', label: 'Cancelled', count: (c) => c.cancelled },
   { key: 'all', label: 'All', count: () => null },
 ];
@@ -83,7 +84,8 @@ export function GatePassesPage() {
         <div>
           <h1>Gate passes</h1>
           <p className="muted">
-            Machines sent out of the hospital to a vendor for repair: where they are and when they are due back.
+            Machines sent out of the hospital to a vendor for repair: where they are and when they are due back. Parts
+            that leave for good are written as not returnable.
           </p>
         </div>
         {canEdit && (
@@ -152,6 +154,8 @@ export function GatePassesPage() {
                       ? 'Nothing is out of the hospital right now.'
                       : tab === 'overdue'
                         ? 'Nothing is overdue.'
+                        : tab === 'issued'
+                          ? 'No non-returnable gate passes yet.'
                         : 'No gate passes here yet.'}
                 </td>
               </tr>
@@ -178,7 +182,9 @@ export function GatePassesPage() {
                   </div>
                 </td>
                 <td>
-                  {p.status === 'Returned' && p.returnedOn
+                  {!p.isReturnable
+                    ? <span className="muted">Not coming back</span>
+                    : p.status === 'Returned' && p.returnedOn
                     ? <>Back {formatDate(p.returnedOn)}</>
                     : p.expectedReturnDate
                       ? formatDate(p.expectedReturnDate)

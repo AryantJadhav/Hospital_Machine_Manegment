@@ -98,6 +98,11 @@ public static class EquipmentMoveEndpoints
             return Results.Conflict(new { error = "A condemned or disposed machine is not moved." });
         }
 
+        if (machine.Status == EquipmentStatus.Lost)
+        {
+            return Results.Conflict(new { error = "A machine recorded as lost is not moved. Mark it found on its loss record first." });
+        }
+
         if (request.ToLocationId == machine.LocationId)
         {
             return Results.Conflict(new { error = "The machine is already there." });

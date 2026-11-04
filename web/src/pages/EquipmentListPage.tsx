@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../auth/useAuth';
 import { PERMISSIONS } from '../auth/context';
@@ -43,6 +43,9 @@ export function EquipmentListPage() {
   // list, and opens nothing.
   const canOpen = may(PERMISSIONS.registerView);
   const canEdit = may(PERMISSIONS.equipmentEdit);
+  // A machine that cannot be found is written up by whoever finds it gone: the department, an engineer or the head.
+  const canReportLoss = may(PERMISSIONS.lossesReport);
+  const navigate = useNavigate();
   const [adding, setAdding] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [printing, setPrinting] = useState(false);
@@ -215,10 +218,20 @@ export function EquipmentListPage() {
             </p>
           )}
         </div>
-        {canEdit && selected.size === 0 && (
-          <button className="btn btn-primary" onClick={() => setAdding(true)}>
-            Add a machine
-          </button>
+        {selected.size === 0 && (canEdit || canReportLoss) && (
+          <div className="row">
+            {/* A machine that was lost, stolen or went missing: opens the loss form, and the machine is chosen there. */}
+            {canReportLoss && (
+              <button className="btn" onClick={() => navigate('/losses/new', { state: { from: '/equipment' } })}>
+                Report a loss
+              </button>
+            )}
+            {canEdit && (
+              <button className="btn btn-primary" onClick={() => setAdding(true)}>
+                Add a machine
+              </button>
+            )}
+          </div>
         )}
         {canPrint && selected.size > 0 && (
           <div className="row">
@@ -236,6 +249,15 @@ export function EquipmentListPage() {
             >
               Label printer file (Zebra)
             </button>
+            {/* One machine ticked: report that one as lost, without typing its number again. */}
+            {canReportLoss && selected.size === 1 && (
+              <button
+                className="btn"
+                onClick={() => navigate(`/losses/new?equipmentId=${[...selected][0]}`, { state: { from: '/equipment' } })}
+              >
+                Report it as lost
+              </button>
+            )}
             <button className="btn btn-quiet" onClick={() => setSelected(new Set())}>
               Clear
             </button>
@@ -311,6 +333,7 @@ export function EquipmentListPage() {
               <th>Type</th>
               <th>Location</th>
               <th>Manufacturer</th>
+              <th>Model</th>
               <th>Serial</th>
               <th>Status</th>
               <th>Criticality</th>
@@ -319,12 +342,12 @@ export function EquipmentListPage() {
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={canPrint ? 9 : 8} className="empty">Loading…</td></tr>
+              <tr><td colSpan={canPrint ? 10 : 9} className="empty">Loading…</td></tr>
             )}
 
             {!loading && data?.items.length === 0 && (
               <tr>
-                <td colSpan={canPrint ? 9 : 8} className="empty">
+                <td colSpan={canPrint ? 10 : 9} className="empty">
                   {hasFilters
                     ? 'No equipment matches these filters.'
                     : features?.import
@@ -352,6 +375,7 @@ export function EquipmentListPage() {
                 <td>{e.equipmentTypeName}</td>
                 <td>{e.locationName}</td>
                 <td>{e.manufacturer ?? <span className="muted">—</span>}</td>
+                <td>{e.model ?? <span className="muted">—</span>}</td>
                 <td className="mono">{e.serialNumber ?? <span className="muted">—</span>}</td>
                 <td>
                   <StatusPill look={EQUIPMENT_LOOK[e.status]}>{EQUIPMENT_LABEL[e.status] ?? 'Unknown'}</StatusPill>

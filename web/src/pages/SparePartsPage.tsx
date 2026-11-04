@@ -25,6 +25,10 @@ type Part = {
   description: string | null;
   equipmentTypeId: number | null;
   equipmentTypeName: string | null;
+  manufacturer: string | null;
+  compatibleModels: string | null;
+  specification: string | null;
+  manufacturerPartNumber: string | null;
   unit: string;
   quantityOnHand: number;
   unitCost: number | null;
@@ -35,6 +39,8 @@ type Part = {
   /** Worked out by the server: the purchase date plus the warranty. */
   warrantyExpiryDate: string | null;
   notes: string | null;
+  /** Goes back to the vendor when it is faulty or under warranty. */
+  isReturnable: boolean;
   isActive: boolean;
   /** 0 is out, 1 to 5 is low: decided by the server, so every screen agrees. */
   stockStatus: 'ok' | 'low' | 'out';
@@ -42,6 +48,7 @@ type Part = {
 
 type Paged = { items: Part[]; total: number; page: number; pageSize: number };
 type Lookup = { id: number; code: string; name: string };
+type Suggestions = { manufacturers: string[]; models: { manufacturer: string; model: string }[] };
 
 export function SparePartsPage() {
   const { may } = useAuth();
@@ -57,6 +64,11 @@ export function SparePartsPage() {
   const [query, setQuery] = useState('');
   // "" for all stock, "out" for none left, "low" for one to five left.
   const [stock, setStock] = useState<'' | 'out' | 'low'>('');
+  // "" for every kind of machine, otherwise the equipment type's id.
+  const [typeId, setTypeId] = useState('');
+  // "" for all parts, "yes" for the ones that go back to the vendor, "no" for the rest.
+  const [returnable, setReturnable] = useState<'' | 'yes' | 'no'>('');
+  const [suggestions, setSuggestions] = useState<Suggestions>({ manufacturers: [], models: [] });
   const [showInactive, setShowInactive] = useState(false);
 
   const load = useCallback(async () => {
@@ -66,6 +78,8 @@ export function SparePartsPage() {
       const qs = new URLSearchParams();
       if (query.trim()) qs.set('q', query.trim());
       if (stock) qs.set('stock', stock);
+      if (typeId) qs.set('typeId', typeId);
+      if (returnable) qs.set('returnable', returnable === 'yes' ? 'true' : 'false');
       if (showInactive) qs.set('includeInactive', 'true');
       qs.set('pageSize', '200');
 
@@ -83,11 +97,16 @@ export function SparePartsPage() {
     }
     // types is intentionally left out: it is fetched once and reused, not refetched on every search.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, stock, showInactive]);
+  }, [query, stock, typeId, returnable, showInactive]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  // The makes and models already on the equipment register, offered while a part is typed. A nicety: the form works without.
+  useEffect(() => {
+    api.get<Suggestions>('/api/spare-parts/suggestions').then(setSuggestions).catch(() => undefined);
+  }, []);
 
   const outCount = useMemo(() => parts.filter((p) => p.stockStatus === 'out' && p.isActive).length, [parts]);
   const lowCount = useMemo(() => parts.filter((p) => p.stockStatus === 'low' && p.isActive).length, [parts]);
@@ -124,6 +143,7 @@ export function SparePartsPage() {
           key={editing === 'new' ? 'new' : editing.id}
           editing={editing === 'new' ? undefined : editing}
           types={types}
+          suggestions={suggestions}
           onCancel={() => setEditing(null)}
           onSaved={async (message) => {
             setEditing(null);
@@ -139,10 +159,31 @@ export function SparePartsPage() {
           style={{ flex: '1 1 16rem' }}
           type="search"
           aria-label="Search spare parts"
-          placeholder="Search by part number, name or supplier"
+          placeholder="Search by part number, name, make, model, specification or supplier"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
+        <select
+          className="field"
+          aria-label="Filter by machine type"
+          value={typeId}
+          onChange={(e) => setTypeId(e.target.value)}
+        >
+          <option value="">All machine types</option>
+          {types.map((t) => (
+            <option key={t.id} value={t.id}>{t.name}</option>
+          ))}
+        </select>
+        <select
+          className="field"
+          aria-label="Filter by returnable"
+          value={returnable}
+          onChange={(e) => setReturnable(e.target.value as '' | 'yes' | 'no')}
+        >
+          <option value="">Returnable or not</option>
+          <option value="yes">Returnable parts</option>
+          <option value="no">Not returnable</option>
+        </select>
         <select
           className="field"
           aria-label="Filter by stock"
@@ -164,7 +205,8 @@ export function SparePartsPage() {
           <thead>
             <tr>
               <th>Part</th>
-              <th>Used in</th>
+              <th>Fits</th>
+              <th>Specification</th>
               <th className="num">Stock</th>
               <th>Supplier</th>
               <th>Bought and warranty</th>
@@ -173,11 +215,11 @@ export function SparePartsPage() {
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={7} className="empty">Loading…</td></tr>}
+            {loading && <tr><td colSpan={8} className="empty">Loading…</td></tr>}
             {!loading && parts.length === 0 && (
               <tr>
-                <td colSpan={7} className="empty">
-                  {total === 0 && !query && !stock
+                <td colSpan={8} className="empty">
+                  {total === 0 && !query && !stock && !typeId && !returnable
                     ? 'There are no spare parts on the register yet.'
                     : 'No part matches that.'}
                 </td>
@@ -188,9 +230,22 @@ export function SparePartsPage() {
                 <td>
                   <strong>{p.name}</strong>
                   <div className="mono muted">{p.partNumber}</div>
+                  {p.isReturnable && (
+                    <div title="Goes back to the vendor when it is faulty or under warranty">
+                      <StatusPill tone="info">Returnable</StatusPill>
+                    </div>
+                  )}
+                  {p.manufacturerPartNumber && (
+                    <div className="muted">Maker's no. <span className="mono">{p.manufacturerPartNumber}</span></div>
+                  )}
                   {p.storageLocation && <div className="muted">{p.storageLocation}</div>}
                 </td>
-                <td>{p.equipmentTypeName ?? <span className="muted">Not specific to one type</span>}</td>
+                <td>
+                  {p.equipmentTypeName ?? <span className="muted">Any type of machine</span>}
+                  {p.manufacturer && <div>{p.manufacturer}</div>}
+                  {p.compatibleModels && <div className="muted">Models: {p.compatibleModels}</div>}
+                </td>
+                <td>{p.specification ?? <span className="muted">—</span>}</td>
                 <td className="num">
                   {p.quantityOnHand} {p.unit}
                 </td>
@@ -244,11 +299,13 @@ export function SparePartsPage() {
 function PartForm({
   editing,
   types,
+  suggestions,
   onCancel,
   onSaved,
 }: {
   editing?: Part;
   types: Lookup[];
+  suggestions: Suggestions;
   onCancel: () => void;
   onSaved: (message: string) => void | Promise<void>;
 }) {
@@ -256,6 +313,10 @@ function PartForm({
   const [name, setName] = useState(editing?.name ?? '');
   const [description, setDescription] = useState(editing?.description ?? '');
   const [equipmentTypeId, setEquipmentTypeId] = useState(editing?.equipmentTypeId?.toString() ?? '');
+  const [manufacturer, setManufacturer] = useState(editing?.manufacturer ?? '');
+  const [compatibleModels, setCompatibleModels] = useState(editing?.compatibleModels ?? '');
+  const [specification, setSpecification] = useState(editing?.specification ?? '');
+  const [manufacturerPartNumber, setManufacturerPartNumber] = useState(editing?.manufacturerPartNumber ?? '');
   const [unit, setUnit] = useState(editing?.unit ?? 'pcs');
   const [quantityOnHand, setQuantityOnHand] = useState(editing?.quantityOnHand.toString() ?? '0');
   const [unitCost, setUnitCost] = useState(editing?.unitCost?.toString() ?? '');
@@ -264,6 +325,7 @@ function PartForm({
   const [purchaseDate, setPurchaseDate] = useState(editing?.purchaseDate ?? '');
   const [warrantyMonths, setWarrantyMonths] = useState(editing?.warrantyMonths?.toString() ?? '');
   const [notes, setNotes] = useState(editing?.notes ?? '');
+  const [isReturnable, setIsReturnable] = useState(editing?.isReturnable ?? false);
   const [isActive, setIsActive] = useState(editing?.isActive ?? true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -285,6 +347,10 @@ function PartForm({
         name: name.trim(),
         description: description.trim() || null,
         equipmentTypeId: equipmentTypeId ? Number(equipmentTypeId) : null,
+        manufacturer: manufacturer.trim() || null,
+        compatibleModels: compatibleModels.trim() || null,
+        specification: specification.trim() || null,
+        manufacturerPartNumber: manufacturerPartNumber.trim() || null,
         unit: unit.trim() || 'pcs',
         quantityOnHand: Number(quantityOnHand),
         unitCost: unitCost.trim() ? Number(unitCost) : null,
@@ -293,6 +359,7 @@ function PartForm({
         purchaseDate: purchaseDate || null,
         warrantyMonths: warrantyMonths.trim() ? Number(warrantyMonths) : null,
         notes: notes.trim() || null,
+        isReturnable,
         isActive,
       };
 
@@ -348,22 +415,90 @@ function PartForm({
         <input value={description} onChange={(e) => setDescription(e.target.value)} maxLength={500} />
       </label>
 
-      <div className="filters">
-        <label className="field grow">
-          <span>Used in</span>
-          <select value={equipmentTypeId} onChange={(e) => setEquipmentTypeId(e.target.value)}>
-            <option value="">Not specific to one type</option>
-            {types.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
-            ))}
-          </select>
-        </label>
+      <fieldset className="stack" style={{ border: 0, padding: 0, margin: 0 }}>
+        <legend><strong>What it fits and what it is</strong></legend>
+        <p className="muted" style={{ margin: 0 }}>
+          Leave a line empty if the part fits any. On a fault, the parts that fit that machine are listed first.
+        </p>
+
+        <div className="filters">
+          <label className="field grow">
+            <span>Type of machine</span>
+            <select value={equipmentTypeId} onChange={(e) => setEquipmentTypeId(e.target.value)}>
+              <option value="">Any type of machine</option>
+              {types.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="field grow">
+            <span>Make / manufacturer (optional)</span>
+            <input
+              list="spare-part-makes"
+              value={manufacturer}
+              onChange={(e) => setManufacturer(e.target.value)}
+              placeholder="e.g. Philips"
+              maxLength={200}
+            />
+            <datalist id="spare-part-makes">
+              {suggestions.manufacturers.map((m) => <option key={m} value={m} />)}
+            </datalist>
+          </label>
+        </div>
 
         <label className="field">
-          <span>Unit</span>
-          <input value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="pcs" maxLength={20} />
+          <span>Models it fits (optional)</span>
+          <input
+            value={compatibleModels}
+            onChange={(e) => setCompatibleModels(e.target.value)}
+            placeholder="e.g. MX450, MX550, MX750"
+            maxLength={1000}
+          />
+          <span className="muted">
+            Write the model names as they are on the equipment register, separated by commas.
+            {suggestions.models.length > 0 && (
+              <>
+                {' '}On the register:{' '}
+                {suggestions.models
+                  .filter((m) => !manufacturer.trim() || m.manufacturer.toLowerCase() === manufacturer.trim().toLowerCase())
+                  .slice(0, 12)
+                  .map((m) => m.model)
+                  .join(', ') || 'none for this make'}
+                .
+              </>
+            )}
+          </span>
         </label>
-      </div>
+
+        <div className="filters">
+          <label className="field grow">
+            <span>Specification (optional)</span>
+            <input
+              value={specification}
+              onChange={(e) => setSpecification(e.target.value)}
+              placeholder="e.g. 2 A, 250 V, 5 × 20 mm, slow-blow"
+              maxLength={500}
+            />
+          </label>
+
+          <label className="field">
+            <span>Maker's part number (optional)</span>
+            <input
+              className="mono"
+              value={manufacturerPartNumber}
+              onChange={(e) => setManufacturerPartNumber(e.target.value)}
+              maxLength={100}
+            />
+            <span className="muted">The code to quote when ordering.</span>
+          </label>
+
+          <label className="field">
+            <span>Unit</span>
+            <input value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="pcs" maxLength={20} />
+          </label>
+        </div>
+      </fieldset>
 
       <div className="filters">
         <label className="field">
@@ -431,6 +566,14 @@ function PartForm({
       <label className="field">
         <span>Notes (optional)</span>
         <input value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={1000} />
+      </label>
+
+      <label className="row" style={{ gap: '0.5rem', alignItems: 'flex-start' }}>
+        <input type="checkbox" checked={isReturnable} onChange={(e) => setIsReturnable(e.target.checked)} />
+        <span>
+          <strong>Returnable part.</strong> When this part is faulty, or still under the supplier&apos;s warranty, it goes
+          back to the vendor on a gate pass. Leave it unticked for a part that is used up or thrown away, such as a fuse.
+        </span>
       </label>
 
       {editing && (

@@ -32,6 +32,10 @@ public static class RolePermissions
         // department that saw it happen (see Ward).
         Permissions.IncidentsView,
         Permissions.IncidentsManage,
+        // A lost machine: they write it up, or look into what a department wrote up and approve it for the head.
+        Permissions.LossesView,
+        Permissions.LossesReport,
+        Permissions.LossesReview,
     };
 
     /// <summary>
@@ -50,6 +54,9 @@ public static class RolePermissions
         Permissions.WorkOrdersAcknowledge,
         Permissions.IncidentsView,
         Permissions.IncidentsReport,
+        // A lost machine: they write it up, and it goes to a biomedical engineer. They see their own departments' only.
+        Permissions.LossesView,
+        Permissions.LossesReport,
     };
 
     /// <summary>Keeping the installation running, and the people who may sign in to it. Nothing about the equipment.</summary>

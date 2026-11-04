@@ -443,7 +443,7 @@ public static class PmEndpoints
 
             // Condemned and disposed machines stay on the register so their
             // certificates remain readable, and are never maintained again.
-            if (machine.Status is EquipmentStatus.Condemned or EquipmentStatus.Disposed)
+            if (machine.Status is EquipmentStatus.Condemned or EquipmentStatus.Disposed or EquipmentStatus.Lost)
             {
                 skippedRetired++;
                 continue;
@@ -694,6 +694,11 @@ public static class PmEndpoints
         if (machine.Status is EquipmentStatus.Condemned or EquipmentStatus.Disposed)
         {
             return Results.Conflict(new { error = "A condemned or disposed machine is never maintained again." });
+        }
+
+        if (machine.Status == EquipmentStatus.Lost)
+        {
+            return Results.Conflict(new { error = "A machine recorded as lost cannot be maintained until it is found." });
         }
 
         var checklistError = await PmChecklistCheck.ValidateAsync(

@@ -22,7 +22,9 @@ public sealed record GatePassReportData(
     bool IsCancelled,
     string? AuthorisedBy,
     string? PreparedBy,
-    IReadOnlyList<GatePassReportItem> Items)
+    IReadOnlyList<GatePassReportItem> Items,
+    // A non-returnable pass: the goods leave for good, so there is no date of return to fill in.
+    bool IsReturnable = true)
 {
     public string Reference => $"GP-{Number}";
 
@@ -97,7 +99,7 @@ public sealed class GatePassDocument(GatePassReportData data, ReportOptions opti
                 });
             });
 
-            col.Item().PaddingTop(8).AlignCenter().Text("Returnable Gate Pass").FontSize(16).Bold();
+            col.Item().PaddingTop(8).AlignCenter().Text(data.IsReturnable ? "Returnable Gate Pass" : "Non-Returnable Gate Pass").FontSize(16).Bold();
             col.Item().PaddingTop(6).LineHorizontal(1).LineColor(Accent);
         });
     }
@@ -145,12 +147,19 @@ public sealed class GatePassDocument(GatePassReportData data, ReportOptions opti
             col.Item().Element(c => Field(c, "Name of company / person", Company(), bold: true));
             col.Item().Element(c => Field(c, "Purpose", data.Purpose));
 
-            col.Item().Row(row =>
+            if (data.IsReturnable)
             {
-                row.RelativeItem().Element(c => Field(c, "Expected date of return", Date(data.ExpectedReturnDate)));
-                // Left to be written in by hand at the gate when the goods have not come back yet.
-                row.RelativeItem().Element(c => Field(c, "Actual date of return", Date(data.ReturnedOn), blankLine: data.ReturnedOn is null));
-            });
+                col.Item().Row(row =>
+                {
+                    row.RelativeItem().Element(c => Field(c, "Expected date of return", Date(data.ExpectedReturnDate)));
+                    // Left to be written in by hand at the gate when the goods have not come back yet.
+                    row.RelativeItem().Element(c => Field(c, "Actual date of return", Date(data.ReturnedOn), blankLine: data.ReturnedOn is null));
+                });
+            }
+            else
+            {
+                col.Item().Text("These goods are not to be returned to the hospital.").Bold().FontColor(Colors.Red.Darken2);
+            }
         });
     }
 

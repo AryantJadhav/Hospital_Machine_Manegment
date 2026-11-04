@@ -22,4 +22,10 @@ public enum EquipmentStatus
 
     /// <summary>Disposed of. Kept because PM certificates referencing it must stay readable.</summary>
     Disposed = 50,
+
+    /// <summary>
+    /// Recorded as lost, stolen or missing on a loss record. Set and cleared by that record, never by hand: it drops out
+    /// of maintenance and cannot be sent out, and a machine that is found goes back to the status it had.
+    /// </summary>
+    Lost = 60,
 }

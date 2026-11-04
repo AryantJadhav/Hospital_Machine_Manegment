@@ -18,7 +18,14 @@ import { responseSentence } from '../ResponseBadge';
 import { usePageTitle } from '../pageTitle';
 import type { WorkOrderDetail, WorkOrderPhoto } from '../workOrderTypes';
 
-type SparePartOption = { id: number; partNumber: string; name: string; quantityOnHand: number; unit: string };
+type SparePartOption = {
+  id: number;
+  partNumber: string;
+  name: string;
+  quantityOnHand: number;
+  unit: string;
+  specification: string | null;
+};
 
 const MAX_PHOTOS = 10;
 const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
@@ -364,6 +371,8 @@ function Parts({
   // Drawing parts is part of doing the repair: offered to whoever works it, while it is open.
   const editable = canWork && !isTerminal;
   const [spareParts, setSpareParts] = useState<SparePartOption[]>([]);
+  // The ids of the parts that fit this machine (its type, make and model), offered first.
+  const [fitting, setFitting] = useState<Set<number>>(new Set());
   const [partId, setPartId] = useState('');
   const [partQty, setPartQty] = useState('1');
   const [partError, setPartError] = useState<string | null>(null);
@@ -373,13 +382,19 @@ function Parts({
     if (!editable) return;
     void (async () => {
       try {
-        const data = await api.get<{ items: SparePartOption[] }>('/api/spare-parts?pageSize=200');
+        const [data, fits] = await Promise.all([
+          api.get<{ items: SparePartOption[] }>('/api/spare-parts?pageSize=200'),
+          api
+            .get<{ items: SparePartOption[] }>(`/api/spare-parts?pageSize=200&fitsEquipmentId=${order.equipmentId}`)
+            .catch(() => ({ items: [] as SparePartOption[] })),
+        ]);
         setSpareParts(data.items);
+        setFitting(new Set(fits.items.map((p) => p.id)));
       } catch {
         // The rest of the ticket still works without the picker.
       }
     })();
-  }, [editable]);
+  }, [editable, order.equipmentId]);
 
   // Local: what is missing before the request is even sent. A server-side refusal (not enough
   // stock, a retired part) surfaces through the page's own error banner.
@@ -449,11 +464,21 @@ function Parts({
             onChange={(e) => setPartId(e.target.value)}
           >
             <option value="">Choose a part…</option>
-            {spareParts.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.partNumber} — {p.name} ({p.quantityOnHand} {p.unit} left)
-              </option>
-            ))}
+            {[
+              { label: 'Fits this machine', parts: spareParts.filter((p) => fitting.has(p.id)) },
+              { label: 'Other parts', parts: spareParts.filter((p) => !fitting.has(p.id)) },
+            ]
+              .filter((group) => group.parts.length > 0)
+              .map((group) => (
+                <optgroup key={group.label} label={group.label}>
+                  {group.parts.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.partNumber} — {p.name}
+                      {p.specification ? `, ${p.specification}` : ''} ({p.quantityOnHand} {p.unit} left)
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
           </select>
           <input
             aria-label="Quantity used"

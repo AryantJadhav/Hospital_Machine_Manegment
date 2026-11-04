@@ -45,7 +45,9 @@ public sealed class PmScheduleGenerator(
             // correcting a mis-set status - at which point maintenance should
             // resume without anyone remembering to re-enable anything.
             .Where(s => s.Equipment!.Status != EquipmentStatus.Condemned
-                        && s.Equipment!.Status != EquipmentStatus.Disposed)
+                        && s.Equipment!.Status != EquipmentStatus.Disposed
+                        // A lost machine cannot be maintained; when it is found the programme picks up again by itself.
+                        && s.Equipment!.Status != EquipmentStatus.Lost)
             .Select(s => new
             {
                 s.Id,

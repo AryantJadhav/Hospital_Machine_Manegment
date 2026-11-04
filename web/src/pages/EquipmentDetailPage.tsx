@@ -143,6 +143,8 @@ export function EquipmentDetailPage() {
   const canEdit = may(PERMISSIONS.equipmentEdit);
   const canSendOut = may(PERMISSIONS.gatePassEdit);
   const canReportIncident = may(PERMISSIONS.incidentsReport);
+  const canReportLoss = may(PERMISSIONS.lossesReport);
+  const canSeeLosses = may(PERMISSIONS.lossesView);
   const canCondemn = may(PERMISSIONS.equipmentEdit);
 
   const [data, setData] = useState<History | null>(null);
@@ -257,8 +259,25 @@ export function EquipmentDetailPage() {
           {canEdit && e.isInsured && !renewing && (
             <button className="btn" onClick={() => { setRenewing(true); setMovedNote(null); }}>Renew insurance</button>
           )}
-          {e.status !== 40 && e.status !== 50 && !moving && (
+          {e.status !== 40 && e.status !== 50 && e.status !== 60 && !moving && (
             <button className="btn" onClick={() => { setMoving(true); setMovedNote(null); }}>Move</button>
+          )}
+          {/* A machine that cannot be found: lost, stolen, or gone missing while it was away. */}
+          {canReportLoss && e.status !== 50 && e.status !== 60 && (
+            <button
+              className="btn"
+              onClick={() => navigate(`/losses/new?equipmentId=${e.id}`, { state: { from: `/equipment/${e.id}` } })}
+            >
+              Report a loss
+            </button>
+          )}
+          {e.status === 60 && canSeeLosses && (
+            <button
+              className="btn"
+              onClick={() => navigate(`/losses?status=all&q=${encodeURIComponent(e.assetTag)}`, { state: { from: `/equipment/${e.id}` } })}
+            >
+              See its loss record
+            </button>
           )}
           {/* A drop, a fall or mishandling of this machine. */}
           {canReportIncident && e.status !== 50 && (
@@ -270,7 +289,7 @@ export function EquipmentDetailPage() {
             </button>
           )}
           {/* For a machine that cannot be repaired here and has to go to the vendor. */}
-          {canSendOut && e.status !== 40 && e.status !== 50 && (
+          {canSendOut && e.status !== 40 && e.status !== 50 && e.status !== 60 && (
             <button
               className="btn"
               onClick={() => navigate(`/gate-passes/new?equipmentId=${e.id}`, { state: { from: `/equipment/${e.id}` } })}

@@ -8,6 +8,7 @@ using HospitalPm.Domain.WorkOrders;
 using HospitalPm.Domain.Operations;
 using HospitalPm.Domain.GatePasses;
 using HospitalPm.Domain.Incidents;
+using HospitalPm.Domain.Losses;
 using HospitalPm.Domain.Licensing;
 using HospitalPm.Domain.Training;
 using HospitalPm.Domain.Locations;
@@ -80,6 +81,8 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
 
     public DbSet<Incident> Incidents => Set<Incident>();
 
+    public DbSet<EquipmentLoss> EquipmentLosses => Set<EquipmentLoss>();
+
     public DbSet<Location> Locations => Set<Location>();
 
     public DbSet<Equipment> Equipment => Set<Equipment>();
@@ -129,6 +132,7 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
         builder.Entity<Location>().HasQueryFilter(l => !_scoped || _scopeLocationIds.Contains(l.Id));
         builder.Entity<WorkOrder>().HasQueryFilter(w => !_scoped || _scopeLocationIds.Contains(w.Equipment!.LocationId));
         builder.Entity<Incident>().HasQueryFilter(i => !_scoped || _scopeLocationIds.Contains(i.Equipment!.LocationId));
+        builder.Entity<EquipmentLoss>().HasQueryFilter(l => !_scoped || _scopeLocationIds.Contains(l.LocationId));
 
         // What hangs off a service request goes with it, so a photo or a note cannot be fetched on its
         // own by number when the request it belongs to is not theirs.
@@ -234,6 +238,10 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
             e.Property(x => x.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
             e.Property(x => x.Description).HasColumnName("description");
             e.Property(x => x.EquipmentTypeId).HasColumnName("equipment_type_id");
+            e.Property(x => x.Manufacturer).HasColumnName("manufacturer").HasMaxLength(200);
+            e.Property(x => x.CompatibleModels).HasColumnName("compatible_models").HasMaxLength(1000);
+            e.Property(x => x.Specification).HasColumnName("specification").HasMaxLength(500);
+            e.Property(x => x.ManufacturerPartNumber).HasColumnName("manufacturer_part_number").HasMaxLength(100);
             e.Property(x => x.Unit).HasColumnName("unit").HasMaxLength(20).HasDefaultValue("pcs");
             e.Property(x => x.QuantityOnHand).HasColumnName("quantity_on_hand").HasDefaultValue(0);
             e.Property(x => x.ReorderLevel).HasColumnName("reorder_level").HasDefaultValue(0);
@@ -244,6 +252,7 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
             e.Property(x => x.WarrantyMonths).HasColumnName("warranty_months");
             // Worked out from the two above, never stored.
             e.Ignore(x => x.WarrantyExpiryDate);
+            e.Property(x => x.IsReturnable).HasColumnName("is_returnable").HasDefaultValue(false);
             e.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(true);
             e.Property(x => x.Notes).HasColumnName("notes");
             e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").HasDefaultValueSql("now()");
@@ -358,6 +367,7 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
             e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
             e.Property(x => x.Number).HasColumnName("number").ValueGeneratedOnAdd()
                 .HasDefaultValueSql("nextval('gate_pass_number_seq')");
+            e.Property(x => x.IsReturnable).HasColumnName("is_returnable").HasDefaultValue(true);
             e.Property(x => x.PassDate).HasColumnName("pass_date");
             e.Property(x => x.VendorName).HasColumnName("vendor_name").HasMaxLength(200).IsRequired();
             e.Property(x => x.ContactPerson).HasColumnName("contact_person").HasMaxLength(200);
@@ -395,6 +405,7 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
             e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
             e.Property(x => x.GatePassId).HasColumnName("gate_pass_id");
             e.Property(x => x.EquipmentId).HasColumnName("equipment_id");
+            e.Property(x => x.SparePartId).HasColumnName("spare_part_id");
             e.Property(x => x.EquipmentStatusBefore).HasColumnName("equipment_status_before").HasConversion<int?>();
             e.Property(x => x.Description).HasColumnName("description").HasMaxLength(300).IsRequired();
             e.Property(x => x.AssetCode).HasColumnName("asset_code").HasMaxLength(100);
@@ -413,6 +424,13 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
                 // Restrict: a machine that has been sent out keeps its record.
                 .OnDelete(DeleteBehavior.Restrict);
 
+            e.HasOne(x => x.SparePart)
+                .WithMany()
+                .HasForeignKey(x => x.SparePartId)
+                // Restrict: a part that has gone out on a pass keeps its record.
+                .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasIndex(x => x.SparePartId).HasDatabaseName("ix_gate_pass_item_spare_part");
             e.HasIndex(x => x.GatePassId).HasDatabaseName("ix_gate_pass_item_pass");
             e.HasIndex(x => x.EquipmentId).HasDatabaseName("ix_gate_pass_item_equipment");
         });
@@ -459,6 +477,57 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
             e.HasIndex(x => x.OccurredOn).HasDatabaseName("ix_incident_occurred_on");
             e.HasIndex(x => x.Status).HasDatabaseName("ix_incident_status");
             e.HasIndex(x => x.ReportedByUserId).HasDatabaseName("ix_incident_reported_by");
+        });
+
+        builder.Entity<EquipmentLoss>(e =>
+        {
+            e.ToTable("equipment_loss");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.EquipmentId).HasColumnName("equipment_id");
+            e.Property(x => x.LocationId).HasColumnName("location_id");
+            e.Property(x => x.Kind).HasColumnName("loss_kind").HasConversion<int>();
+            e.Property(x => x.NoticedOn).HasColumnName("noticed_on");
+            e.Property(x => x.LastSeenOn).HasColumnName("last_seen_on");
+            e.Property(x => x.LastSeenPlace).HasColumnName("last_seen_place").HasMaxLength(200);
+            e.Property(x => x.Description).HasColumnName("description").IsRequired();
+            e.Property(x => x.LastHandledBy).HasColumnName("last_handled_by").HasMaxLength(200);
+            e.Property(x => x.PoliceReportNumber).HasColumnName("police_report_number").HasMaxLength(100);
+            e.Property(x => x.PoliceReportedOn).HasColumnName("police_reported_on");
+            e.Property(x => x.EstimatedValue).HasColumnName("estimated_value").HasColumnType("numeric(14,2)");
+            e.Property(x => x.Status).HasColumnName("status").HasConversion<int>();
+            e.Property(x => x.Findings).HasColumnName("findings");
+            e.Property(x => x.CorrectiveAction).HasColumnName("corrective_action");
+            e.Property(x => x.RecoveredOn).HasColumnName("recovered_on");
+            e.Property(x => x.EquipmentStatusBefore).HasColumnName("equipment_status_before").HasConversion<int?>();
+            e.Property(x => x.ApprovedByUserId).HasColumnName("approved_by_user_id");
+            e.Property(x => x.ApprovedAtUtc).HasColumnName("approved_at_utc");
+            e.Property(x => x.DecisionNotes).HasColumnName("decision_notes");
+            e.Property(x => x.ReportedByUserId).HasColumnName("reported_by_user_id");
+            e.Property(x => x.ReportedAtUtc).HasColumnName("reported_at_utc");
+            e.Property(x => x.ClosedAtUtc).HasColumnName("closed_at_utc");
+            e.Property(x => x.ClosedByUserId).HasColumnName("closed_by_user_id");
+            e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").HasDefaultValueSql("now()");
+            e.Ignore(x => x.Reference);
+
+            e.HasOne(x => x.Equipment)
+                .WithMany()
+                .HasForeignKey(x => x.EquipmentId)
+                // Restrict: that a machine was lost is part of its record for good.
+                .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Location)
+                .WithMany()
+                .HasForeignKey(x => x.LocationId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasIndex(x => x.EquipmentId).HasDatabaseName("ix_equipment_loss_equipment");
+            e.HasIndex(x => x.NoticedOn).HasDatabaseName("ix_equipment_loss_noticed_on");
+            e.HasIndex(x => x.Status).HasDatabaseName("ix_equipment_loss_status");
+            e.HasIndex(x => x.ReportedByUserId).HasDatabaseName("ix_equipment_loss_reported_by");
+            // A machine can only be lost once at a time: one loss that is still open (reported, being looked into, or waiting for the head).
+            e.HasIndex(x => x.EquipmentId).IsUnique().HasFilter("status IN (10, 20, 25)").HasDatabaseName("ux_equipment_loss_open");
         });
 
         builder.Entity<PmTaskAttachment>(e =>

@@ -116,9 +116,9 @@ public sealed class AccessGrantTests(PostgresFixture fixture) : IAsyncLifetime, 
         Assert.Equal(PermissionCatalog.All.Count, PermissionCatalog.All.Select(p => p.Permission).Distinct().Count());
         var left = Permissions.All.Except(PermissionCatalog.All.Select(p => p.Permission)).Order().ToArray();
         // Looking after staff, giving access, backups, restore and making licences (the Developer's alone), the one that
-        // makes a person a department user, and setting response times (the head's alone, never given by name).
+        // makes a person a department user, setting response times (the head's alone, never given by name), and the four that run a loss of equipment (they come with the role).
         Assert.Equal(
-            [Permissions.AccessManage, Permissions.DepartmentView, Permissions.LicenceIssue, Permissions.StaffManage, Permissions.SystemBackups, Permissions.SystemRestore, Permissions.WorkOrdersAcknowledge, Permissions.ResponseTimesEdit, Permissions.WorkOrdersReview],
+            [Permissions.AccessManage, Permissions.DepartmentView, Permissions.LicenceIssue, Permissions.LossesDecide, Permissions.LossesReport, Permissions.LossesReview, Permissions.LossesView, Permissions.StaffManage, Permissions.SystemBackups, Permissions.SystemRestore, Permissions.WorkOrdersAcknowledge, Permissions.ResponseTimesEdit, Permissions.WorkOrdersReview],
             left);
     }
 

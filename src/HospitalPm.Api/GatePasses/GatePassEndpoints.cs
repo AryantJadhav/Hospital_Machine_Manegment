@@ -23,7 +23,14 @@ namespace HospitalPm.Api.GatePasses;
 /// One line of a gate pass. Give <see cref="EquipmentId"/> for a registered machine and its description and
 /// number are filled in from its record; leave it out for anything else (a cable, a probe, accessories).
 /// </summary>
-public sealed record GatePassItemRequest(int? EquipmentId, string? Description, string? AssetCode, int? Quantity, string? Remarks);
+public sealed record GatePassItemRequest(
+    int? EquipmentId,
+    string? Description,
+    string? AssetCode,
+    int? Quantity,
+    string? Remarks,
+    // A spare part from the register: its name, specification and part number are filled in. Stock is not moved.
+    int? SparePartId = null);
 
 public sealed record GatePassRequest(
     // Left out, the pass is dated today.
@@ -39,7 +46,10 @@ public sealed record GatePassRequest(
     string? AuthorisedBy,
     string? Notes,
     // The whole list. On an edit it replaces what was there.
-    List<GatePassItemRequest>? Items);
+    List<GatePassItemRequest>? Items,
+    // false: the goods leave for good (no return date, no machines from the register). Left out, the pass is returnable.
+    // Fixed once written: on an edit it must be what the pass already is.
+    bool? IsReturnable = null);
 
 public sealed record GatePassReturnRequest(
     // Left out, the day it is recorded.
@@ -106,7 +116,7 @@ public static class GatePassEndpoints
 
         if (!string.IsNullOrWhiteSpace(status) && StatusFilter(status) is null)
         {
-            return Results.BadRequest(new { error = "The status must be out, overdue, returned or cancelled." });
+            return Results.BadRequest(new { error = "The status must be out, overdue, returned, issued or cancelled." });
         }
 
         var query = db.GatePasses.AsNoTracking();
@@ -156,6 +166,7 @@ public static class GatePassEndpoints
             Overdue = await query.CountAsync(p => p.Status == GatePassStatus.Out && p.ExpectedReturnDate != null && p.ExpectedReturnDate < today, ct),
             Returned = await query.CountAsync(p => p.Status == GatePassStatus.Returned, ct),
             Cancelled = await query.CountAsync(p => p.Status == GatePassStatus.Cancelled, ct),
+            Issued = await query.CountAsync(p => p.Status == GatePassStatus.Issued, ct),
         };
 
         query = StatusFilter(status) switch
@@ -164,6 +175,7 @@ public static class GatePassEndpoints
             "overdue" => query.Where(p => p.Status == GatePassStatus.Out && p.ExpectedReturnDate != null && p.ExpectedReturnDate < today),
             "returned" => query.Where(p => p.Status == GatePassStatus.Returned),
             "cancelled" => query.Where(p => p.Status == GatePassStatus.Cancelled),
+            "issued" => query.Where(p => p.Status == GatePassStatus.Issued),
             _ => query,
         };
 
@@ -181,6 +193,7 @@ public static class GatePassEndpoints
             {
                 p.Id,
                 p.Number,
+                p.IsReturnable,
                 p.PassDate,
                 p.VendorName,
                 p.ContactPerson,
@@ -201,6 +214,7 @@ public static class GatePassEndpoints
             r.Id,
             r.Number,
             Reference = GatePass.ReferenceFor(r.Number),
+            r.IsReturnable,
             r.PassDate,
             r.VendorName,
             r.ContactPerson,
@@ -226,6 +240,7 @@ public static class GatePassEndpoints
             .Include(x => x.WorkOrder)
             .Include(x => x.Items).ThenInclude(i => i.Machine!).ThenInclude(m => m.EquipmentType)
             .Include(x => x.Items).ThenInclude(i => i.Machine!).ThenInclude(m => m.Location)
+            .Include(x => x.Items).ThenInclude(i => i.SparePart)
             .SingleOrDefaultAsync(x => x.Id == id, ct);
 
         if (p is null)
@@ -242,6 +257,7 @@ public static class GatePassEndpoints
             p.Id,
             p.Number,
             p.Reference,
+            p.IsReturnable,
             p.PassDate,
             p.VendorName,
             p.ContactPerson,
@@ -263,10 +279,14 @@ public static class GatePassEndpoints
             {
                 i.Id,
                 i.EquipmentId,
+                i.SparePartId,
                 i.Description,
                 i.AssetCode,
                 i.Quantity,
                 i.Remarks,
+                SparePart = i.SparePart is null
+                    ? null
+                    : new { i.SparePart.Id, i.SparePart.PartNumber, i.SparePart.Name, i.SparePart.IsReturnable },
                 // The machine's own record, for the link and the place it was taken from.
                 Machine = i.Machine is null
                     ? null
@@ -311,7 +331,8 @@ public static class GatePassEndpoints
             p.Status == GatePassStatus.Cancelled,
             p.AuthorisedBy,
             preparedBy,
-            p.Items.OrderBy(i => i.Id).Select(i => new GatePassReportItem(i.Description, i.AssetCode, i.Quantity, i.Remarks)).ToList());
+            p.Items.OrderBy(i => i.Id).Select(i => new GatePassReportItem(i.Description, i.AssetCode, i.Quantity, i.Remarks)).ToList(),
+            p.IsReturnable);
 
         var pdf = new GatePassDocument(data, options.Value).GeneratePdf();
 
@@ -327,7 +348,8 @@ public static class GatePassEndpoints
         ClaimsPrincipal principal,
         CancellationToken ct)
     {
-        var (items, error) = await ValidateAsync(request, null, db, clock, ct);
+        var returnable = request.IsReturnable ?? true;
+        var (items, error) = await ValidateAsync(request, null, returnable, db, clock, ct);
         if (error is not null)
         {
             return error;
@@ -335,6 +357,7 @@ public static class GatePassEndpoints
 
         var pass = new GatePass
         {
+            IsReturnable = returnable,
             PassDate = request.PassDate ?? clock.Today(),
             VendorName = request.VendorName!.Trim(),
             ContactPerson = Blank(request.ContactPerson),
@@ -344,7 +367,8 @@ public static class GatePassEndpoints
             ExpectedReturnDate = request.ExpectedReturnDate,
             AuthorisedBy = Blank(request.AuthorisedBy),
             Notes = Blank(request.Notes),
-            Status = GatePassStatus.Out,
+            // A pass for goods that are not coming back is never "out": it is issued, and that is all there is to it.
+            Status = returnable ? GatePassStatus.Out : GatePassStatus.Issued,
             CreatedByUserId = EquipmentMoveEndpoints.UserId(principal),
             Items = items,
         };
@@ -352,8 +376,24 @@ public static class GatePassEndpoints
         // Out of the hospital is out of service: the register says Under repair for as long as it is away.
         await TakeOutAsync(db, items, ct);
 
-        db.GatePasses.Add(pass);
-        await db.SaveChangesAsync(ct);
+        if (returnable)
+        {
+            db.GatePasses.Add(pass);
+            await db.SaveChangesAsync(ct);
+        }
+        else
+        {
+            // The database keeps the lines of a pass that is no longer out from being added to, so they are written while it
+            // is still open and the pass is then issued, in the one transaction.
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+            pass.Status = GatePassStatus.Out;
+            db.GatePasses.Add(pass);
+            await db.SaveChangesAsync(ct);
+
+            pass.Status = GatePassStatus.Issued;
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+        }
 
         return Results.Created($"/api/gate-passes/{pass.Id}", new { pass.Id, pass.Number, pass.Reference });
     }
@@ -373,10 +413,20 @@ public static class GatePassEndpoints
 
         if (pass.Status != GatePassStatus.Out)
         {
-            return Results.Conflict(new { error = $"{pass.Reference} has been {StatusName(pass.Status).ToLowerInvariant()} and can no longer be changed." });
+            return Results.Conflict(new
+            {
+                error = pass.Status == GatePassStatus.Issued
+                    ? $"{pass.Reference} is a non-returnable pass and cannot be changed. Cancel it and write a new one."
+                    : $"{pass.Reference} has been {StatusName(pass.Status).ToLowerInvariant()} and can no longer be changed.",
+            });
         }
 
-        var (items, error) = await ValidateAsync(request, id, db, clock, ct);
+        if (request.IsReturnable is { } kind && kind != pass.IsReturnable)
+        {
+            return Results.BadRequest(new { error = "A returnable pass cannot be turned into a non-returnable one. Cancel it and write a new pass." });
+        }
+
+        var (items, error) = await ValidateAsync(request, id, pass.IsReturnable, db, clock, ct);
         if (error is not null)
         {
             return error;
@@ -427,6 +477,11 @@ public static class GatePassEndpoints
             return Results.NotFound();
         }
 
+        if (pass.Status == GatePassStatus.Issued)
+        {
+            return Results.Conflict(new { error = $"{pass.Reference} is a non-returnable pass: the goods do not come back." });
+        }
+
         if (pass.Status != GatePassStatus.Out)
         {
             return Results.Conflict(new { error = $"{pass.Reference} is already {StatusName(pass.Status).ToLowerInvariant()}." });
@@ -474,7 +529,7 @@ public static class GatePassEndpoints
             return Results.NotFound();
         }
 
-        if (pass.Status != GatePassStatus.Out)
+        if (pass.Status is not (GatePassStatus.Out or GatePassStatus.Issued))
         {
             return Results.Conflict(new { error = $"{pass.Reference} is already {StatusName(pass.Status).ToLowerInvariant()}." });
         }
@@ -553,7 +608,7 @@ public static class GatePassEndpoints
     // ---------------------------------------------------------------- rules
 
     private static async Task<(List<GatePassItem> Items, IResult? Error)> ValidateAsync(
-        GatePassRequest request, int? thisPassId, HospitalPmDbContext db, HospitalClock clock, CancellationToken ct)
+        GatePassRequest request, int? thisPassId, bool returnable, HospitalPmDbContext db, HospitalClock clock, CancellationToken ct)
     {
         List<GatePassItem> none = [];
         static (List<GatePassItem>, IResult?) Bad(string message) => ([], Results.BadRequest(new { error = message }));
@@ -592,6 +647,11 @@ public static class GatePassEndpoints
             return Bad("The day it is expected back cannot be before the pass was written, or more than five years after.");
         }
 
+        if (!returnable && request.ExpectedReturnDate is not null)
+        {
+            return Bad("A non-returnable pass has no date of return. Take the date out, or write a returnable pass.");
+        }
+
         if (request.WorkOrderId is { } workOrderId && !await db.WorkOrders.AnyAsync(w => w.Id == workOrderId, ct))
         {
             return Bad("Unknown service request.");
@@ -614,10 +674,18 @@ public static class GatePassEndpoints
             return Bad("The same machine is listed twice. Take one of the lines out.");
         }
 
+        if (!returnable && machineIds.Count > 0)
+        {
+            return Bad("A non-returnable pass is for spare parts and accessories. A machine that leaves for good is condemned or disposed of on its own page.");
+        }
+
         var machines = await db.Equipment.AsNoTracking()
             .Include(e => e.EquipmentType)
             .Where(e => machineIds.Contains(e.Id))
             .ToDictionaryAsync(e => e.Id, ct);
+
+        var partIds = requested.Where(i => i.SparePartId is not null).Select(i => i.SparePartId!.Value).Distinct().ToList();
+        var parts = await db.SpareParts.AsNoTracking().Where(sp => partIds.Contains(sp.Id)).ToDictionaryAsync(sp => sp.Id, ct);
 
         // A machine is in one place. If it is already out on another pass it has not come back to go out again.
         var alreadyOut = await db.GatePassItems.AsNoTracking()
@@ -632,11 +700,31 @@ public static class GatePassEndpoints
             string description;
             string? assetCode = Blank(line.AssetCode);
 
-            if (line.EquipmentId is { } machineId)
+            if (line.SparePartId is { } partId)
+            {
+                if (line.EquipmentId is not null)
+                {
+                    return Bad("A line is a machine or a spare part, not both.");
+                }
+
+                if (!parts.TryGetValue(partId, out var part))
+                {
+                    return Bad("One of the spare parts chosen is not on the register.");
+                }
+
+                description = Blank(line.Description) ?? DescribePart(part);
+                assetCode ??= part.PartNumber;
+            }
+            else if (line.EquipmentId is { } machineId)
             {
                 if (!machines.TryGetValue(machineId, out var machine))
                 {
                     return Bad("One of the machines chosen is not on the register.");
+                }
+
+                if (machine.Status == EquipmentStatus.Lost)
+                {
+                    return Bad($"{machine.AssetTag} is recorded as lost, so it cannot be sent out. Mark it found on its loss record first.");
                 }
 
                 if (alreadyOut.FirstOrDefault(o => o.EquipmentId == machineId) is { } out1)
@@ -681,6 +769,7 @@ public static class GatePassEndpoints
             items.Add(new GatePassItem
             {
                 EquipmentId = line.EquipmentId,
+                SparePartId = line.SparePartId,
                 Description = description,
                 AssetCode = assetCode,
                 Quantity = quantity,
@@ -689,6 +778,19 @@ public static class GatePassEndpoints
         }
 
         return (items, null);
+    }
+
+    /// <summary>"SpO2 sensor, adult, 3 m - Philips MX450": the part's name and what it is, and what it is for.</summary>
+    private static string DescribePart(HospitalPm.Domain.Inventory.SparePart p)
+    {
+        var text = string.IsNullOrWhiteSpace(p.Specification) ? p.Name : $"{p.Name}, {p.Specification.Trim()}";
+        var fits = string.Join(' ', new[] { p.Manufacturer, p.CompatibleModels }.Where(x => !string.IsNullOrWhiteSpace(x)));
+        if (fits.Length > 0)
+        {
+            text += $" - {fits}";
+        }
+
+        return text.Length > MaxDescriptionLength ? text[..MaxDescriptionLength] : text;
     }
 
     /// <summary>"Ventilator - Hamilton C1, serial 12345": what a security guard can match against the machine in a trolley.</summary>
@@ -727,6 +829,7 @@ public static class GatePassEndpoints
         "overdue" => "overdue",
         "returned" => "returned",
         "cancelled" => "cancelled",
+        "issued" => "issued",
         _ => null,
     };
 
@@ -734,6 +837,7 @@ public static class GatePassEndpoints
     {
         GatePassStatus.Out => "Out",
         GatePassStatus.Returned => "Returned",
+        GatePassStatus.Issued => "Issued",
         _ => "Cancelled",
     };
 

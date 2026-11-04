@@ -36,6 +36,24 @@ public sealed class SparePart
     /// </summary>
     public int? EquipmentTypeId { get; set; }
 
+    /// <summary>
+    /// The make of machine it fits ("Philips", "Mindray"), matched against the Manufacturer on the equipment register.
+    /// Optional: a generic part fits any make.
+    /// </summary>
+    public string? Manufacturer { get; set; }
+
+    /// <summary>
+    /// The models it fits, written the way the department would say them: "BeneVision N12, N15" or one per line.
+    /// Free text, because the register's model names are free text too and a part often fits a whole family.
+    /// </summary>
+    public string? CompatibleModels { get; set; }
+
+    /// <summary>What the part is, technically: "2 A, 250 V, 5 x 20 mm slow-blow", "Adult reusable, 3 m". Free text.</summary>
+    public string? Specification { get; set; }
+
+    /// <summary>The maker's own code for the part, which is not the department's <see cref="PartNumber"/>. What a supplier is asked for.</summary>
+    public string? ManufacturerPartNumber { get; set; }
+
     /// <summary>"pcs", "box", "metre" - whatever the department counts it in.</summary>
     public string Unit { get; set; } = "pcs";
 
@@ -71,6 +89,13 @@ public sealed class SparePart
 
     /// <summary>Where it physically sits - "Store Room A, Rack 3". Free text; there is no shelf register to key against.</summary>
     public string? StorageLocation { get; set; }
+
+    /// <summary>
+    /// Whether this kind of part goes back to the vendor when it is faulty or still under warranty (a board, a sensor,
+    /// a module), as against one that is used up or thrown away (a fuse, tubing). It says how a part leaves on a gate
+    /// pass, and nothing else: stock is counted the same.
+    /// </summary>
+    public bool IsReturnable { get; set; }
 
     public bool IsActive { get; set; } = true;
 

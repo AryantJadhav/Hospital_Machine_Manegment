@@ -60,6 +60,8 @@ const FIRST_PLACEABLE_LEVEL = 30;
 // InStore and InService are the ones anyone picks by hand. Condemned and
 // Disposed are deliberately absent: retiring a machine stops its PM programme,
 // so it is its own confirmed action rather than an option in a dropdown.
+const LOST_STATUS = 60;
+
 const STATUSES = [
   { value: 10, label: 'In store — received, not yet commissioned' },
   { value: 20, label: 'In use' },
@@ -335,7 +337,10 @@ export function EquipmentForm({
             className="field"
             value={form.status}
             onChange={(e) => set('status', Number(e.target.value))}
+            // Lost is set and cleared by its loss record, so a lost machine's status is not picked here.
+            disabled={Number(form.status) === LOST_STATUS}
           >
+            {Number(form.status) === LOST_STATUS && <option value={LOST_STATUS}>Lost — see Loss of equipment</option>}
             {STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
         </label>

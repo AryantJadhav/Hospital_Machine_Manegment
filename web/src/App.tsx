@@ -38,6 +38,10 @@ import { IncidentNewPage } from './pages/IncidentForm';
 import { IncidentPage } from './pages/IncidentPage';
 import { IncidentReportPreviewPage, IncidentsSummaryPreviewPage } from './pages/IncidentReportPreviewPages';
 import { IncidentsPage } from './pages/IncidentsPage';
+import { LossNewPage } from './pages/LossForm';
+import { LossPage } from './pages/LossPage';
+import { LossReportPreviewPage, LossesSummaryPreviewPage } from './pages/LossReportPreviewPages';
+import { LossesPage } from './pages/LossesPage';
 import { GatePassNewPage } from './pages/GatePassForm';
 import { GatePassPage } from './pages/GatePassPage';
 import { GatePassPreviewPage } from './pages/GatePassPreviewPage';
@@ -213,6 +217,13 @@ function Shell() {
             </NavLink>
           )}
 
+          {/* A machine that was lost, stolen or went missing while away: the department, the engineers and the head of Biomedical. */}
+          {may(PERMISSIONS.lossesView) && (
+            <NavLink to="/losses" title="Machines that were lost or stolen, and what was done" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+              Loss of equipment
+            </NavLink>
+          )}
+
           {/* Machines sent out of the hospital to a vendor for repair, and when they are due back. */}
           {may(PERMISSIONS.gatePassView) && (
             <NavLink to="/gate-passes" title="Machines going out of the hospital, and coming back" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
@@ -276,6 +287,11 @@ function Shell() {
           <Route path="/incidents/report" element={needs(PERMISSIONS.incidentsView, <IncidentsSummaryPreviewPage />)} />
           <Route path="/incidents/:id" element={needs(PERMISSIONS.incidentsView, <IncidentPage />)} />
           <Route path="/incidents/:id/report" element={needs(PERMISSIONS.incidentsView, <IncidentReportPreviewPage />)} />
+          <Route path="/losses" element={needs(PERMISSIONS.lossesView, <LossesPage />)} />
+          <Route path="/losses/new" element={needs(PERMISSIONS.lossesReport, <LossNewPage />)} />
+          <Route path="/losses/report" element={needs(PERMISSIONS.lossesView, <LossesSummaryPreviewPage />)} />
+          <Route path="/losses/:id" element={needs(PERMISSIONS.lossesView, <LossPage />)} />
+          <Route path="/losses/:id/report" element={needs(PERMISSIONS.lossesView, <LossReportPreviewPage />)} />
           <Route path="/gate-passes" element={needs(PERMISSIONS.gatePassView, <GatePassesPage />)} />
           <Route path="/gate-passes/new" element={needs(PERMISSIONS.gatePassEdit, <GatePassNewPage />)} />
           <Route path="/gate-passes/:id" element={needs(PERMISSIONS.gatePassView, <GatePassPage />)} />

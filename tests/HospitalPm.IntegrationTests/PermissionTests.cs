@@ -50,6 +50,43 @@ public sealed class PermissionTests(PostgresFixture fixture) : IAsyncLifetime, I
     }
 
     [Fact]
+    public void A_lost_machine_is_for_the_department_the_engineer_and_the_head_only_and_each_step_belongs_to_its_own_role()
+    {
+        // Seen by the department, the biomedical engineer and the head (and the developer); never by the IT team.
+        foreach (var role in new[] { Roles.DepartmentUser, Roles.BmeEngineer, Roles.BmeHead, Roles.Developer })
+        {
+            Assert.Contains(Permissions.LossesView, RolePermissions.For(role));
+            Assert.Contains(Permissions.LossesReport, RolePermissions.For(role));
+        }
+
+        Assert.DoesNotContain(Permissions.LossesView, RolePermissions.For(Roles.ItAdmin));
+        Assert.DoesNotContain(Permissions.LossesReport, RolePermissions.For(Roles.ItAdmin));
+
+        // The engineer's step (approve, reject, mark found): the engineer and the head, not the department.
+        foreach (var role in new[] { Roles.BmeEngineer, Roles.BmeHead, Roles.Developer })
+        {
+            Assert.Contains(Permissions.LossesReview, RolePermissions.For(role));
+        }
+
+        Assert.DoesNotContain(Permissions.LossesReview, RolePermissions.For(Roles.DepartmentUser));
+        Assert.DoesNotContain(Permissions.LossesReview, RolePermissions.For(Roles.ItAdmin));
+
+        // The final decision: the head's alone (and the developer's).
+        Assert.Contains(Permissions.LossesDecide, RolePermissions.For(Roles.BmeHead));
+        Assert.Contains(Permissions.LossesDecide, RolePermissions.For(Roles.Developer));
+        foreach (var role in new[] { Roles.BmeEngineer, Roles.DepartmentUser, Roles.ItAdmin })
+        {
+            Assert.DoesNotContain(Permissions.LossesDecide, RolePermissions.For(role));
+        }
+
+        // They come with the role: the access page cannot hand any of them to one person by name.
+        foreach (var permission in new[] { Permissions.LossesView, Permissions.LossesReport, Permissions.LossesReview, Permissions.LossesDecide })
+        {
+            Assert.False(PermissionCatalog.IsGrantable(permission));
+        }
+    }
+
+    [Fact]
     public void A_developer_holds_every_permission()
     {
         Assert.True(RolePermissions.For(Roles.Developer).SetEquals(Permissions.All));
@@ -136,6 +173,8 @@ public sealed class PermissionTests(PostgresFixture fixture) : IAsyncLifetime, I
             Permissions.PmWork, Permissions.WorkOrdersView, Permissions.WorkOrdersReport, Permissions.WorkOrdersNote,
             Permissions.WorkOrdersWork, Permissions.EquipmentMove, Permissions.GatePassView, Permissions.GatePassEdit,
             Permissions.IncidentsView, Permissions.IncidentsManage,
+            // A lost machine: they write it up, or look into a department's and approve it for the head. Not the final decision.
+            Permissions.LossesView, Permissions.LossesReport, Permissions.LossesReview,
         ];
         Assert.True(engineer.SetEquals(floor));
 
@@ -198,6 +237,8 @@ public sealed class PermissionTests(PostgresFixture fixture) : IAsyncLifetime, I
         [
             Permissions.DepartmentView, Permissions.WorkOrdersView, Permissions.WorkOrdersReport, Permissions.WorkOrdersNote,
             Permissions.WorkOrdersAcknowledge, Permissions.IncidentsView, Permissions.IncidentsReport,
+            // A lost machine: they write it up, and it goes to a biomedical engineer.
+            Permissions.LossesView, Permissions.LossesReport,
         ]));
 
         // The head holds it too (and so may answer for a department); the engineer who does the work does not.

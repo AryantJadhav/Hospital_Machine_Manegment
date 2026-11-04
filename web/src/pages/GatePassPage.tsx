@@ -87,6 +87,8 @@ export function GatePassPage() {
   }
 
   const isOut = pass.status === 'Out';
+  // A non-returnable pass cannot be corrected or come back; the only thing left to do with it is cancel it.
+  const canCancelIssued = pass.status === 'Issued';
   const back = (location.state as { from?: string } | null)?.from ?? '/gate-passes';
 
   return (
@@ -112,6 +114,9 @@ export function GatePassPage() {
               <button className="btn btn-quiet" onClick={() => setClosing('cancel')}>Cancel the pass</button>
             </>
           )}
+          {canEdit && canCancelIssued && closing === null && (
+            <button className="btn btn-quiet" onClick={() => setClosing('cancel')}>Cancel the pass</button>
+          )}
         </div>
       </header>
 
@@ -120,6 +125,7 @@ export function GatePassPage() {
 
       <div className="row">
         <StatusPill tone={GATE_PASS_TONE[pass.status]}>{GATE_PASS_LABEL[pass.status]}</StatusPill>
+        {!pass.isReturnable && pass.status === 'Cancelled' && <StatusPill tone="neutral">Was not returnable</StatusPill>}
         {pass.isOverdue && pass.expectedReturnDate && (
           <StatusPill tone="danger">Overdue since {formatDate(pass.expectedReturnDate)}</StatusPill>
         )}
@@ -171,14 +177,23 @@ export function GatePassPage() {
           <dd>{pass.purpose}</dd>
           <dt>Date</dt>
           <dd>{formatDate(pass.passDate)}</dd>
-          <dt>Expected date of return</dt>
-          <dd>{pass.expectedReturnDate ? formatDate(pass.expectedReturnDate) : <span className="muted">—</span>}</dd>
-          <dt>Actual date of return</dt>
-          <dd>
-            {pass.returnedOn
-              ? `${formatDate(pass.returnedOn)}${pass.daysOut !== null ? ` (away ${describeDays(pass.daysOut)})` : ''}`
-              : <span className="muted">—</span>}
-          </dd>
+          {pass.isReturnable ? (
+            <>
+              <dt>Expected date of return</dt>
+              <dd>{pass.expectedReturnDate ? formatDate(pass.expectedReturnDate) : <span className="muted">—</span>}</dd>
+              <dt>Actual date of return</dt>
+              <dd>
+                {pass.returnedOn
+                  ? `${formatDate(pass.returnedOn)}${pass.daysOut !== null ? ` (away ${describeDays(pass.daysOut)})` : ''}`
+                  : <span className="muted">—</span>}
+              </dd>
+            </>
+          ) : (
+            <>
+              <dt>Return</dt>
+              <dd>Not returnable: the goods leave for good.</dd>
+            </>
+          )}
           <dt>Request no.</dt>
           <dd>
             {pass.workOrder ? (
@@ -227,7 +242,11 @@ export function GatePassPage() {
                   {i.machine?.locationName && <div className="muted">Taken from {i.machine.locationName}</div>}
                 </td>
                 <td className="mono">
-                  {i.machine ? (
+                  {i.sparePart ? (
+                    <Link to={`/spare-parts?q=${encodeURIComponent(i.sparePart.partNumber)}`} state={{ from: `/gate-passes/${pass.id}` }}>
+                      {i.assetCode ?? i.sparePart.partNumber}
+                    </Link>
+                  ) : i.machine ? (
                     <Link to={`/equipment/${i.machine.id}`} state={{ from: `/gate-passes/${pass.id}` }}>{i.assetCode ?? i.machine.assetTag}</Link>
                   ) : (
                     i.assetCode ?? <span className="muted">NA</span>
@@ -306,8 +325,9 @@ function CloseForm({
         </label>
       ) : (
         <p className="muted" style={{ margin: 0 }}>
-          Use this when the machine never left. The number stays on the list as cancelled, the register puts the
-          machine back as it was, and it can be sent out on a new pass.
+          {pass.isReturnable
+            ? 'Use this when the machine never left. The number stays on the list as cancelled, the register puts the machine back as it was, and it can be sent out on a new pass.'
+            : 'Use this when the goods did not leave, or the pass was written wrong. The number stays on the list as cancelled, and a new pass can be written.'}
         </p>
       )}
 

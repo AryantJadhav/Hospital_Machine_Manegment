@@ -83,8 +83,12 @@ export const PAGE_HELP: PageHelp[] = [
   {
     test: /^\/spare-parts/,
     title: 'Spare parts',
-    purpose: 'The parts in stock. Parts that are low or out of stock are marked.',
-    can: ['Parts used on a repair are recorded on that repair, and taken from stock for you.'],
+    purpose: 'The parts in stock, and what each one is and which machines it fits. Parts that are low or out of stock are marked.',
+    can: [
+      'Parts used on a repair are recorded on that repair, and taken from stock for you.',
+      'Search by make, model or specification to find the right part for a machine.',
+      'A Returnable part goes back to the vendor when it is faulty or under warranty.',
+    ],
   },
   {
     test: /^\/locations/,
@@ -108,10 +112,35 @@ export const PAGE_HELP: PageHelp[] = [
     can: ['Anyone can write one up. The biomedical team looks into it, says what caused it, and closes it.'],
   },
   {
+    test: /^\/losses\/\d+/,
+    title: 'One lost machine',
+    purpose: 'Everything about one machine that was lost, stolen or went missing, from the day it was missed to how it ended.',
+    can: [
+      'It goes up in three steps: the department reports it, a biomedical engineer looks into it and approves it, and the head of Biomedical makes the final decision.',
+      'The engineer can also reject it if the machine was not lost. The head can write it off, or send it back to the engineer.',
+      'While it is open the machine shows as Lost on the register, and it is not maintained or sent out. If it turns up, an engineer or the head presses It was found.',
+      'View loss report makes the printed record, with places to sign.',
+    ],
+  },
+  {
+    test: /^\/losses/,
+    title: 'Loss of equipment',
+    purpose: 'Machines that were lost, stolen, or went missing while away, and how each case ended. Seen only by the department, the biomedical engineers and the head.',
+    can: [
+      'Press Report a loss, choose the machine and say what happened. A report from a department goes to an engineer; one from an engineer goes straight to the head.',
+      'Use the tabs to see what is waiting for an engineer and what is waiting for the head.',
+      'Print the loss report for any period, with what the machines were worth.',
+      'A machine that is found goes back on the register as it was.',
+    ],
+  },
+  {
     test: /^\/gate-passes/,
     title: 'Gate passes',
-    purpose: 'Machines going out of the hospital, for example to the maker for repair, and coming back.',
-    can: ['Write a pass, print it, and record when the machine is back.'],
+    purpose: 'Machines and parts going out of the hospital, for example to the maker for repair, and coming back.',
+    can: [
+      'Write a pass, print it, and record when the machine is back.',
+      'Choose Not returnable for parts that leave for good, such as a faulty part handed to the vendor. Nothing is waited for.',
+    ],
   },
   {
     test: /^\/training/,
@@ -122,7 +151,7 @@ export const PAGE_HELP: PageHelp[] = [
   {
     test: /^\/reports/,
     title: 'Reports',
-    purpose: 'Downtime, cost, work done, response times, training and spare-part stock, for a period you choose.',
+    purpose: 'Downtime, cost, work done, response times, training, lost equipment and spare-part stock, for a period you choose.',
     can: ['Pick the report at the top and the dates. Download any of them as a spreadsheet.'],
   },
   {
@@ -238,7 +267,12 @@ export const GLOSSARY: { term: string; meaning: string }[] = [
   { term: 'Asset tag', meaning: 'The number on the label stuck to a machine. It identifies that one machine.' },
   { term: 'Age and expected life', meaning: 'Age is counted from the day the machine was installed (or bought). Expected life is how many years it should stay in service.' },
   { term: 'Retired (condemned)', meaning: 'A machine taken out of service for good. It stays on the register so its history can still be read, but no more maintenance is planned for it.' },
+  { term: 'Lost (equipment)', meaning: 'A machine recorded as lost, stolen or missing. It drops out of maintenance and cannot be sent out. When it is found it goes back to what it was; if it is written off it stays on the register, marked Lost, so its history is kept.' },
+  { term: 'Write-off', meaning: 'The head of Biomedical accepts that a lost machine is not coming back. It is never deleted: the record and the machine stay for the audit.' },
+  { term: 'Approve (a loss)', meaning: 'A biomedical engineer has looked into a loss and says it should go to the head for the final decision.' },
   { term: 'Gate pass', meaning: 'The paper that lets a machine leave the hospital, for example to go to the maker for repair.' },
+  { term: 'Returnable and not returnable', meaning: 'A returnable gate pass is for goods that come back, and it waits for the day they do. A not returnable pass is for goods that leave for good, such as a faulty part handed to the vendor.' },
+  { term: 'Returnable part', meaning: 'A spare part that goes back to the vendor when it is faulty or still under warranty, instead of being thrown away.' },
   { term: 'AMC', meaning: 'Annual maintenance contract: a vendor looks after the machine each year for a fee.' },
   { term: 'CMC', meaning: 'Comprehensive maintenance contract: like an AMC, and the parts are covered too.' },
   { term: 'Checklist', meaning: 'The list of checks done in a planned maintenance. Once published it cannot be edited; a change is a new version.' },

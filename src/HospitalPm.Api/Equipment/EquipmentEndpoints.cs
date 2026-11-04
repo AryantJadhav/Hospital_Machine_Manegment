@@ -768,9 +768,23 @@ public static class EquipmentEndpoints
             return Results.BadRequest(new { error = lifeProblem });
         }
 
-        if (request.Status is { } status && !Enum.IsDefined(status))
+        if (request.Status is { } status)
         {
-            return Results.BadRequest(new { error = "Unknown status." });
+            if (!Enum.IsDefined(status))
+            {
+                return Results.BadRequest(new { error = "Unknown status." });
+            }
+
+            // Lost is set and cleared by a loss record, never by hand: it is what ties the register to the record.
+            if (status == EquipmentStatus.Lost && existing?.Status != EquipmentStatus.Lost)
+            {
+                return Results.BadRequest(new { error = "Record a lost machine on the Loss of equipment page. The register is marked Lost for you." });
+            }
+
+            if (status != EquipmentStatus.Lost && existing?.Status == EquipmentStatus.Lost)
+            {
+                return Results.BadRequest(new { error = "This machine is recorded as lost. Mark it found or written off on its loss record to change its status." });
+            }
         }
 
         if (request.Criticality is { } criticality && !Enum.IsDefined(criticality))

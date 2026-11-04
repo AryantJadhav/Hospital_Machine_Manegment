@@ -44,6 +44,28 @@ public static class Permissions
 
     /// <summary>Look into an incident, correct it, say what caused it and close it. The biomedical team's.</summary>
     public const string IncidentsManage = "incidents.manage";
+
+    /// <summary>
+    /// See the losses of equipment (a machine lost, stolen or missing while away): the ones in one's own departments for
+    /// a person from another department, all of them for the biomedical engineers and the head. Not the IT team's.
+    /// Like the three below, it comes with the role and is not in the permission catalog, so it cannot be given by name.
+    /// </summary>
+    public const string LossesView = "losses.view";
+
+    /// <summary>
+    /// Write up a loss. A department user does, and it goes to a biomedical engineer to approve; an engineer or the head
+    /// does, and it goes straight to the head for the final decision.
+    /// </summary>
+    public const string LossesReport = "losses.report";
+
+    /// <summary>
+    /// The biomedical engineer's step: look into a loss, correct it, approve it so it goes to the head, mark the machine
+    /// found, or reject it as not lost. Held by the engineers and the head.
+    /// </summary>
+    public const string LossesReview = "losses.review";
+
+    /// <summary>The head of Biomedical's final decision on a loss: write it off, or send it back to the engineer.</summary>
+    public const string LossesDecide = "losses.decide";
     public const string WorkOrdersView = "work-orders.view";
 
     /// <summary>
@@ -140,6 +162,7 @@ public static class Permissions
     public static readonly IReadOnlyList<string> All =
     [
         RegisterView, SparePartsView, ChecklistsView, TrainingView, PmWork, GatePassView, GatePassEdit, IncidentsView, IncidentsReport, IncidentsManage,
+        LossesView, LossesReport, LossesReview, LossesDecide,
         WorkOrdersView, WorkOrdersReport, WorkOrdersNote, WorkOrdersWork, EquipmentMove, DepartmentView,
         EquipmentEdit, EquipmentTypesEdit, LocationsEdit, LabelsPrint, DataImport, DataExport,
         ChecklistsEdit, PmManage, WorkOrdersAssign, WorkOrdersCancel, ResponseTimesEdit, WorkOrdersReview, WorkOrdersAcknowledge, AttachmentsDelete,

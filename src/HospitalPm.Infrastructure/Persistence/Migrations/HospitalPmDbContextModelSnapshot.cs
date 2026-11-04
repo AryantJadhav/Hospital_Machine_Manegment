@@ -621,6 +621,12 @@ namespace HospitalPm.Infrastructure.Persistence.Migrations
                         .HasColumnType("date")
                         .HasColumnName("expected_return_date");
 
+                    b.Property<bool>("IsReturnable")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_returnable");
+
                     b.Property<string>("Notes")
                         .HasColumnType("text")
                         .HasColumnName("notes");
@@ -736,6 +742,10 @@ namespace HospitalPm.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(500)")
                         .HasColumnName("remarks");
 
+                    b.Property<int?>("SparePartId")
+                        .HasColumnType("integer")
+                        .HasColumnName("spare_part_id");
+
                     b.Property<int>("TenantId")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
@@ -749,6 +759,9 @@ namespace HospitalPm.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("GatePassId")
                         .HasDatabaseName("ix_gate_pass_item_pass");
+
+                    b.HasIndex("SparePartId")
+                        .HasDatabaseName("ix_gate_pass_item_spare_part");
 
                     b.ToTable("gate_pass_item", (string)null);
                 });
@@ -981,6 +994,11 @@ namespace HospitalPm.Infrastructure.Persistence.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("CompatibleModels")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("compatible_models");
+
                     b.Property<DateTime>("CreatedAtUtc")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")
@@ -1000,6 +1018,22 @@ namespace HospitalPm.Infrastructure.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasDefaultValue(true)
                         .HasColumnName("is_active");
+
+                    b.Property<bool>("IsReturnable")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_returnable");
+
+                    b.Property<string>("Manufacturer")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("manufacturer");
+
+                    b.Property<string>("ManufacturerPartNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("manufacturer_part_number");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -1032,6 +1066,11 @@ namespace HospitalPm.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasDefaultValue(0)
                         .HasColumnName("reorder_level");
+
+                    b.Property<string>("Specification")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("specification");
 
                     b.Property<string>("StorageLocation")
                         .HasMaxLength(200)
@@ -1260,6 +1299,144 @@ namespace HospitalPm.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ux_location_tenant_code");
 
                     b.ToTable("location", (string)null);
+                });
+
+            modelBuilder.Entity("HospitalPm.Domain.Losses.EquipmentLoss", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("ApprovedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("approved_at_utc");
+
+                    b.Property<int?>("ApprovedByUserId")
+                        .HasColumnType("integer")
+                        .HasColumnName("approved_by_user_id");
+
+                    b.Property<DateTime?>("ClosedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("closed_at_utc");
+
+                    b.Property<int?>("ClosedByUserId")
+                        .HasColumnType("integer")
+                        .HasColumnName("closed_by_user_id");
+
+                    b.Property<string>("CorrectiveAction")
+                        .HasColumnType("text")
+                        .HasColumnName("corrective_action");
+
+                    b.Property<string>("DecisionNotes")
+                        .HasColumnType("text")
+                        .HasColumnName("decision_notes");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<int>("EquipmentId")
+                        .HasColumnType("integer")
+                        .HasColumnName("equipment_id");
+
+                    b.Property<int?>("EquipmentStatusBefore")
+                        .HasColumnType("integer")
+                        .HasColumnName("equipment_status_before");
+
+                    b.Property<decimal?>("EstimatedValue")
+                        .HasColumnType("numeric(14,2)")
+                        .HasColumnName("estimated_value");
+
+                    b.Property<string>("Findings")
+                        .HasColumnType("text")
+                        .HasColumnName("findings");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer")
+                        .HasColumnName("loss_kind");
+
+                    b.Property<string>("LastHandledBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("last_handled_by");
+
+                    b.Property<DateOnly?>("LastSeenOn")
+                        .HasColumnType("date")
+                        .HasColumnName("last_seen_on");
+
+                    b.Property<string>("LastSeenPlace")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("last_seen_place");
+
+                    b.Property<int>("LocationId")
+                        .HasColumnType("integer")
+                        .HasColumnName("location_id");
+
+                    b.Property<DateOnly>("NoticedOn")
+                        .HasColumnType("date")
+                        .HasColumnName("noticed_on");
+
+                    b.Property<string>("PoliceReportNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("police_report_number");
+
+                    b.Property<DateOnly?>("PoliceReportedOn")
+                        .HasColumnType("date")
+                        .HasColumnName("police_reported_on");
+
+                    b.Property<DateOnly?>("RecoveredOn")
+                        .HasColumnType("date")
+                        .HasColumnName("recovered_on");
+
+                    b.Property<DateTime>("ReportedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reported_at_utc");
+
+                    b.Property<int>("ReportedByUserId")
+                        .HasColumnType("integer")
+                        .HasColumnName("reported_by_user_id");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer")
+                        .HasColumnName("status");
+
+                    b.Property<int>("TenantId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc")
+                        .HasDefaultValueSql("now()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EquipmentId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_equipment_loss_open")
+                        .HasFilter("status IN (10, 20, 25)");
+
+                    b.HasIndex("LocationId");
+
+                    b.HasIndex("NoticedOn")
+                        .HasDatabaseName("ix_equipment_loss_noticed_on");
+
+                    b.HasIndex("ReportedByUserId")
+                        .HasDatabaseName("ix_equipment_loss_reported_by");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("ix_equipment_loss_status");
+
+                    b.ToTable("equipment_loss", (string)null);
                 });
 
             modelBuilder.Entity("HospitalPm.Domain.Maintenance.PmCompletion", b =>
@@ -2586,9 +2763,16 @@ namespace HospitalPm.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("HospitalPm.Domain.Inventory.SparePart", "SparePart")
+                        .WithMany()
+                        .HasForeignKey("SparePartId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("GatePass");
 
                     b.Navigation("Machine");
+
+                    b.Navigation("SparePart");
                 });
 
             modelBuilder.Entity("HospitalPm.Domain.Identity.PermissionGrant", b =>
@@ -2652,6 +2836,25 @@ namespace HospitalPm.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Parent");
+                });
+
+            modelBuilder.Entity("HospitalPm.Domain.Losses.EquipmentLoss", b =>
+                {
+                    b.HasOne("HospitalPm.Domain.Assets.Equipment", "Equipment")
+                        .WithMany()
+                        .HasForeignKey("EquipmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("HospitalPm.Domain.Locations.Location", "Location")
+                        .WithMany()
+                        .HasForeignKey("LocationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Equipment");
+
+                    b.Navigation("Location");
                 });
 
             modelBuilder.Entity("HospitalPm.Domain.Maintenance.PmCompletion", b =>

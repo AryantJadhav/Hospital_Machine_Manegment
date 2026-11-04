@@ -7,6 +7,8 @@ import type { GatePassItem } from '../gatePassTypes';
 export type ItemRow = {
   key: number;
   equipmentId: number | null;
+  /** The spare part this line is, when it is one. */
+  sparePartId: number | null;
   description: string;
   assetCode: string;
   quantity: string;
@@ -21,17 +23,22 @@ export function newKey(): number {
 }
 
 export function blankRow(): ItemRow {
-  return { key: newKey(), equipmentId: null, description: '', assetCode: '', quantity: '1', remarks: '' };
+  return { key: newKey(), equipmentId: null, sparePartId: null, description: '', assetCode: '', quantity: '1', remarks: '' };
 }
 
 export function machineRow(machineId: number, assetTag: string, description: string): ItemRow {
-  return { key: newKey(), equipmentId: machineId, description, assetCode: assetTag, quantity: '1', remarks: '' };
+  return { key: newKey(), equipmentId: machineId, sparePartId: null, description, assetCode: assetTag, quantity: '1', remarks: '' };
+}
+
+export function partRow(partId: number, partNumber: string, description: string): ItemRow {
+  return { key: newKey(), equipmentId: null, sparePartId: partId, description, assetCode: partNumber, quantity: '1', remarks: '' };
 }
 
 /** A line nobody has written anything on: not an item. */
 export function isBlank(r: ItemRow): boolean {
   return (
     r.equipmentId === null &&
+    r.sparePartId === null &&
     r.description.trim() === '' &&
     r.assetCode.trim() === '' &&
     r.remarks.trim() === '' &&
@@ -43,6 +50,7 @@ export function rowsFrom(items: GatePassItem[], spare: number): ItemRow[] {
   const rows = items.map<ItemRow>((i) => ({
     key: newKey(),
     equipmentId: i.equipmentId,
+    sparePartId: i.sparePartId,
     description: i.description,
     assetCode: i.assetCode ?? '',
     quantity: String(i.quantity),
@@ -58,6 +66,7 @@ export function itemsFrom(rows: ItemRow[]) {
     .filter((r) => !isBlank(r))
     .map((r) => ({
       equipmentId: r.equipmentId,
+      sparePartId: r.sparePartId,
       description: r.description.trim() || null,
       assetCode: r.assetCode.trim() || null,
       quantity: r.quantity.trim() === '' ? 1 : Number(r.quantity),
@@ -73,7 +82,7 @@ export function problemWith(rows: ItemRow[]): string | null {
   const machines = new Set<number>();
   for (const [i, r] of filled.entries()) {
     const n = i + 1;
-    if (r.equipmentId === null && r.description.trim() === '') return `Line ${n} needs a description.`;
+    if (r.equipmentId === null && r.sparePartId === null && r.description.trim() === '') return `Line ${n} needs a description.`;
 
     const q = Number(r.quantity);
     if (!Number.isInteger(q) || q < 1) return `Line ${n} needs a quantity of 1 or more.`;

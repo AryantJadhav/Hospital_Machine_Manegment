@@ -15,6 +15,12 @@ public enum GatePassStatus
 
     /// <summary>Written out and then not used: the machine never left. Kept, because its number was issued.</summary>
     Cancelled = 30,
+
+    /// <summary>
+    /// A non-returnable pass: the goods have left for good (a faulty part handed to the vendor, scrap), so there is
+    /// nothing to come back and nothing to wait for.
+    /// </summary>
+    Issued = 40,
 }
 
 /// <summary>
@@ -42,6 +48,13 @@ public sealed class GatePass
     /// cancelled keeps its number, as a spoiled page in a printed book would.
     /// </summary>
     public int Number { get; set; }
+
+    /// <summary>
+    /// True for the usual pass: the goods come back, and the pass waits for the day they do. False for a non-returnable
+    /// pass, where they leave for good: it has no expected return, is never "out", and never comes back. Fixed when the
+    /// pass is written.
+    /// </summary>
+    public bool IsReturnable { get; set; } = true;
 
     /// <summary>The day it was written, which is the day the goods leave.</summary>
     public DateOnly PassDate { get; set; }
@@ -130,7 +143,12 @@ public sealed class GatePassItem
 
     public string? Remarks { get; set; }
 
+    /// <summary>The spare part this line is, when it is one. It fills in the words; it does not move the stock.</summary>
+    public int? SparePartId { get; set; }
+
     public GatePass? GatePass { get; set; }
 
     public EquipmentAsset? Machine { get; set; }
+
+    public Inventory.SparePart? SparePart { get; set; }
 }
