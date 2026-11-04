@@ -38,6 +38,7 @@ import { IncidentNewPage } from './pages/IncidentForm';
 import { IncidentPage } from './pages/IncidentPage';
 import { IncidentReportPreviewPage, IncidentsSummaryPreviewPage } from './pages/IncidentReportPreviewPages';
 import { IncidentsPage } from './pages/IncidentsPage';
+import { ServiceRequestAlerts } from './ServiceRequestAlerts';
 import { LossNewPage } from './pages/LossForm';
 import { LossPage } from './pages/LossPage';
 import { LossReportPreviewPage, LossesSummaryPreviewPage } from './pages/LossReportPreviewPages';
@@ -354,6 +355,9 @@ function Shell() {
           <Route path="*" element={<Elsewhere notice={NO_SUCH_PAGE} />} />
         </Routes>
       </main>
+
+      {/* The engineers and the head are told, as it happens, when a department places a service request. */}
+      {may(PERMISSIONS.workOrdersWork, PERMISSIONS.workOrdersAssign) && <ServiceRequestAlerts />}
     </div>
   );
 }

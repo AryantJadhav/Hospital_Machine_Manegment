@@ -1,3 +1,4 @@
+using HospitalPm.Api.Notifications;
 using HospitalPm.Api.Auth;
 using System.Security.Claims;
 using HospitalPm.Api.Maintenance;
@@ -457,6 +458,8 @@ public static class WorkOrderEndpoints
         [FromBody] ReportRequest request,
         HospitalPmDbContext db,
         ClaimsPrincipal principal,
+        PermissionService permissions,
+        AlertHub alerts,
         TimeProvider clock,
         CancellationToken ct)
     {
@@ -508,7 +511,55 @@ public static class WorkOrderEndpoints
         await db.SaveChangesAsync(ct);
         await db.Entry(order).ReloadAsync(ct);
 
+        await AnnounceAsync(order, db, principal, permissions, alerts, ct);
+
         return Results.Created($"/api/work-orders/{order.Id}", new { order.Id, order.Number });
+    }
+
+    /// <summary>
+    /// Pops the request up on the screens of the biomedical engineers and the head who are signed in. Only for a request a
+    /// department placed: an engineer who reports a fault is already the one dealing with it. Never allowed to fail the request:
+    /// it is written, and the pop-up is only the nudge.
+    /// </summary>
+    private static async Task AnnounceAsync(
+        WorkOrder order, HospitalPmDbContext db, ClaimsPrincipal principal, PermissionService permissions, AlertHub alerts, CancellationToken ct)
+    {
+        try
+        {
+            if (alerts.Listeners == 0 || await permissions.CanAsync(principal, Permissions.WorkOrdersWork, ct))
+            {
+                return;
+            }
+
+            var machine = await db.Equipment.AsNoTracking()
+                .Where(e => e.Id == order.EquipmentId)
+                .Select(e => new { e.AssetTag, Type = e.EquipmentType!.Name, Place = e.Location!.Name })
+                .SingleOrDefaultAsync(ct);
+
+            var who = await db.Users.AsNoTracking()
+                .Where(u => u.Id == order.ReportedByUserId)
+                .Select(u => u.FullName)
+                .SingleOrDefaultAsync(ct);
+
+            var fault = order.FaultDescription.Replace("\r", " ").Replace("\n", " ").Trim();
+
+            alerts.Publish(new ServiceRequestAlert(
+                order.Id,
+                order.Number,
+                order.EquipmentId,
+                machine?.AssetTag,
+                machine?.Type,
+                machine?.Place,
+                order.Priority.ToString(),
+                fault.Length <= 160 ? fault : fault[..160].TrimEnd() + "…",
+                who ?? "A department",
+                DateTime.SpecifyKind(order.ReportedAtUtc, DateTimeKind.Utc)));
+        }
+#pragma warning disable CA1031 // The request is already saved; a failure to announce it must not undo or hide that.
+        catch (Exception)
+#pragma warning restore CA1031
+        {
+        }
     }
 
     /// <summary>

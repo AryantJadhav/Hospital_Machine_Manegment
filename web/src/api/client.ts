@@ -143,6 +143,23 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
   return (await res.json()) as T;
 }
 
+/**
+ * Opens a long-lived response that the server writes to as things happen (the pop-up for a new service request). A plain
+ * EventSource cannot carry the sign-in, so this reads the stream with fetch, with the sign-in, and refreshes it once if it
+ * has expired. The caller reads the body and decides what to do when it ends.
+ */
+export async function openStream(path: string, signal: AbortSignal): Promise<Response> {
+  const send = () =>
+    fetch(path, {
+      headers: { Accept: 'text/event-stream', ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
+      signal,
+    });
+  let res = await send();
+  if (res.status === 401 && (await refresh())) res = await send();
+  if (res.status === 423) window.dispatchEvent(new Event(LOCKED_EVENT));
+  return res;
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>

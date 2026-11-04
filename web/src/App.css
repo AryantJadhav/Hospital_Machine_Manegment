@@ -475,6 +475,42 @@ input[type="checkbox"], input[type="radio"] { height: auto; accent-color: var(--
   cursor: pointer;
   padding: 0 0.15rem;
 }
+/* The pop-up for a new service request, at the bottom right of whatever page an engineer or the head is on. */
+.request-alerts {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 1100;
+  display: grid;
+  gap: 0.6rem;
+  width: min(24rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+}
+.request-alert {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.85rem 1rem;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-left: 6px solid var(--accent);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+  animation: toast-in 160ms ease-out;
+}
+.request-alert-urgent { border-left-color: var(--err); }
+.request-alert-head { display: flex; align-items: center; gap: 0.5rem; }
+.request-alert-head .toast-close { margin-left: auto; }
+.request-alert p { margin: 0; }
+.request-alert-machine { font-weight: 600; }
+.request-alert-line { font-size: 0.9em; }
+.request-alert-fault { white-space: pre-wrap; overflow-wrap: anywhere; }
+.request-alerts-sound { justify-self: end; font-size: 0.85em; }
+@media (prefers-reduced-motion: reduce) {
+  .request-alert { animation: none; }
+}
+
 @keyframes toast-in {
   from { opacity: 0; transform: translateX(1rem); }
   to { opacity: 1; transform: none; }

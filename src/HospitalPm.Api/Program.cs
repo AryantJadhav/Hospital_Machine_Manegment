@@ -12,6 +12,7 @@ using HospitalPm.Api.Reports;
 using HospitalPm.Api.GatePasses;
 using HospitalPm.Api.Incidents;
 using HospitalPm.Api.Losses;
+using HospitalPm.Api.Notifications;
 using HospitalPm.Api.Training;
 using HospitalPm.Api.WorkOrders;
 using HospitalPm.Infrastructure.Identity;
@@ -87,6 +88,8 @@ builder.Services.Configure<ScheduleOptions>(builder.Configuration.GetSection(Sch
 builder.Services.Configure<HospitalPm.Api.Hosting.FeatureOptions>(builder.Configuration.GetSection(HospitalPm.Api.Hosting.FeatureOptions.SectionName));
 builder.Services.Configure<ReportOptions>(builder.Configuration.GetSection(ReportOptions.SectionName));
 builder.Services.AddSingleton<HospitalClock>();
+// Tells the engineers and the head, at once, when a department places a service request. In-process: nothing else to run.
+builder.Services.AddSingleton<HospitalPm.Api.Notifications.AlertHub>();
 builder.Services.AddScoped<PmScheduleGenerator>();
 builder.Services.AddScoped<HospitalPm.Infrastructure.Export.DataExportService>();
 builder.Services.Configure<HospitalPm.Infrastructure.Operations.BackupOptions>(
@@ -395,6 +398,7 @@ app.MapWorkDoneReportEndpoints();
 app.MapTrainingSummaryEndpoints();
 app.MapResponseTargetEndpoints();
 app.MapResponseTimeEndpoints();
+app.MapAlertEndpoints();
 app.MapLossReportEndpoints();
 app.MapStockReportEndpoints();
 app.MapTrainingEndpoints();

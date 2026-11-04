@@ -52,6 +52,7 @@ export const PAGE_HELP: PageHelp[] = [
       'Press Report a fault, choose the machine, say what is wrong, and send it.',
       'Open any request to follow it. You get a request number to quote if you phone.',
       'The Response column says whether an engineer started in time.',
+      'Engineers and the head see a pop-up in the corner, as it happens, when a department places a new request. Press Open request to go to it.',
     ],
   },
   {
