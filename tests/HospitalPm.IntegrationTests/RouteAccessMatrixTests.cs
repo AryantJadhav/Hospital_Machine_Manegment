@@ -137,7 +137,8 @@ public sealed partial class RouteAccessMatrixTests(PostgresFixture fixture, ITes
         foreach (var r in routes)
         {
             // Not signed in: every one of these must say so.
-            using (var res = await _anonymous.SendAsync(Request(r)))
+            // Headers only: a live stream (the new-request pop-up) never ends, and the answer is in its first line.
+            using (var res = await _anonymous.SendAsync(Request(r), HttpCompletionOption.ResponseHeadersRead))
             {
                 asked++;
                 if (res.StatusCode != HttpStatusCode.Unauthorized)
@@ -157,7 +158,7 @@ public sealed partial class RouteAccessMatrixTests(PostgresFixture fixture, ITes
                     continue;
                 }
 
-                using var res = await _clients[role].SendAsync(Request(r));
+                using var res = await _clients[role].SendAsync(Request(r), HttpCompletionOption.ResponseHeadersRead);
                 asked++;
                 var code = (int)res.StatusCode;
 

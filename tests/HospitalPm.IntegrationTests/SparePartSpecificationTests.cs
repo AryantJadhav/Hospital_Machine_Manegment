@@ -228,14 +228,15 @@ public sealed class SparePartSpecificationTests(PostgresFixture fixture) : IAsyn
     {
         var s = await _engineer.GetFromJsonAsync<JsonElement>("/api/spare-parts/suggestions");
 
-        var makes = s.GetProperty("manufacturers").EnumerateArray().Select(x => x.GetString()).ToList();
-        Assert.Contains("Braun", makes);
-        Assert.Contains(Make, makes);
+        // A make written two ways on the register (capitals on one machine) is listed once, in whichever spelling comes first.
+        var makes = s.GetProperty("manufacturers").EnumerateArray().Select(x => x.GetString()!).ToList();
+        Assert.Contains(makes, m => string.Equals(m, "Braun", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(makes, m => string.Equals(m, Make, StringComparison.OrdinalIgnoreCase));
 
         var models = s.GetProperty("models").EnumerateArray()
             .Select(x => $"{x.GetProperty("manufacturer").GetString()}|{x.GetProperty("model").GetString()}").ToList();
-        Assert.Contains("Braun|Space", models);
-        Assert.Contains($"{Make}|MX800", models);
+        Assert.Contains(models, m => string.Equals(m, "Braun|Space", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(models, m => string.Equals(m, $"{Make}|MX800", StringComparison.OrdinalIgnoreCase));
 
         using var anonymous = _factory.CreateClient();
         Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.GetAsync("/api/spare-parts/suggestions")).StatusCode);

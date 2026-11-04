@@ -176,43 +176,48 @@ public sealed class ServiceRequestAlertTests(PostgresFixture fixture) : IAsyncLi
     /// <summary>An open stream, read a line at a time.</summary>
     private sealed class Listener(HttpResponseMessage response, StreamReader reader) : IDisposable
     {
+        // A read that is still waiting is kept for the next call. Cancelling a read part way breaks the stream under it, so a
+        // wait that runs out of time leaves the read going and simply stops waiting for it.
+        private Task<string?>? _pending;
+        private string _name = string.Empty;
+
         public HttpResponseMessage Response { get; } = response;
 
         /// <summary>The next "service-request" event's data, or null if none arrives within the time.</summary>
         public async Task<JsonElement?> NextAsync(TimeSpan within)
         {
-            using var cts = new CancellationTokenSource(within);
-            try
+            var deadline = Task.Delay(within);
+            while (true)
             {
-                var name = string.Empty;
-                while (true)
+                _pending ??= reader.ReadLineAsync();
+                if (await Task.WhenAny(_pending, deadline) != _pending)
                 {
-                    var line = await reader.ReadLineAsync(cts.Token);
-                    if (line is null)
-                    {
-                        return null;
-                    }
-
-                    if (line.StartsWith("event:", StringComparison.Ordinal))
-                    {
-                        name = line[6..].Trim();
-                    }
-                    else if (line.StartsWith("data:", StringComparison.Ordinal) && name == "service-request")
-                    {
-                        return JsonDocument.Parse(line[5..].Trim()).RootElement.Clone();
-                    }
+                    return null;
                 }
-            }
-            catch (OperationCanceledException)
-            {
-                return null;
+
+                var line = await _pending;
+                _pending = null;
+                if (line is null)
+                {
+                    return null;
+                }
+
+                if (line.StartsWith("event:", StringComparison.Ordinal))
+                {
+                    _name = line[6..].Trim();
+                }
+                else if (line.StartsWith("data:", StringComparison.Ordinal) && _name == "service-request")
+                {
+                    return JsonDocument.Parse(line[5..].Trim()).RootElement.Clone();
+                }
             }
         }
 
         public void Dispose()
         {
-            reader.Dispose();
+            // The response goes first: closing it ends the stream, so a read still waiting finishes.
             Response.Dispose();
+            reader.Dispose();
         }
     }
 

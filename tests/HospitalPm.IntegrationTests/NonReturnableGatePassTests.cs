@@ -214,7 +214,9 @@ public sealed class NonReturnableGatePassTests(PostgresFixture fixture) : IAsync
             Assert.Contains(part, await res.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
         }
 
-        await Refused(NonReturnable(expected: "2099-01-01"), "no date of return");
+        // A date that is in range on its own, so it is the kind of pass that refuses it.
+        var soon = DateOnly.FromDateTime(DateTime.UtcNow.AddMinutes(330).AddDays(10)).ToString("yyyy-MM-dd");
+        await Refused(NonReturnable(expected: soon), "no date of return");
         await Refused(NonReturnable([new { equipmentId = _machineId, quantity = 1 }]), "non-returnable pass is for spare parts");
         await Refused(NonReturnable([new { equipmentId = _machineId, sparePartId = _boardId }]), "non-returnable pass is for spare parts");
     }
