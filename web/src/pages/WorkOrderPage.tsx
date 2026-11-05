@@ -15,6 +15,7 @@ import { formatHours } from '../hours';
 import { formatRupees } from '../money';
 import { formatDateTime, fromHospitalInput, toHospitalInput, ZONE_LABEL } from '../time';
 import { responseSentence } from '../ResponseBadge';
+import { ReplacementCard } from '../ReplacementCard';
 import { usePageTitle } from '../pageTitle';
 import type { WorkOrderDetail, WorkOrderPhoto } from '../workOrderTypes';
 
@@ -222,6 +223,7 @@ export function WorkOrderPage() {
           </section>
 
           {order.canAcknowledge && <Acknowledge order={order} act={act} />}
+          <ReplacementCard order={order} act={act} />
           <Solution order={order} isTerminal={isTerminal} canWork={canWork} />
           <Parts order={order} isTerminal={isTerminal} canWork={canWork} act={act} />
           <Photos order={order} isTerminal={isTerminal} canRemove={canAssign} act={act} />

@@ -346,7 +346,8 @@ public sealed class LocationImportService(HospitalPmDbContext db)
             ["MAIN", "Main Campus", "Site", ""],
             ["BLK-A", "Block A", "Building", "MAIN"],
             ["ICU", "Intensive Care Unit", "Department", "BLK-A"],
-            ["ICU-01", "ICU Bed 1", "Room", "ICU"],
+            ["ICU-R1", "ICU Room 1", "Room", "ICU"],
+            ["ICU-R1-B01", "ICU Room 1 · Bed 1", "Bed", "ICU-R1"],
         ];
 
         for (var r = 0; r < sample.Length; r++)

@@ -2274,6 +2274,81 @@ namespace HospitalPm.Infrastructure.Persistence.Migrations
                     b.ToTable("work_order_part", (string)null);
                 });
 
+            modelBuilder.Entity("HospitalPm.Domain.WorkOrders.WorkOrderReplacement", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("FromLocationId")
+                        .HasColumnType("integer")
+                        .HasColumnName("from_location_id");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("note");
+
+                    b.Property<DateTime>("ProvidedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("provided_at_utc");
+
+                    b.Property<int>("ProvidedByUserId")
+                        .HasColumnType("integer")
+                        .HasColumnName("provided_by_user_id");
+
+                    b.Property<int>("ReplacementEquipmentId")
+                        .HasColumnType("integer")
+                        .HasColumnName("replacement_equipment_id");
+
+                    b.Property<DateTime?>("ReturnedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("returned_at_utc");
+
+                    b.Property<int?>("ReturnedByUserId")
+                        .HasColumnType("integer")
+                        .HasColumnName("returned_by_user_id");
+
+                    b.Property<int>("StatusBefore")
+                        .HasColumnType("integer")
+                        .HasColumnName("status_before");
+
+                    b.Property<int>("TenantId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("tenant_id");
+
+                    b.Property<int>("ToLocationId")
+                        .HasColumnType("integer")
+                        .HasColumnName("to_location_id");
+
+                    b.Property<int>("WorkOrderId")
+                        .HasColumnType("integer")
+                        .HasColumnName("work_order_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FromLocationId");
+
+                    b.HasIndex("ReplacementEquipmentId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_work_order_replacement_machine_active")
+                        .HasFilter("returned_at_utc IS NULL");
+
+                    b.HasIndex("ToLocationId");
+
+                    b.HasIndex("WorkOrderId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_work_order_replacement_order_active")
+                        .HasFilter("returned_at_utc IS NULL");
+
+                    b.ToTable("work_order_replacement", (string)null);
+                });
+
             modelBuilder.Entity("HospitalPm.Infrastructure.Identity.ApplicationRole", b =>
                 {
                     b.Property<int>("Id")
@@ -3014,6 +3089,41 @@ namespace HospitalPm.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("SparePart");
+
+                    b.Navigation("WorkOrder");
+                });
+
+            modelBuilder.Entity("HospitalPm.Domain.WorkOrders.WorkOrderReplacement", b =>
+                {
+                    b.HasOne("HospitalPm.Domain.Locations.Location", "FromLocation")
+                        .WithMany()
+                        .HasForeignKey("FromLocationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("HospitalPm.Domain.Assets.Equipment", "ReplacementEquipment")
+                        .WithMany()
+                        .HasForeignKey("ReplacementEquipmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("HospitalPm.Domain.Locations.Location", "ToLocation")
+                        .WithMany()
+                        .HasForeignKey("ToLocationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("HospitalPm.Domain.WorkOrders.WorkOrder", "WorkOrder")
+                        .WithMany()
+                        .HasForeignKey("WorkOrderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("FromLocation");
+
+                    b.Navigation("ReplacementEquipment");
+
+                    b.Navigation("ToLocation");
 
                     b.Navigation("WorkOrder");
                 });

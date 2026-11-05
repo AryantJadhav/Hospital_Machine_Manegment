@@ -32,6 +32,8 @@ export type GatePassRow = {
   reference: string;
   /** False for a pass where the goods leave for good and are not expected back. */
   isReturnable: boolean;
+  /** What is going out: a machine from the register, spare parts, or something typed in. */
+  goods: 'Machine' | 'Spare parts' | 'Other';
   passDate: string;
   vendorName: string;
   contactPerson: string | null;
@@ -68,6 +70,7 @@ export type GatePassDetail = {
   number: number;
   reference: string;
   isReturnable: boolean;
+  goods: 'Machine' | 'Spare parts' | 'Other';
   passDate: string;
   vendorName: string;
   contactPerson: string | null;

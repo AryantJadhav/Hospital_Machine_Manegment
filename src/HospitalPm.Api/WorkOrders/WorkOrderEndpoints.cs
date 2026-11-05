@@ -86,6 +86,9 @@ public static class WorkOrderEndpoints
         // Assignment is a supervisory decision about who does the work.
         group.MapPost("/{id:int}/assign", AssignAsync)
             .RequirePermission(Permissions.WorkOrdersAssign);
+
+        // A repair takes time. The engineer puts a free machine from the store in place of the faulty one, and takes it back after.
+        group.MapReplacementEndpoints();
     }
 
     /// <summary>
@@ -378,6 +381,11 @@ public static class WorkOrderEndpoints
 
         var responseTargets = await ResponseTargetEndpoints.LoadAsync(db, ct);
 
+        // The machine put in place of this one while it is repaired, if any, and the ones before it.
+        var replacements = await WorkOrderReplacementEndpoints.ListAsync(db, id, ct);
+        var canProvideReplacement = mayWork
+            && await WorkOrderReplacementEndpoints.CanProvideAsync(db, order, order.Equipment, ct);
+
         return Results.Ok(new
         {
             order.Id,
@@ -431,6 +439,9 @@ public static class WorkOrderEndpoints
             notes,
             partsUsed,
             photos,
+            replacements,
+            canProvideReplacement,
+            canTakeBackReplacement = mayWork && replacements.Count > 0 && replacements[0].IsActive,
         });
     }
 
@@ -687,7 +698,7 @@ public static class WorkOrderEndpoints
     /// The caller disposes the transaction (an early return rolls back, having written nothing) and commits it
     /// after saving.
     /// </summary>
-    private static async Task<(WorkOrder? Order, IDbContextTransaction Transaction)> LockAsync(
+    internal static async Task<(WorkOrder? Order, IDbContextTransaction Transaction)> LockAsync(
         HospitalPmDbContext db, int id, CancellationToken ct)
     {
         var transaction = await db.Database.BeginTransactionAsync(ct);
@@ -1231,7 +1242,7 @@ public static class WorkOrderEndpoints
         return Results.NoContent();
     }
 
-    private static void AddNote(
+    internal static void AddNote(
         HospitalPmDbContext db,
         WorkOrder order,
         string? body,

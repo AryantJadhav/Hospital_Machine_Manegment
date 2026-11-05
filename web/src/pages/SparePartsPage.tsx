@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../auth/useAuth';
 import { PERMISSIONS } from '../auth/context';
@@ -53,6 +54,9 @@ type Suggestions = { manufacturers: string[]; models: { manufacturer: string; mo
 export function SparePartsPage() {
   const { may } = useAuth();
   const canAuthor = may(PERMISSIONS.sparePartsEdit);
+  // Sending a part back to the vendor is writing a gate pass.
+  const canSendBack = may(PERMISSIONS.gatePassEdit);
+  const navigate = useNavigate();
 
   const [parts, setParts] = useState<Part[]>([]);
   const [total, setTotal] = useState(0);
@@ -281,11 +285,23 @@ export function SparePartsPage() {
                   )}
                 </td>
                 <td>
-                  {canAuthor && (
-                    <button className="btn btn-quiet" onClick={() => { setSaved(null); setEditing(p); }}>
-                      Edit
-                    </button>
-                  )}
+                  <span className="row" style={{ gap: '0.25rem', flexWrap: 'nowrap' }}>
+                    {canSendBack && p.isActive && (
+                      <button
+                        className="btn btn-quiet"
+                        title="Send this part back to the vendor to be replaced (faulty or under warranty), on a returnable gate pass"
+                        aria-label={`Return or replace ${p.partNumber}`}
+                        onClick={() => navigate(`/gate-passes/new?sparePartId=${p.id}`, { state: { from: '/spare-parts' } })}
+                      >
+                        Return / Replace
+                      </button>
+                    )}
+                    {canAuthor && (
+                      <button className="btn btn-quiet" onClick={() => { setSaved(null); setEditing(p); }}>
+                        Edit
+                      </button>
+                    )}
+                  </span>
                 </td>
               </tr>
             ))}

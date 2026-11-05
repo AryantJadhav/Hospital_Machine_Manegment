@@ -2,7 +2,7 @@ namespace HospitalPm.Domain.Locations;
 
 /// <summary>
 /// A place equipment can live: organisation, site, building, floor,
-/// department or room.
+/// department, room or bed.
 ///
 /// One self-referencing table rather than six tables, because real hospitals
 /// skip rungs. A single-building nursing home has no Site or Floor worth

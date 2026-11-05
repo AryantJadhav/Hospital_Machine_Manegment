@@ -14,4 +14,10 @@ public enum LocationLevel
     Floor = 40,
     Department = 50,
     Room = 60,
+
+    /// <summary>
+    /// One bed, in a room or straight in a ward. The most exact place a machine can be filed against: "ICU Room 2 · Bed 3".
+    /// A bed is deeper than a room, so levels above it are unchanged.
+    /// </summary>
+    Bed = 70,
 }

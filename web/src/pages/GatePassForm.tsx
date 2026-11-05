@@ -11,6 +11,9 @@ import { GatePassItemsGrid } from './GatePassItemsGrid';
 import { blankRow, isBlank, itemsFrom, machineRow, partRow, problemWith, rowsFrom } from './gatePassRows';
 import type { ItemRow } from './gatePassRows';
 
+/** What a part sent back from the spares register is for, until the engineer says otherwise. */
+const PART_REPLACEMENT_PURPOSE = 'Part returned to the vendor for replacement';
+
 /** What the machine's own record says, for the words that fill in once it is chosen. */
 type MachineRecord = {
   id: number;
@@ -56,7 +59,7 @@ export function GatePassForm({
 }: {
   editing?: GatePassDetail;
   /** From a machine's page or a service request: send this machine out, for that request. */
-  prefill?: { equipmentId: number | null; workOrderId: number | null };
+  prefill?: { equipmentId: number | null; workOrderId: number | null; sparePartId?: number | null };
   onCancel: () => void;
   onSaved: (id: number, message: string) => void | Promise<void>;
 }) {
@@ -64,13 +67,23 @@ export function GatePassForm({
 
   // A pass is returnable (it comes back) or not (the goods leave for good). Chosen when it is written, and then fixed.
   const [returnable, setReturnable] = useState(editing?.isReturnable ?? true);
+  // What is going out: a machine from the register, or spare parts. Chosen when it is written, and then fixed. Either may come
+  // back (repair, a warranty swap) or leave for good.
+  const [goods, setGoods] = useState<'machine' | 'parts'>(() =>
+    (!editing && prefill?.sparePartId) ||
+    editing &&
+    editing.items.every((i) => i.equipmentId === null) &&
+    (!editing.isReturnable || editing.items.some((i) => i.sparePartId !== null))
+      ? 'parts'
+      : 'machine',
+  );
   const [parts, setParts] = useState<PartRecord[]>([]);
   const [partPickerKey, setPartPickerKey] = useState(0);
 
   const [vendorName, setVendorName] = useState(editing?.vendorName ?? '');
   const [contactPerson, setContactPerson] = useState(editing?.contactPerson ?? '');
   const [contactPhone, setContactPhone] = useState(editing?.contactPhone ?? '');
-  const [purpose, setPurpose] = useState(editing?.purpose ?? DEFAULT_PURPOSE);
+  const [purpose, setPurpose] = useState(editing?.purpose ?? (prefill?.sparePartId ? PART_REPLACEMENT_PURPOSE : DEFAULT_PURPOSE));
   const [passDate, setPassDate] = useState(editing?.passDate ?? today);
   const [expected, setExpected] = useState(editing?.expectedReturnDate ?? '');
   const [authorisedBy, setAuthorisedBy] = useState(editing?.authorisedBy ?? '');
@@ -89,11 +102,12 @@ export function GatePassForm({
   const [error, setError] = useState<string | null>(null);
 
   // Arriving from a machine or from a service request: that machine is the first item, that request is the Request No.
-  const prefillMachine = returnable ? (prefill?.equipmentId ?? null) : null;
+  const prefillMachine = prefill?.equipmentId ?? null;
   const prefillRequest = prefill?.workOrderId ?? null;
+  const prefillPart = prefill?.sparePartId ?? null;
 
   useEffect(() => {
-    if (editing || (prefillMachine === null && prefillRequest === null)) return;
+    if (editing || (prefillMachine === null && prefillRequest === null && prefillPart === null)) return;
     let cancelled = false;
     (async () => {
       try {
@@ -106,10 +120,26 @@ export function GatePassForm({
           machineId ??= wo.equipmentId;
         }
 
-        if (machineId !== null) {
+        if (machineId !== null && prefillPart === null) {
           const m = await api.get<MachineRecord>(`/api/equipment/${machineId}`);
           if (cancelled) return;
           setRows((current) => placeMachine(current, m));
+        }
+
+        // Sent back from the spares register: the part is the first line, and its supplier is who it goes to.
+        if (prefillPart !== null) {
+          const part = await api.get<PartRecord & { supplier: string | null }>(`/api/spare-parts/${prefillPart}`);
+          if (cancelled) return;
+          setRows((current) => {
+            if (current.some((r) => r.sparePartId === part.id)) return current;
+            const line = partRow(part.id, part.partNumber, describePart(part));
+            const empty = current.findIndex(isBlank);
+            if (empty < 0) return [...current, line, blankRow()];
+            const next = [...current];
+            next[empty] = line;
+            return next;
+          });
+          setVendorName((name) => name || part.supplier || '');
         }
       } catch {
         if (!cancelled) setError('Could not read that machine\'s details. Add it from the register below.');
@@ -118,7 +148,7 @@ export function GatePassForm({
     return () => {
       cancelled = true;
     };
-  }, [editing, prefillMachine, prefillRequest]);
+  }, [editing, prefillMachine, prefillRequest, prefillPart]);
 
   // The spares register, to add a part to the sheet from. Not needed to write a pass: a part can be typed on a line.
   useEffect(() => {
@@ -145,14 +175,27 @@ export function GatePassForm({
     setPartPickerKey((k) => k + 1);
   }
 
-  // Changing the kind of a new pass: the choices that only make sense for the other kind are cleared, not carried over.
+  // What stays on the sheet when what is going out changes: the lines that suit the new choice, and always at least one line.
+  const keep = (suits: (r: ItemRow) => boolean) => (current: ItemRow[]) => {
+    const kept = current.filter(suits);
+    return kept.length > 0 ? kept : [blankRow(), blankRow(), blankRow()];
+  };
+
+  // Changing what is going out: a machine, or spare parts. What only suits the other is cleared, not carried over.
+  function chooseGoods(next: 'machine' | 'parts') {
+    if (next === goods) return;
+    setGoods(next);
+    setError(null);
+    setRows(keep(next === 'machine' ? (r) => r.sparePartId === null : (r) => r.equipmentId === null));
+  }
+
+  // Changing the kind of a new pass: the choices that only make sense for the other kind are cleared.
   function chooseKind(next: boolean) {
     if (next === returnable) return;
     setReturnable(next);
     setError(null);
     if (!next) {
       setExpected('');
-      setRows((current) => current.filter((r) => r.equipmentId === null));
       if (purpose === DEFAULT_PURPOSE) setPurpose(DEFAULT_NON_RETURNABLE_PURPOSE);
     } else if (purpose === DEFAULT_NON_RETURNABLE_PURPOSE) {
       setPurpose(DEFAULT_PURPOSE);
@@ -215,7 +258,7 @@ export function GatePassForm({
           created.id,
           returnable
             ? `Written ${created.reference}. Print it for the gate and the vendor.${machines ? ' Its machines are now marked Under repair.' : ''}`
-            : `Written ${created.reference}, a non-returnable pass. Print it for the gate and the vendor. Nothing is expected back.`,
+            : `Written ${created.reference}, a non-returnable pass. Print it for the gate and the vendor. Nothing is expected back.${machines ? ' Its machines are now marked Disposed.' : ''}`,
         );
       }
     } catch (err) {
@@ -228,8 +271,36 @@ export function GatePassForm({
   return (
     <form className="card stack" onSubmit={submit}>
       <h2 className="section-h" style={{ margin: 0 }}>
-        {editing ? `Correct ${editing.reference}` : returnable ? 'New returnable gate pass' : 'New non-returnable gate pass'}
+        {editing
+          ? `Correct ${editing.reference}`
+          : `New ${returnable ? 'returnable' : 'non-returnable'} gate pass for ${goods === 'machine' ? 'a machine' : 'spare parts'}`}
       </h2>
+
+      {!editing && (
+        <fieldset className="stack" style={{ border: 'none', padding: 0, margin: 0 }}>
+          <legend style={{ fontWeight: 600, padding: 0 }}>What is going out?</legend>
+          <label className="row" style={{ gap: '0.5rem', alignItems: 'flex-start' }}>
+            <input type="radio" name="pass-goods" checked={goods === 'machine'} onChange={() => chooseGoods('machine')} />
+            <span>
+              <strong>A machine.</strong> A machine from the equipment register goes to the vendor, for repair or calibration
+              or for good.
+            </span>
+          </label>
+          <label className="row" style={{ gap: '0.5rem', alignItems: 'flex-start' }}>
+            <input type="radio" name="pass-goods" checked={goods === 'parts'} onChange={() => chooseGoods('parts')} />
+            <span>
+              <strong>Spare parts.</strong> Parts from the spares register: sent for a warranty swap or repair, or handed to
+              the vendor for good.
+            </span>
+          </label>
+        </fieldset>
+      )}
+
+      {editing && (
+        <p className="muted" style={{ margin: 0 }}>
+          Going out: <strong>{goods === 'machine' ? 'a machine' : 'spare parts'}</strong>
+        </p>
+      )}
 
       {!editing && (
         <fieldset className="stack" style={{ border: 'none', padding: 0, margin: 0 }}>
@@ -237,15 +308,17 @@ export function GatePassForm({
           <label className="row" style={{ gap: '0.5rem', alignItems: 'flex-start' }}>
             <input type="radio" name="pass-kind" checked={returnable} onChange={() => chooseKind(true)} />
             <span>
-              <strong>Returnable.</strong> It goes for repair, calibration or a warranty swap and comes back. The pass
-              waits for the day it does.
+              <strong>Returnable.</strong> {goods === 'machine'
+                ? 'It goes for repair or calibration and comes back. The register marks it Under repair while it is away.'
+                : 'It goes for a warranty swap or repair and comes back.'} The pass waits for the day it does.
             </span>
           </label>
           <label className="row" style={{ gap: '0.5rem', alignItems: 'flex-start' }}>
             <input type="radio" name="pass-kind" checked={!returnable} onChange={() => chooseKind(false)} />
             <span>
-              <strong>Not returnable.</strong> It leaves for good: a faulty part handed to the vendor, or scrap. For spare
-              parts and accessories, not for machines on the register.
+              <strong>Not returnable.</strong> {goods === 'machine'
+                ? 'It leaves for good: sold, scrapped or given back to its owner. The register marks it Disposed.'
+                : 'It leaves for good: a faulty part handed to the vendor, or scrap.'}
             </span>
           </label>
         </fieldset>
@@ -328,9 +401,9 @@ export function GatePassForm({
       </div>
 
       <fieldset className="stack" style={{ border: 'none', padding: 0, margin: 0 }}>
-        <legend style={{ fontWeight: 600, padding: 0 }}>Items</legend>
+        <legend style={{ fontWeight: 600, padding: 0 }}>{goods === 'machine' ? 'The machine' : 'The spare parts'}</legend>
 
-        {returnable && (
+        {goods === 'machine' && (
           <>
             <EquipmentPicker
               key={pickerKey}
@@ -340,13 +413,13 @@ export function GatePassForm({
             />
             <span className="muted">
               Type the machine&apos;s number, or its make or model. Its description and number fill in from its
-              record, and the register marks it Under repair while it is away. For something that is not on the
-              register (a probe, a cable), type on a line below.
+              record, and the register marks it {returnable ? 'Under repair while it is away' : 'Disposed, as it does not come back'}.
+              For something that is not on the register (a probe, a cable), type on a line below.
             </span>
           </>
         )}
 
-        {parts.length > 0 && (
+        {goods === 'parts' && parts.length > 0 && (
           <label className="field" key={partPickerKey}>
             <span>Add a spare part from the register</span>
             <select value="" onChange={(e) => addPart(e.target.value)}>
@@ -375,8 +448,8 @@ export function GatePassForm({
         )}
         {!returnable && (
           <span className="muted">
-            Nothing here is expected back, so there is no date of return, and a machine from the register cannot be put on
-            it. Type on a line below for anything that is not on the spares register.
+            Nothing here is expected back, so there is no date of return.
+            {goods === 'parts' && ' Type on a line below for anything that is not on the spares register.'}
           </span>
         )}
 
@@ -424,6 +497,7 @@ export function GatePassNewPage() {
 
   const equipmentId = Number(params.get('equipmentId')) || null;
   const workOrderId = Number(params.get('workOrderId')) || null;
+  const sparePartId = Number(params.get('sparePartId')) || null;
   const from = (location.state as { from?: string } | null)?.from ?? '/gate-passes';
 
   return (
@@ -437,7 +511,7 @@ export function GatePassNewPage() {
       </header>
 
       <GatePassForm
-        prefill={{ equipmentId, workOrderId }}
+        prefill={{ equipmentId, workOrderId, sparePartId }}
         onCancel={() => navigate(from)}
         onSaved={(id, message) =>
           navigate(`/gate-passes/${id}`, { replace: true, state: { handoff: { notice: message, recorded: null } } })

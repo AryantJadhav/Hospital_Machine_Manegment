@@ -27,6 +27,7 @@ const LEVELS: { value: number; label: string }[] = [
   { value: 40, label: 'Floor' },
   { value: 50, label: 'Department' },
   { value: 60, label: 'Room' },
+  { value: 70, label: 'Bed' },
 ];
 
 const LEVEL_LABEL = Object.fromEntries(LEVELS.map((l) => [l.value, l.label]));
@@ -165,6 +166,33 @@ export function LocationsPage() {
   }
 
   const dialogs = useDialogs();
+
+  // Beds for a room or a ward, a number at a time. Named with the place they are in, so a machine's place reads "ICU Room 2 · Bed 3".
+  async function addBeds(loc: Location) {
+    const answer = await dialogs.ask({
+      title: `Add beds to ${loc.name}`,
+      message: 'The beds are numbered one after another, after any that are already there, and named with this place, for example "' + loc.name + ' · Bed 1".',
+      label: 'How many beds?',
+      placeholder: 'e.g. 8',
+      confirmLabel: 'Add the beds',
+      initial: '1',
+    });
+    if (answer === null) return;
+    const count = Number(answer);
+    if (!Number.isInteger(count) || count < 1 || count > 200) {
+      setError('Say how many beds to add, a whole number from 1 to 200.');
+      return;
+    }
+    try {
+      setError(null);
+      await api.post(`/api/locations/${loc.id}/beds`, { count });
+      setNotice(`Added ${count} bed${count === 1 ? '' : 's'} to ${loc.name}.`);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not add the beds.');
+    }
+  }
+
   async function remove(loc: Location) {
     const ok = await dialogs.confirm({
       title: `Delete "${loc.name}"?`,
@@ -330,6 +358,11 @@ export function LocationsPage() {
                   {canEdit && (
                     <td>
                       <div className="row">
+                        {(l.level === 50 || l.level === 60) && (
+                          <button className="btn btn-quiet" onClick={() => void addBeds(l)}>
+                            Add beds
+                          </button>
+                        )}
                         <button
                           className="btn btn-quiet"
                           onClick={() => { setCreatingUnder(l); setEditing(null); }}

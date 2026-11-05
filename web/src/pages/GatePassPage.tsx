@@ -173,6 +173,8 @@ export function GatePassPage() {
               ? [pass.contactPerson, pass.contactPhone].filter(Boolean).join(' · ')
               : <span className="muted">—</span>}
           </dd>
+          <dt>Going out</dt>
+          <dd>{pass.goods === 'Machine' ? 'A machine' : pass.goods === 'Spare parts' ? 'Spare parts' : 'Other items'}</dd>
           <dt>Purpose</dt>
           <dd>{pass.purpose}</dd>
           <dt>Date</dt>
@@ -327,7 +329,7 @@ function CloseForm({
         <p className="muted" style={{ margin: 0 }}>
           {pass.isReturnable
             ? 'Use this when the machine never left. The number stays on the list as cancelled, the register puts the machine back as it was, and it can be sent out on a new pass.'
-            : 'Use this when the goods did not leave, or the pass was written wrong. The number stays on the list as cancelled, and a new pass can be written.'}
+            : 'Use this when the goods did not leave, or the pass was written wrong. The number stays on the list as cancelled, any machine on it is put back as it was, and a new pass can be written.'}
         </p>
       )}
 

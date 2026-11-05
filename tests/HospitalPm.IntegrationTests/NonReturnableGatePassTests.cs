@@ -2,8 +2,10 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using HospitalPm.Domain.Assets;
 using HospitalPm.Domain.Equipment;
 using HospitalPm.Domain.Identity;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
@@ -205,7 +207,7 @@ public sealed class NonReturnableGatePassTests(PostgresFixture fixture) : IAsync
     }
 
     [Fact]
-    public async Task A_non_returnable_pass_cannot_have_a_return_date_or_a_machine_from_the_register()
+    public async Task A_non_returnable_pass_cannot_have_a_return_date()
     {
         async Task Refused(object body, string part)
         {
@@ -217,8 +219,48 @@ public sealed class NonReturnableGatePassTests(PostgresFixture fixture) : IAsync
         // A date that is in range on its own, so it is the kind of pass that refuses it.
         var soon = DateOnly.FromDateTime(DateTime.UtcNow.AddMinutes(330).AddDays(10)).ToString("yyyy-MM-dd");
         await Refused(NonReturnable(expected: soon), "no date of return");
-        await Refused(NonReturnable([new { equipmentId = _machineId, quantity = 1 }]), "non-returnable pass is for spare parts");
-        await Refused(NonReturnable([new { equipmentId = _machineId, sparePartId = _boardId }]), "non-returnable pass is for spare parts");
+        // A machine and a part together is refused for a pass of either kind, with the reason that a pass is for one or the other.
+        await Refused(NonReturnable([new { equipmentId = _machineId, sparePartId = _boardId }]), "machine or for spare parts");
+    }
+
+    [Fact]
+    public async Task A_machine_can_leave_for_good_on_a_non_returnable_pass_and_cancelling_it_puts_the_machine_back()
+    {
+        async Task<Domain.Assets.Equipment> Machine()
+        {
+            await using var db = fixture.CreateContext();
+            return await db.Equipment.AsNoTracking().SingleAsync(e => e.Id == _machineId);
+        }
+
+        var pass = await WriteAsync(NonReturnable([new { equipmentId = _machineId, quantity = 1 }]));
+
+        // Nothing is expected back: the pass is issued, and the register says the machine is disposed of.
+        var written = await GetAsync(pass);
+        Assert.False(written.GetProperty("isReturnable").GetBoolean());
+        Assert.Equal("Machine", written.GetProperty("goods").GetString());
+        Assert.Equal(EquipmentStatus.Disposed, (await Machine()).Status);
+
+        // It cannot go out again, on either kind of pass.
+        var again = await _engineer.PostAsJsonAsync("/api/gate-passes", NonReturnable([new { equipmentId = _machineId, quantity = 1 }]));
+        Assert.Equal(HttpStatusCode.BadRequest, again.StatusCode);
+        Assert.Contains("left the hospital for good", await again.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(HttpStatusCode.BadRequest, (await _engineer.PostAsJsonAsync("/api/gate-passes", new
+        {
+            vendorName = $"Repair {_suffix}", items = new[] { new { equipmentId = _machineId, quantity = 1 } },
+        })).StatusCode);
+
+        // Written by mistake: cancelling it puts the machine back as it was.
+        Assert.Equal(HttpStatusCode.NoContent, (await _engineer.PostAsJsonAsync($"/api/gate-passes/{pass}/cancel", new { notes = "Wrong machine" })).StatusCode);
+        Assert.Equal(EquipmentStatus.InService, (await Machine()).Status);
+
+        // And a returnable pass for a machine still marks it under repair and back, as before.
+        var repair = await WriteAsync(new
+        {
+            vendorName = $"Repair {_suffix}", items = new[] { new { equipmentId = _machineId, quantity = 1 } },
+        });
+        Assert.Equal(EquipmentStatus.UnderRepair, (await Machine()).Status);
+        Assert.Equal(HttpStatusCode.NoContent, (await _engineer.PostAsJsonAsync($"/api/gate-passes/{repair}/return", new { })).StatusCode);
+        Assert.Equal(EquipmentStatus.InService, (await Machine()).Status);
     }
 
     [Fact]
@@ -235,19 +277,53 @@ public sealed class NonReturnableGatePassTests(PostgresFixture fixture) : IAsync
     }
 
     [Fact]
-    public async Task A_returnable_pass_can_carry_a_spare_part_and_a_machine_together()
+    public async Task A_pass_is_for_a_machine_or_for_spare_parts_and_not_both()
     {
-        var id = await WriteAsync(new
+        var both = await _engineer.PostAsJsonAsync("/api/gate-passes", new
         {
             vendorName = $"Mixed {_suffix}",
             items = new object[] { new { equipmentId = _machineId, quantity = 1 }, new { sparePartId = _fuseId, quantity = 3 } },
         });
-        var pass = await GetAsync(id);
-        Assert.Equal("Out", pass.GetProperty("status").GetString());
-        Assert.Equal(2, pass.GetProperty("items").GetArrayLength());
+        Assert.Equal(HttpStatusCode.BadRequest, both.StatusCode);
+        Assert.Contains("machine or for spare parts", await both.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
 
-        // Back, and the machine with it.
+        // A machine with a cable or a probe typed on a line is still a pass for a machine.
+        var id = await WriteAsync(new
+        {
+            vendorName = $"Machine {_suffix}",
+            items = new object[] { new { equipmentId = _machineId, quantity = 1 }, new { description = "Patient cable", quantity = 1 } },
+        });
+        Assert.Equal("Machine", (await GetAsync(id)).GetProperty("goods").GetString());
         Assert.Equal(HttpStatusCode.NoContent, (await _engineer.PostAsJsonAsync($"/api/gate-passes/{id}/return", new { })).StatusCode);
+    }
+
+    [Fact]
+    public async Task The_pass_says_what_is_going_out_and_the_list_can_be_narrowed_to_machines_or_spare_parts()
+    {
+        var machinePass = await WriteAsync(new { vendorName = $"Gm {_suffix}", items = new object[] { new { equipmentId = _machineId, quantity = 1 } } });
+        var partsPass = await WriteAsync(new { vendorName = $"Gp {_suffix}", items = new object[] { new { sparePartId = _fuseId, quantity = 2 } } });
+        var typedPass = await WriteAsync(new { vendorName = $"Go {_suffix}", items = new object[] { new { description = "Loose probe", quantity = 1 } } });
+
+        Assert.Equal("Machine", (await GetAsync(machinePass)).GetProperty("goods").GetString());
+        Assert.Equal("Spare parts", (await GetAsync(partsPass)).GetProperty("goods").GetString());
+        Assert.Equal("Other", (await GetAsync(typedPass)).GetProperty("goods").GetString());
+
+        async Task<string[]> Vendors(string goods)
+        {
+            var list = await _engineer.GetFromJsonAsync<JsonElement>($"/api/gate-passes?goods={goods}&q={_suffix}&pageSize=100");
+            return list.GetProperty("items").EnumerateArray().Select(i => i.GetProperty("vendorName").GetString()!).Order(StringComparer.Ordinal).ToArray();
+        }
+
+        Assert.Equal([$"Gm {_suffix}"], await Vendors("machine"));
+        Assert.Equal([$"Gp {_suffix}"], await Vendors("parts"));
+
+        var all = await _engineer.GetFromJsonAsync<JsonElement>($"/api/gate-passes?q={_suffix}&pageSize=100");
+        var goods = all.GetProperty("items").EnumerateArray().ToDictionary(i => i.GetProperty("vendorName").GetString()!, i => i.GetProperty("goods").GetString());
+        Assert.Equal("Machine", goods[$"Gm {_suffix}"]);
+        Assert.Equal("Spare parts", goods[$"Gp {_suffix}"]);
+        Assert.Equal("Other", goods[$"Go {_suffix}"]);
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await _engineer.GetAsync("/api/gate-passes?goods=sideways")).StatusCode);
     }
 
     [Fact]

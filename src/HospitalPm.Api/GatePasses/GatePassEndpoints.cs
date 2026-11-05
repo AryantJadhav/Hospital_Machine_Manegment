@@ -104,6 +104,8 @@ public static class GatePassEndpoints
         [FromQuery] string? status,
         [FromQuery] int? equipmentId,
         [FromQuery] int? workOrderId,
+        // "machine": passes that send a machine out; "parts": passes that send spare parts out.
+        [FromQuery] string? goods,
         [FromQuery] DateOnly? from,
         [FromQuery] DateOnly? to,
         [FromQuery] int page = 1,
@@ -142,6 +144,20 @@ public static class GatePassEndpoints
         if (equipmentId is not null)
         {
             query = query.Where(p => p.Items.Any(i => i.EquipmentId == equipmentId));
+        }
+
+        switch (goods?.Trim().ToLowerInvariant())
+        {
+            case null or "":
+                break;
+            case "machine":
+                query = query.Where(p => p.Items.Any(i => i.EquipmentId != null));
+                break;
+            case "parts":
+                query = query.Where(p => p.Items.Any(i => i.SparePartId != null));
+                break;
+            default:
+                return Results.BadRequest(new { error = "Goods can be 'machine' or 'parts'." });
         }
 
         if (workOrderId is not null)
@@ -206,6 +222,8 @@ public static class GatePassEndpoints
                 ItemCount = p.Items.Count,
                 TotalQuantity = p.Items.Sum(i => (int?)i.Quantity) ?? 0,
                 SomeItems = p.Items.OrderBy(i => i.Id).Select(i => i.Description).Take(3).ToList(),
+                HasMachine = p.Items.Any(i => i.EquipmentId != null),
+                HasPart = p.Items.Any(i => i.SparePartId != null),
             })
             .ToListAsync(ct);
 
@@ -229,6 +247,7 @@ public static class GatePassEndpoints
             r.ItemCount,
             r.TotalQuantity,
             r.SomeItems,
+            Goods = GoodsOf(r.HasMachine, r.HasPart),
         });
 
         return Results.Ok(new { items, total, page, pageSize, counts });
@@ -275,6 +294,7 @@ public static class GatePassEndpoints
                 ? null
                 : new { p.WorkOrder.Id, p.WorkOrder.Number, ReportedOn = HospitalDay(p.WorkOrder.ReportedAtUtc, clock) },
             TotalQuantity = p.Items.Sum(i => i.Quantity),
+            Goods = GoodsOf(p.Items.Any(i => i.EquipmentId != null), p.Items.Any(i => i.SparePartId != null)),
             Items = p.Items.OrderBy(i => i.Id).Select(i => new
             {
                 i.Id,
@@ -374,7 +394,7 @@ public static class GatePassEndpoints
         };
 
         // Out of the hospital is out of service: the register says Under repair for as long as it is away.
-        await TakeOutAsync(db, items, ct);
+        await TakeOutAsync(db, items, returnable, ct);
 
         if (returnable)
         {
@@ -451,9 +471,9 @@ public static class GatePassEndpoints
             kept.EquipmentStatusBefore = before[kept.EquipmentId!.Value].EquipmentStatusBefore;
         }
 
-        await TakeOutAsync(db, items.Where(i => i.EquipmentId is { } id && !before.ContainsKey(id)).ToList(), ct);
+        await TakeOutAsync(db, items.Where(i => i.EquipmentId is { } id && !before.ContainsKey(id)).ToList(), pass.IsReturnable, ct);
         var keptIds = items.Where(i => i.EquipmentId != null).Select(i => i.EquipmentId!.Value).ToHashSet();
-        await BringBackAsync(db, pass.Items.Where(i => i.EquipmentId is { } id && !keptIds.Contains(id)).ToList(), ct);
+        await BringBackAsync(db, pass.Items.Where(i => i.EquipmentId is { } id && !keptIds.Contains(id)).ToList(), pass.IsReturnable, ct);
 
         // The list as sent replaces the list as it was, in the one save, so a failure leaves the old one.
         db.GatePassItems.RemoveRange(pass.Items);
@@ -510,7 +530,7 @@ public static class GatePassEndpoints
         pass.OutcomeNotes = Blank(request.Notes);
         pass.UpdatedAtUtc = DateTime.UtcNow;
 
-        await BringBackAsync(db, pass.Items.ToList(), ct);
+        await BringBackAsync(db, pass.Items.ToList(), pass.IsReturnable, ct);
 
         await db.SaveChangesAsync(ct);
 
@@ -544,7 +564,7 @@ public static class GatePassEndpoints
         pass.UpdatedAtUtc = DateTime.UtcNow;
 
         // It never left, so the machine is put back as it was.
-        await BringBackAsync(db, pass.Items.ToList(), ct);
+        await BringBackAsync(db, pass.Items.ToList(), pass.IsReturnable, ct);
 
         await db.SaveChangesAsync(ct);
 
@@ -558,7 +578,7 @@ public static class GatePassEndpoints
     /// it can be put back as it was. A machine already condemned or disposed of is left alone: sending it out does not
     /// bring it back into the register's working stock.
     /// </summary>
-    private static async Task TakeOutAsync(HospitalPmDbContext db, List<GatePassItem> items, CancellationToken ct)
+    private static async Task TakeOutAsync(HospitalPmDbContext db, List<GatePassItem> items, bool returnable, CancellationToken ct)
     {
         var ids = items.Where(i => i.EquipmentId != null).Select(i => i.EquipmentId!.Value).ToList();
         if (ids.Count == 0)
@@ -572,7 +592,12 @@ public static class GatePassEndpoints
             var machine = machines[item.EquipmentId!.Value];
             item.EquipmentStatusBefore = machine.Status;
 
-            if (machine.Status is not (EquipmentStatus.Condemned or EquipmentStatus.Disposed))
+            if (!returnable)
+            {
+                // It leaves for good, so it is no longer the hospital's machine. Kept on the register, because its history must stay readable.
+                machine.Status = EquipmentStatus.Disposed;
+            }
+            else if (machine.Status is not (EquipmentStatus.Condemned or EquipmentStatus.Disposed))
             {
                 machine.Status = EquipmentStatus.UnderRepair;
             }
@@ -584,7 +609,7 @@ public static class GatePassEndpoints
     /// is still Under repair is touched: if someone has since condemned it, or set its status by hand, that is a
     /// decision this does not undo. One that was in store goes back to store; anything else goes back in use.
     /// </summary>
-    private static async Task BringBackAsync(HospitalPmDbContext db, List<GatePassItem> items, CancellationToken ct)
+    private static async Task BringBackAsync(HospitalPmDbContext db, List<GatePassItem> items, bool returnable, CancellationToken ct)
     {
         var ids = items.Where(i => i.EquipmentId != null).Select(i => i.EquipmentId!.Value).ToList();
         if (ids.Count == 0)
@@ -596,7 +621,12 @@ public static class GatePassEndpoints
         foreach (var item in items.Where(i => i.EquipmentId != null))
         {
             var machine = machines[item.EquipmentId!.Value];
-            if (machine.Status == EquipmentStatus.UnderRepair)
+            if (!returnable && machine.Status == EquipmentStatus.Disposed && item.EquipmentStatusBefore is { } was)
+            {
+                // The pass was cancelled: the machine never left for good, so the register has it as it was.
+                machine.Status = was;
+            }
+            else if (machine.Status == EquipmentStatus.UnderRepair)
             {
                 machine.Status = item.EquipmentStatusBefore == EquipmentStatus.InStore
                     ? EquipmentStatus.InStore
@@ -668,15 +698,16 @@ public static class GatePassEndpoints
             return Bad($"A gate pass can list at most {MaxItems} items.");
         }
 
+        // A pass is for a machine, or for spare parts. The two go to the gate on different papers and come back in different ways.
+        if (requested.Any(i => i.EquipmentId is not null) && requested.Any(i => i.SparePartId is not null))
+        {
+            return Bad("A gate pass is for a machine or for spare parts, not both. Write one pass for each.");
+        }
+
         var machineIds = requested.Where(i => i.EquipmentId is not null).Select(i => i.EquipmentId!.Value).ToList();
         if (machineIds.Distinct().Count() != machineIds.Count)
         {
             return Bad("The same machine is listed twice. Take one of the lines out.");
-        }
-
-        if (!returnable && machineIds.Count > 0)
-        {
-            return Bad("A non-returnable pass is for spare parts and accessories. A machine that leaves for good is condemned or disposed of on its own page.");
         }
 
         var machines = await db.Equipment.AsNoTracking()
@@ -690,8 +721,14 @@ public static class GatePassEndpoints
         // A machine is in one place. If it is already out on another pass it has not come back to go out again.
         var alreadyOut = await db.GatePassItems.AsNoTracking()
             .Where(i => i.EquipmentId != null && machineIds.Contains(i.EquipmentId.Value)
-                && i.GatePass!.Status == GatePassStatus.Out && i.GatePassId != thisPassId)
-            .Select(i => new { i.EquipmentId, i.GatePass!.Number })
+                && (i.GatePass!.Status == GatePassStatus.Out || i.GatePass.Status == GatePassStatus.Issued) && i.GatePassId != thisPassId)
+            .Select(i => new { i.EquipmentId, i.GatePass!.Number, i.GatePass.Status })
+            .ToListAsync(ct);
+
+        // A machine standing in for a faulty one is in use in a ward. It goes back first.
+        var standingIn = await db.WorkOrderReplacements.AsNoTracking()
+            .Where(r => machineIds.Contains(r.ReplacementEquipmentId) && r.ReturnedAtUtc == null)
+            .Select(r => new { r.ReplacementEquipmentId, r.WorkOrder!.Number })
             .ToListAsync(ct);
 
         var items = new List<GatePassItem>();
@@ -729,7 +766,14 @@ public static class GatePassEndpoints
 
                 if (alreadyOut.FirstOrDefault(o => o.EquipmentId == machineId) is { } out1)
                 {
-                    return Bad($"{machine.AssetTag} is already out on gate pass {GatePass.ReferenceFor(out1.Number)}. Record that it came back before sending it out again.");
+                    return Bad(out1.Status == GatePassStatus.Issued
+                        ? $"{machine.AssetTag} has already left the hospital for good on gate pass {GatePass.ReferenceFor(out1.Number)}."
+                        : $"{machine.AssetTag} is already out on gate pass {GatePass.ReferenceFor(out1.Number)}. Record that it came back before sending it out again.");
+                }
+
+                if (standingIn.FirstOrDefault(s => s.ReplacementEquipmentId == machineId) is { } stand)
+                {
+                    return Bad($"{machine.AssetTag} is standing in for a faulty machine on service request {stand.Number}. Take it back from there before sending it out.");
                 }
 
                 if (line.Quantity is > 1)
@@ -832,6 +876,9 @@ public static class GatePassEndpoints
         "issued" => "issued",
         _ => null,
     };
+
+    /// <summary>What is going out, in a word: a machine from the register, spare parts, or something typed in (a cable, a probe).</summary>
+    private static string GoodsOf(bool hasMachine, bool hasPart) => hasMachine ? "Machine" : hasPart ? "Spare parts" : "Other";
 
     private static string StatusName(GatePassStatus status) => status switch
     {

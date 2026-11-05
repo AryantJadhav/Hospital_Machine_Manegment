@@ -18,6 +18,9 @@ public sealed record LocationRequest(
     LocationLevel Level,
     int? ParentId);
 
+/// <summary>How many beds to add to a room or a ward, and the number to start from (left out: the next free number).</summary>
+public sealed record BedsRequest(int Count, int? StartAt);
+
 public sealed record LocationResponse(
     int Id,
     string Code,
@@ -52,6 +55,88 @@ public static class LocationEndpoints
 
         group.MapDelete("/{id:int}", DeleteAsync)
             .RequirePermission(Permissions.LocationsEdit);
+
+        // Beds for a room or a ward, a number at a time: "ICU Room 2 · Bed 1" to "Bed 8".
+        group.MapPost("/{id:int}/beds", AddBedsAsync)
+            .RequirePermission(Permissions.LocationsEdit);
+    }
+
+    private const int MaxBedsAtOnce = 200;
+
+    /// <summary>
+    /// Adds numbered beds to a room or a ward. Each bed is named with the room it is in, so wherever a machine's place is shown (a
+    /// list, a label, a report) it reads "ICU Room 2 · Bed 3" and not just "Bed 3", which would mean nothing on its own.
+    /// </summary>
+    private static async Task<IResult> AddBedsAsync(
+        int id, [FromBody] BedsRequest request, HospitalPmDbContext db, CancellationToken ct)
+    {
+        var parent = await db.Locations.AsNoTracking().SingleOrDefaultAsync(l => l.Id == id, ct);
+        if (parent is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (parent.Level is not (LocationLevel.Room or LocationLevel.Department))
+        {
+            return Results.BadRequest(new { error = "Beds go in a room or in a ward (a department). Choose one of those." });
+        }
+
+        if (request.Count is < 1 or > MaxBedsAtOnce)
+        {
+            return Results.BadRequest(new { error = $"Add between 1 and {MaxBedsAtOnce} beds at a time." });
+        }
+
+        if (request.StartAt is < 1 or > 9999)
+        {
+            return Results.BadRequest(new { error = "Start from a bed number between 1 and 9999." });
+        }
+
+        // The next free number: after the highest "Bed n" already in this room or ward.
+        var existing = await db.Locations.AsNoTracking()
+            .Where(l => l.ParentId == id && l.Level == LocationLevel.Bed)
+            .Select(l => l.Name)
+            .ToListAsync(ct);
+
+        var highest = existing
+            .Select(n => System.Text.RegularExpressions.Regex.Match(n, @"Bed (\d+)\s*$", System.Text.RegularExpressions.RegexOptions.CultureInvariant))
+            .Where(m => m.Success)
+            .Select(m => int.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture))
+            .DefaultIfEmpty(0)
+            .Max();
+
+        var first = request.StartAt ?? highest + 1;
+        var numbers = Enumerable.Range(first, request.Count).ToList();
+
+        // The room's name goes in the bed's name, and its code in the bed's code: both are limited, so say so rather than cut them.
+        var parentName = parent.Name.Length > 180 ? parent.Name[..180] : parent.Name;
+        if (parent.Code.Length > 56)
+        {
+            return Results.BadRequest(new { error = "This place's code is too long to add numbered beds under. Shorten its code first." });
+        }
+
+        var codes = numbers.Select(n => $"{parent.Code}-B{n:00}").ToList();
+        var taken = await db.Locations.AsNoTracking().Where(l => codes.Contains(l.Code)).Select(l => l.Code).ToListAsync(ct);
+        if (taken.Count > 0)
+        {
+            return Results.Conflict(new { error = $"A place with the code {taken[0]} already exists, so those bed numbers are taken. Start from a later number." });
+        }
+
+        var beds = numbers
+            .Select(n => new Location { Code = $"{parent.Code}-B{n:00}", Name = $"{parentName} · Bed {n}", Level = LocationLevel.Bed, ParentId = id })
+            .ToList();
+
+        db.Locations.AddRange(beds);
+
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException pg)
+        {
+            return TranslateAsync(pg);
+        }
+
+        return Results.Created($"/api/locations/{id}", new { added = beds.Count, ids = beds.Select(b => b.Id), names = beds.Select(b => b.Name) });
     }
 
     private static async Task<IResult> ListAsync(HospitalPmDbContext db, CancellationToken ct)

@@ -77,4 +77,50 @@ export type WorkOrderDetail = WorkOrderRow & {
     usedAtUtc: string;
   }[];
   photos: WorkOrderPhoto[];
+  /** Machines put in place of this one while it was repaired, newest first. At most the first is still in place. */
+  replacements: WorkOrderReplacement[];
+  /** The engineer may put a free machine in place of this one now. */
+  canProvideReplacement: boolean;
+  /** The engineer may take the machine standing in back now. */
+  canTakeBackReplacement: boolean;
+};
+
+/** A machine that stood, or stands, in for a faulty one. */
+export type WorkOrderReplacement = {
+  id: number;
+  equipmentId: number;
+  assetTag: string;
+  typeName: string;
+  manufacturer: string | null;
+  model: string | null;
+  providedAtUtc: string;
+  providedByName: string | null;
+  note: string | null;
+  /** Where it was put: the faulty machine's place. */
+  placedAt: string;
+  /** Where it came from, and goes back to. */
+  fromLocationName: string;
+  returnedAtUtc: string | null;
+  returnedByName: string | null;
+  isActive: boolean;
+};
+
+/** A free machine that could stand in. */
+export type ReplacementOption = {
+  id: number;
+  assetTag: string;
+  typeName: string;
+  manufacturer: string | null;
+  model: string | null;
+  serialNumber: string | null;
+  locationName: string;
+  sameType: boolean;
+  sameModel: boolean;
+};
+
+export type ReplacementOptions = {
+  forMachine: { assetTag: string; typeName: string | null; manufacturer: string | null; model: string | null; locationName: string | null };
+  items: ReplacementOption[];
+  total: number;
+  otherTypes: boolean;
 };

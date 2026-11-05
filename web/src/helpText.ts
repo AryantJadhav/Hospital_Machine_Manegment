@@ -40,6 +40,7 @@ export const PAGE_HELP: PageHelp[] = [
     can: [
       'The engineer presses In progress when they reach the machine, and Resolved when it is fixed.',
       'Notes, parts used and photos are added while it is being worked on.',
+      'When the repair will take time, press Provide a replacement machine and choose a free machine from the store. It is put where the faulty one stands, and the department sees which one it is. Take it back when the repair is done.',
       'Once it is resolved it goes back to the department that asked. They check the machine and answer: Accept closes it, and Not fixed sends it back to the engineer.',
       'Until then it is locked. The head of the department can also reopen it, or close it.',
     ],
@@ -89,6 +90,7 @@ export const PAGE_HELP: PageHelp[] = [
       'Parts used on a repair are recorded on that repair, and taken from stock for you.',
       'Search by make, model or specification to find the right part for a machine.',
       'A Returnable part goes back to the vendor when it is faulty or under warranty.',
+      'Press Return / Replace on a part to send it back to the vendor to be replaced. It opens a returnable gate pass with that part and its supplier filled in.',
     ],
   },
   {

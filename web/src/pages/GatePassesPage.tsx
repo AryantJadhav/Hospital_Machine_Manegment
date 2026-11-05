@@ -36,6 +36,8 @@ export function GatePassesPage() {
   const [params, setParams] = useSearchParams();
   const tab = TABS.some((t) => t.key === params.get('status')) ? params.get('status')! : 'out';
   const q = params.get('q') ?? '';
+  // What is going out: "" for everything, "machine", or "parts".
+  const goods = ['machine', 'parts'].includes(params.get('goods') ?? '') ? params.get('goods')! : '';
   const page = Math.max(1, Number(params.get('page')) || 1);
 
   const [data, setData] = useState<Page | null>(null);
@@ -62,6 +64,7 @@ export function GatePassesPage() {
       const query = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
       if (tab !== 'all') query.set('status', tab);
       if (q) query.set('q', q);
+      if (goods) query.set('goods', goods);
       try {
         const result = await api.get<Page>(`/api/gate-passes?${query}`);
         if (!cancelled) setData(result);
@@ -72,7 +75,7 @@ export function GatePassesPage() {
     return () => {
       cancelled = true;
     };
-  }, [tab, q, page]);
+  }, [tab, q, goods, page]);
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
   // Where Back from a pass returns to: this list as it is now, with its tab and search.
@@ -130,6 +133,11 @@ export function GatePassesPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+        <select aria-label="What is going out" value={goods} onChange={(e) => setParam('goods', e.target.value)}>
+          <option value="">Machines and spare parts</option>
+          <option value="machine">Machines</option>
+          <option value="parts">Spare parts</option>
+        </select>
       </div>
 
       <div className="card table-wrap">
@@ -178,7 +186,7 @@ export function GatePassesPage() {
                 <td style={{ whiteSpace: 'normal', minWidth: '14rem', maxWidth: '24rem' }}>
                   {p.someItems[0]}
                   <div className="muted">
-                    {p.itemCount > 1 ? `and ${p.itemCount - 1} more · ` : ''}quantity {p.totalQuantity.toLocaleString('en-IN')}
+                    {p.goods} · {p.itemCount > 1 ? `and ${p.itemCount - 1} more · ` : ''}quantity {p.totalQuantity.toLocaleString('en-IN')}
                   </div>
                 </td>
                 <td>

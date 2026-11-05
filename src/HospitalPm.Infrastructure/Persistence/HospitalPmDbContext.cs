@@ -109,6 +109,8 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
 
     public DbSet<WorkOrderNote> WorkOrderNotes => Set<WorkOrderNote>();
 
+    public DbSet<WorkOrderReplacement> WorkOrderReplacements => Set<WorkOrderReplacement>();
+
     public DbSet<WorkOrderPart> WorkOrderParts => Set<WorkOrderPart>();
 
     public DbSet<WorkOrderAttachment> WorkOrderAttachments => Set<WorkOrderAttachment>();
@@ -137,6 +139,7 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
         // What hangs off a service request goes with it, so a photo or a note cannot be fetched on its
         // own by number when the request it belongs to is not theirs.
         builder.Entity<WorkOrderNote>().HasQueryFilter(n => !_scoped || WorkOrders.Any(w => w.Id == n.WorkOrderId));
+        builder.Entity<WorkOrderReplacement>().HasQueryFilter(r => !_scoped || WorkOrders.Any(w => w.Id == r.WorkOrderId));
         builder.Entity<WorkOrderPart>().HasQueryFilter(p => !_scoped || WorkOrders.Any(w => w.Id == p.WorkOrderId));
         builder.Entity<WorkOrderAttachment>().HasQueryFilter(a => !_scoped || WorkOrders.Any(w => w.Id == a.WorkOrderId));
         builder.Entity<WorkOrderAttachmentData>().HasQueryFilter(d => !_scoped || WorkOrderAttachments.Any(a => a.Id == d.AttachmentId));
@@ -821,6 +824,37 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
             e.HasIndex(x => x.EquipmentId).HasDatabaseName("ix_work_order_equipment");
             e.HasIndex(x => new { x.Status, x.Priority }).HasDatabaseName("ix_work_order_status_priority");
             e.HasIndex(x => x.AssignedToUserId).HasDatabaseName("ix_work_order_assignee");
+        });
+
+        builder.Entity<WorkOrderReplacement>(e =>
+        {
+            e.ToTable("work_order_replacement");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.WorkOrderId).HasColumnName("work_order_id");
+            e.Property(x => x.ReplacementEquipmentId).HasColumnName("replacement_equipment_id");
+            e.Property(x => x.FromLocationId).HasColumnName("from_location_id");
+            e.Property(x => x.ToLocationId).HasColumnName("to_location_id");
+            e.Property(x => x.StatusBefore).HasColumnName("status_before").HasConversion<int>();
+            e.Property(x => x.ProvidedAtUtc).HasColumnName("provided_at_utc");
+            e.Property(x => x.ProvidedByUserId).HasColumnName("provided_by_user_id");
+            e.Property(x => x.Note).HasColumnName("note").HasMaxLength(500);
+            e.Property(x => x.ReturnedAtUtc).HasColumnName("returned_at_utc");
+            e.Property(x => x.ReturnedByUserId).HasColumnName("returned_by_user_id");
+            e.Ignore(x => x.IsActive);
+
+            // Restrict: that a machine stood in is part of both machines' record for good.
+            e.HasOne(x => x.WorkOrder).WithMany().HasForeignKey(x => x.WorkOrderId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.ReplacementEquipment).WithMany().HasForeignKey(x => x.ReplacementEquipmentId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.FromLocation).WithMany().HasForeignKey(x => x.FromLocationId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.ToLocation).WithMany().HasForeignKey(x => x.ToLocationId).OnDelete(DeleteBehavior.Restrict);
+
+            e.HasIndex(x => x.WorkOrderId).HasDatabaseName("ix_work_order_replacement_work_order");
+            e.HasIndex(x => x.ReplacementEquipmentId).HasDatabaseName("ix_work_order_replacement_equipment");
+            // A stand-in can only stand in for one fault at a time, and a fault has one stand-in in place at a time.
+            e.HasIndex(x => x.ReplacementEquipmentId).IsUnique().HasFilter("returned_at_utc IS NULL").HasDatabaseName("ux_work_order_replacement_machine_active");
+            e.HasIndex(x => x.WorkOrderId).IsUnique().HasFilter("returned_at_utc IS NULL").HasDatabaseName("ux_work_order_replacement_order_active");
         });
 
         builder.Entity<WorkOrderNote>(e =>
