@@ -93,6 +93,9 @@ public static class GatePassEndpoints
         group.MapPut("/{id:int}", UpdateAsync).RequirePermission(Permissions.GatePassEdit);
         group.MapPost("/{id:int}/return", ReturnAsync).RequirePermission(Permissions.GatePassEdit);
         group.MapPost("/{id:int}/cancel", CancelAsync).RequirePermission(Permissions.GatePassEdit);
+
+        // Photos are optional and can be added at any time.
+        group.MapPhotoEndpoints();
     }
 
     // ---------------------------------------------------------------- reading
@@ -314,6 +317,7 @@ public static class GatePassEndpoints
             }).ToList(),
             CreatedByName = createdBy,
             p.CreatedAtUtc,
+            Photos = await GatePassPhotoEndpoints.ListAsync(db, id, ct),
         });
     }
 

@@ -79,6 +79,10 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
 
     public DbSet<GatePassItem> GatePassItems => Set<GatePassItem>();
 
+    public DbSet<GatePassAttachment> GatePassAttachments => Set<GatePassAttachment>();
+
+    public DbSet<GatePassAttachmentData> GatePassAttachmentData => Set<GatePassAttachmentData>();
+
     public DbSet<Incident> Incidents => Set<Incident>();
 
     public DbSet<EquipmentLoss> EquipmentLosses => Set<EquipmentLoss>();
@@ -940,6 +944,42 @@ public sealed class HospitalPmDbContext(DbContextOptions<HospitalPmDbContext> op
             e.HasOne(x => x.Attachment)
                 .WithOne(x => x.Data)
                 .HasForeignKey<WorkOrderAttachmentData>(x => x.AttachmentId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<GatePassAttachment>(e =>
+        {
+            e.ToTable("gate_pass_attachment");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.GatePassId).HasColumnName("gate_pass_id");
+            e.Property(x => x.FileName).HasColumnName("file_name").HasMaxLength(255).IsRequired();
+            e.Property(x => x.ContentType).HasColumnName("content_type").HasMaxLength(100).IsRequired();
+            e.Property(x => x.SizeBytes).HasColumnName("size_bytes");
+            e.Property(x => x.UploadedByUserId).HasColumnName("uploaded_by_user_id");
+            e.Property(x => x.UploadedAtUtc).HasColumnName("uploaded_at_utc").HasDefaultValueSql("now()");
+
+            // Restrict: a pass is never deleted, and its photos are part of what it records.
+            e.HasOne(x => x.GatePass)
+                .WithMany()
+                .HasForeignKey(x => x.GatePassId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasIndex(x => x.GatePassId).HasDatabaseName("ix_gate_pass_attachment_pass");
+        });
+
+        builder.Entity<GatePassAttachmentData>(e =>
+        {
+            e.ToTable("gate_pass_attachment_data");
+            e.HasKey(x => x.AttachmentId);
+            e.Property(x => x.AttachmentId).HasColumnName("attachment_id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
+            e.Property(x => x.Data).HasColumnName("data").IsRequired();
+
+            e.HasOne(x => x.Attachment)
+                .WithOne(x => x.Data)
+                .HasForeignKey<GatePassAttachmentData>(x => x.AttachmentId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

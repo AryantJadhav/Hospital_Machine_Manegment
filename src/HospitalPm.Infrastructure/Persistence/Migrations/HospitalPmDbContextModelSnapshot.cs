@@ -699,6 +699,81 @@ namespace HospitalPm.Infrastructure.Persistence.Migrations
                     b.ToTable("gate_pass", (string)null);
                 });
 
+            modelBuilder.Entity("HospitalPm.Domain.GatePasses.GatePassAttachment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("content_type");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("file_name");
+
+                    b.Property<int>("GatePassId")
+                        .HasColumnType("integer")
+                        .HasColumnName("gate_pass_id");
+
+                    b.Property<int>("SizeBytes")
+                        .HasColumnType("integer")
+                        .HasColumnName("size_bytes");
+
+                    b.Property<int>("TenantId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTime>("UploadedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("uploaded_at_utc")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<int>("UploadedByUserId")
+                        .HasColumnType("integer")
+                        .HasColumnName("uploaded_by_user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GatePassId")
+                        .HasDatabaseName("ix_gate_pass_attachment_pass");
+
+                    b.ToTable("gate_pass_attachment", (string)null);
+                });
+
+            modelBuilder.Entity("HospitalPm.Domain.GatePasses.GatePassAttachmentData", b =>
+                {
+                    b.Property<int>("AttachmentId")
+                        .HasColumnType("integer")
+                        .HasColumnName("attachment_id");
+
+                    b.Property<byte[]>("Data")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("data");
+
+                    b.Property<int>("TenantId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("tenant_id");
+
+                    b.HasKey("AttachmentId");
+
+                    b.ToTable("gate_pass_attachment_data", (string)null);
+                });
+
             modelBuilder.Entity("HospitalPm.Domain.GatePasses.GatePassItem", b =>
                 {
                     b.Property<int>("Id")
@@ -2825,6 +2900,28 @@ namespace HospitalPm.Infrastructure.Persistence.Migrations
                     b.Navigation("WorkOrder");
                 });
 
+            modelBuilder.Entity("HospitalPm.Domain.GatePasses.GatePassAttachment", b =>
+                {
+                    b.HasOne("HospitalPm.Domain.GatePasses.GatePass", "GatePass")
+                        .WithMany()
+                        .HasForeignKey("GatePassId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("GatePass");
+                });
+
+            modelBuilder.Entity("HospitalPm.Domain.GatePasses.GatePassAttachmentData", b =>
+                {
+                    b.HasOne("HospitalPm.Domain.GatePasses.GatePassAttachment", "Attachment")
+                        .WithOne("Data")
+                        .HasForeignKey("HospitalPm.Domain.GatePasses.GatePassAttachmentData", "AttachmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Attachment");
+                });
+
             modelBuilder.Entity("HospitalPm.Domain.GatePasses.GatePassItem", b =>
                 {
                     b.HasOne("HospitalPm.Domain.Assets.Equipment", "Machine")
@@ -3208,6 +3305,11 @@ namespace HospitalPm.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("HospitalPm.Domain.GatePasses.GatePass", b =>
                 {
                     b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("HospitalPm.Domain.GatePasses.GatePassAttachment", b =>
+                {
+                    b.Navigation("Data");
                 });
 
             modelBuilder.Entity("HospitalPm.Domain.Locations.Location", b =>

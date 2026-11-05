@@ -11,6 +11,7 @@ import { useHandoff } from '../handoff';
 import { usePageTitle } from '../pageTitle';
 import { StatusPill } from '../StatusPill';
 import { formatDate, formatDateTime, todayAtHospital } from '../time';
+import { GatePassPhotos } from '../GatePassPhotos';
 import { GatePassForm } from './GatePassForm';
 
 /**
@@ -268,6 +269,14 @@ export function GatePassPage() {
           </tfoot>
         </table>
       </section>
+
+      <GatePassPhotos
+        passId={pass.id}
+        photos={pass.photos}
+        canAdd={canEdit}
+        canRemove={may(PERMISSIONS.attachmentsDelete)}
+        onChanged={load}
+      />
     </div>
   );
 }

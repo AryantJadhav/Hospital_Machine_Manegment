@@ -65,6 +65,16 @@ export type GatePassItem = {
   machine: { id: number; assetTag: string; machineName: string | null; locationName: string | null } | null;
 };
 
+/** A photo on a pass. Optional: a pass is complete without one. */
+export type GatePassPhoto = {
+  id: number;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  uploadedBy: string | null;
+  uploadedAtUtc: string;
+};
+
 export type GatePassDetail = {
   id: number;
   number: number;
@@ -89,6 +99,7 @@ export type GatePassDetail = {
   items: GatePassItem[];
   createdByName: string | null;
   createdAtUtc: string;
+  photos: GatePassPhoto[];
 };
 
 /** How long a pass has been away, in the words a person would use. */

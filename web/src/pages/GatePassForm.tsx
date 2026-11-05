@@ -6,6 +6,8 @@ import { EquipmentPicker } from '../EquipmentPicker';
 import { DEFAULT_NON_RETURNABLE_PURPOSE, DEFAULT_PURPOSE, describeMachine } from '../gatePassTypes';
 import type { GatePassDetail } from '../gatePassTypes';
 import { usePageTitle } from '../pageTitle';
+import { PhotoPicker } from '../PhotoPicker';
+import { photoForm } from '../photoForm';
 import { todayAtHospital } from '../time';
 import { GatePassItemsGrid } from './GatePassItemsGrid';
 import { blankRow, isBlank, itemsFrom, machineRow, partRow, problemWith, rowsFrom } from './gatePassRows';
@@ -88,6 +90,8 @@ export function GatePassForm({
   const [expected, setExpected] = useState(editing?.expectedReturnDate ?? '');
   const [authorisedBy, setAuthorisedBy] = useState(editing?.authorisedBy ?? '');
   const [notes, setNotes] = useState(editing?.notes ?? '');
+  // Photos are optional. They are saved right after the pass is written.
+  const [photos, setPhotos] = useState<File[]>([]);
   const [request, setRequest] = useState<{ id: number; number: string } | null>(
     editing?.workOrder ? { id: editing.workOrder.id, number: editing.workOrder.number } : null,
   );
@@ -254,11 +258,22 @@ export function GatePassForm({
       } else {
         const created = await api.post<{ id: number; reference: string }>('/api/gate-passes', body);
         const machines = rows.some((r) => r.equipmentId !== null);
+
+        // The pass is written whatever happens to the photos: they can be added again from the pass.
+        let photoNote = '';
+        if (photos.length > 0) {
+          try {
+            await api.postForm(`/api/gate-passes/${created.id}/photos`, photoForm(photos));
+          } catch (photoError) {
+            photoNote = ` The photos were not saved (${photoError instanceof Error ? photoError.message : 'unknown error'}); add them again below.`;
+          }
+        }
+
         await onSaved(
           created.id,
-          returnable
+          (returnable
             ? `Written ${created.reference}. Print it for the gate and the vendor.${machines ? ' Its machines are now marked Under repair.' : ''}`
-            : `Written ${created.reference}, a non-returnable pass. Print it for the gate and the vendor. Nothing is expected back.${machines ? ' Its machines are now marked Disposed.' : ''}`,
+            : `Written ${created.reference}, a non-returnable pass. Print it for the gate and the vendor. Nothing is expected back.${machines ? ' Its machines are now marked Disposed.' : ''}`) + photoNote,
         );
       }
     } catch (err) {
@@ -460,6 +475,13 @@ export function GatePassForm({
         <span>Notes (optional)</span>
         <textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={4000} />
       </label>
+
+      {!editing && (
+        <fieldset className="stack" style={{ border: 'none', padding: 0, margin: 0 }}>
+          <legend style={{ fontWeight: 600, padding: 0 }}>Photos (optional)</legend>
+          <PhotoPicker files={photos} onChange={setPhotos} label="Choose photos of the goods" />
+        </fieldset>
+      )}
 
       <div className="row">
         <button className="btn btn-primary" type="submit" disabled={busy || !vendorName.trim() || !passDate}>
