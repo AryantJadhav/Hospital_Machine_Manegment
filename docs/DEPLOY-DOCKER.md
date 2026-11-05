@@ -9,7 +9,7 @@ Hospital PM holds no patient information: equipment, work orders, engineers and 
 | Image | What it is |
 |---|---|
 | `aryant050/hospitalpm:DB` | The database (PostgreSQL 18, with the `hospitalpm` database and user ready) |
-| `aryant050/hospitalpm:v0.0.10` | The application: the web screens and the API, on port 5000 |
+| `aryant050/hospitalpm:v0.0.13` | The application: the web screens and the API, on port 5000 |
 
 ## What you need
 

@@ -29,7 +29,7 @@ metadata:
   name: hospitalpm
   namespace: hospitalpm
 spec:
-  replicas: 3
+  replicas: 1
   strategy:
     type: Recreate           # the volume can be held by one pod; never two at once during an upgrade
   selector:
@@ -54,7 +54,7 @@ spec:
             runAsNonRoot: true
       containers:
         - name: hospitalpm
-          image: aryant050/hospitalpm:v0.0.10
+          image: aryant050/hospitalpm:v0.0.13
           imagePullPolicy: Always
           ports:
             - name: web
