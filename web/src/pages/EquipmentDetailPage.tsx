@@ -158,6 +158,8 @@ export function EquipmentDetailPage() {
   const [renewing, setRenewing] = useState(false);
   const [movedNote, setMovedNote] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // Why a fault cannot be reported on this machine by this person (it is out of the hospital, lost, or retired), or null.
+  const [faultBlocked, setFaultBlocked] = useState<string | null>(null);
   // What the PM or fault form we sent them to just did, said here, where the
   // new entry appears in the history below.
   const [handoff] = useHandoff();
@@ -174,6 +176,14 @@ export function EquipmentDetailPage() {
         setSpend(await api.get<Spend>(`/api/equipment/${id}/spend`));
       } catch {
         setSpend(null);
+      }
+
+      // So the page does not offer a button that would only be refused.
+      try {
+        const a = await api.get<{ canReport: boolean; reason: string | null }>(`/api/equipment/${id}/fault-availability`);
+        setFaultBlocked(a.canReport ? null : a.reason);
+      } catch {
+        setFaultBlocked(null);
       }
     } catch (e) {
       setError(
@@ -315,9 +325,11 @@ export function EquipmentDetailPage() {
           {/* With this machine already chosen, and back here afterwards. It used
               to open the general work-order list and leave the technician to
               press Report a fault and find the machine they were standing at. */}
-          <Link className="btn" to={`/work-orders?report=${e.id}`} state={{ from: `/equipment/${e.id}` }}>
-            Report a fault
-          </Link>
+          {faultBlocked === null && (
+            <Link className="btn" to={`/work-orders?report=${e.id}`} state={{ from: `/equipment/${e.id}` }}>
+              Report a fault
+            </Link>
+          )}
           {/* Condemning is its own action, not a status in a dropdown. It ends
               the machine's PM programme - the generator stops producing tasks
               for it - and that is not something to do by mis-clicking a
@@ -336,6 +348,7 @@ export function EquipmentDetailPage() {
 
       <HandoffNotice handoff={handoff} />
       <GatePassNotice equipmentId={e.id} from={`/equipment/${e.id}`} />
+      {faultBlocked && <p className="alert alert-info" role="status">{faultBlocked}</p>}
       <IncidentNotice equipmentId={e.id} assetTag={e.assetTag} from={`/equipment/${e.id}`} />
 
       {actionError && <p className="alert alert-error" role="alert">{actionError}</p>}

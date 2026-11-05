@@ -468,21 +468,25 @@ public static class WorkOrderEndpoints
             return Results.BadRequest(new { error = "Describe what is wrong with the machine." });
         }
 
-        var machineStatus = await db.Equipment.AsNoTracking()
+        var machine = await db.Equipment.AsNoTracking()
             .Where(e => e.Id == request.EquipmentId)
-            .Select(e => (EquipmentStatus?)e.Status)
+            .Select(e => new { e.AssetTag, e.Status })
             .SingleOrDefaultAsync(ct);
 
-        if (machineStatus is null)
+        if (machine is null)
         {
             return Results.BadRequest(new { error = "Unknown equipment." });
         }
 
         // A condemned machine is withdrawn from service and kept on the register for its history. A fault
-        // on it would sit in "machines down" and "open requests" for ever, with nobody able to repair it.
-        if (machineStatus == EquipmentStatus.Condemned)
+        // on it would sit in "machines down" and "open requests" for ever, with nobody able to repair it. The same goes for one
+        // that is lost or disposed of, and for one that is out of the hospital on a gate pass when it is a department asking:
+        // the department cannot do anything about it, and the biomedical team already has it in hand.
+        var byDepartment = !await permissions.CanAsync(principal, Permissions.WorkOrdersWork, ct);
+        var openPass = byDepartment ? await FaultReporting.OpenPassAsync(db, request.EquipmentId, ct) : null;
+        if (FaultReporting.WhyNot(machine.Status, machine.AssetTag, openPass, byDepartment) is { } why)
         {
-            return Results.Conflict(new { error = "This machine has been condemned, so a fault cannot be reported on it." });
+            return Results.Conflict(new { error = why });
         }
 
         if (request.BreakdownType is { } kind && !Enum.IsDefined((BreakdownType)kind))

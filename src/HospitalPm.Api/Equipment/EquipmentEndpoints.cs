@@ -1,7 +1,9 @@
 using HospitalPm.Api.Auth;
 using HospitalPm.Api.Maintenance;
 using HospitalPm.Domain.Assets;
+using HospitalPm.Api.WorkOrders;
 using HospitalPm.Domain.Checklists;
+using HospitalPm.Domain.GatePasses;
 using HospitalPm.Domain.Identity;
 using HospitalPm.Domain.Maintenance;
 using HospitalPm.Infrastructure.Maintenance;
@@ -144,6 +146,10 @@ public static class EquipmentEndpoints
         group.MapGet("/{id:int}", GetAsync).RequireAnyPermission(Permissions.RegisterView, Permissions.DepartmentView);
         group.MapGet("/by-tag/{assetTag}", GetByTagAsync).RequireAnyPermission(Permissions.RegisterView, Permissions.DepartmentView);
 
+        // Whether a fault can be reported on this machine by the person asking, and if not why: so its page does not offer
+        // a button that would only be refused.
+        group.MapGet("/{id:int}/fault-availability", FaultAvailabilityAsync).RequireAnyPermission(Permissions.RegisterView, Permissions.DepartmentView);
+
         // Writes are restricted. A technician records work against equipment;
         // they do not add or retire assets on the register.
         group.MapPost("/", CreateAsync)
@@ -157,6 +163,30 @@ public static class EquipmentEndpoints
             .RequirePermission(Permissions.EquipmentEdit);
     }
 
+    private static async Task<IResult> FaultAvailabilityAsync(
+        int id,
+        HospitalPmDbContext db,
+        System.Security.Claims.ClaimsPrincipal principal,
+        PermissionService permissions,
+        CancellationToken ct)
+    {
+        var machine = await db.Equipment.AsNoTracking()
+            .Where(e => e.Id == id)
+            .Select(e => new { e.AssetTag, e.Status })
+            .SingleOrDefaultAsync(ct);
+
+        if (machine is null)
+        {
+            return Results.NotFound();
+        }
+
+        var byDepartment = !await permissions.CanAsync(principal, Permissions.WorkOrdersWork, ct);
+        var openPass = byDepartment ? await FaultReporting.OpenPassAsync(db, id, ct) : null;
+        var why = FaultReporting.WhyNot(machine.Status, machine.AssetTag, openPass, byDepartment);
+
+        return Results.Ok(new { canReport = why is null, reason = why, gatePass = openPass });
+    }
+
     private static async Task<IResult> SearchAsync(
         HospitalPmDbContext db,
         HospitalClock clock,
@@ -165,6 +195,10 @@ public static class EquipmentEndpoints
         [FromQuery] int? equipmentTypeId,
         [FromQuery] EquipmentStatus? status,
         [FromQuery] EquipmentCriticality? criticality,
+        // For choosing the machine to report a fault on: only the machines a fault can be reported on by the person asking.
+        [FromQuery] bool? reportable,
+        System.Security.Claims.ClaimsPrincipal principal,
+        PermissionService permissions,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
         CancellationToken ct = default)
@@ -173,6 +207,18 @@ public static class EquipmentEndpoints
         pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
 
         var query = db.Equipment.AsNoTracking();
+
+        if (reportable == true)
+        {
+            // Never a machine that is lost, retired or disposed of. And, for a department, never one that is out of the
+            // hospital on a gate pass: it is with the vendor, and the biomedical team has it in hand.
+            query = query.Where(e => e.Status != EquipmentStatus.Lost && e.Status != EquipmentStatus.Condemned && e.Status != EquipmentStatus.Disposed);
+
+            if (!await permissions.CanAsync(principal, Permissions.WorkOrdersWork, ct))
+            {
+                query = query.Where(e => !db.GatePassItems.Any(i => i.EquipmentId == e.Id && i.GatePass!.Status == GatePassStatus.Out));
+            }
+        }
 
         if (!string.IsNullOrWhiteSpace(q))
         {

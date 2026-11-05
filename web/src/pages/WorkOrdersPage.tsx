@@ -470,6 +470,7 @@ function ReportForm({
           onChange={setEquipmentId}
           initialLabel={initial?.label}
           label="1. Which machine?"
+          forFault
         />
       </div>
       <p className="muted" style={{ margin: '-0.5rem 0 0' }}>

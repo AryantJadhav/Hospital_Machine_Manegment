@@ -37,12 +37,15 @@ export function EquipmentPicker({
   onChange,
   label = 'Machine',
   initialLabel = '',
+  forFault = false,
 }: {
   value: number | null;
   onChange: (id: number | null) => void;
   label?: string;
   /** What the box says on arrival, when the machine is already known. */
   initialLabel?: string;
+  /** Offer only the machines a fault can be reported on: not one that is lost, retired, or (for a department) out on a gate pass. */
+  forFault?: boolean;
 }) {
   const id = useId();
   const listId = `${id}-list`;
@@ -68,6 +71,7 @@ export function EquipmentPicker({
       try {
         const q = new URLSearchParams({ pageSize: String(SHOWN) });
         if (text.trim()) q.set('q', text.trim());
+        if (forFault) q.set('reportable', 'true');
         const page = await api.get<Page>(`/api/equipment?${q}`);
         if (mine !== latest.current) return;
         setResults(page.items);
@@ -83,7 +87,7 @@ export function EquipmentPicker({
     }, text.trim() ? 200 : 0);
 
     return () => window.clearTimeout(handle);
-  }, [text, open]);
+  }, [text, open, forFault]);
 
   // Close when a click lands anywhere else.
   useEffect(() => {
